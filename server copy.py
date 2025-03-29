@@ -2,10 +2,10 @@ import cv2
 import eventlet
 from flask import Flask, render_template, Response, send_file, make_response
 from flask_socketio import SocketIO
-import RPi.GPIO as GPIO
+# import RPi.GPIO as GPIO
 
-# GPIO Setup
-GPIO.setmode(GPIO.BCM)
+# # GPIO Setup
+# GPIO.setmode(GPIO.BCM)
 
 COIN = 16
 GRAB = 26
@@ -24,9 +24,9 @@ PINS = {
     1 << 5: COIN   # Credit
 }
 
-for pin in PINS.values():
-    GPIO.setup(pin, GPIO.OUT)
-    GPIO.output(pin, GPIO.LOW)
+# for pin in PINS.values():
+#     GPIO.setup(pin, GPIO.OUT)
+#     GPIO.output(pin, GPIO.LOW)
 
 # Flask setup
 app = Flask(__name__)
@@ -73,17 +73,17 @@ def handle_movement(data):
     vertical = 0
     actions = []
 
-    for bit, pin in PINS.items():
-        if value & bit:  # Check if the direction is active
-            print("bit:", bit, "value:", value)
-            # if bit in (-2, 2):  # Horizontal movement
-            #     horizontal += bit
-            # elif bit in (-4, 4):  # Vertical movement
-            #     vertical += bit
-            # else:  # Actions (grab, credit)
-            GPIO.output(pin, GPIO.HIGH)
-        else:
-            GPIO.output(pin, GPIO.LOW)
+    # for bit, pin in PINS.items():
+    #     if value & bit:  # Check if the direction is active
+    #         print("bit:", bit, "value:", value)
+    #         # if bit in (-2, 2):  # Horizontal movement
+    #         #     horizontal += bit
+    #         # elif bit in (-4, 4):  # Vertical movement
+    #         #     vertical += bit
+    #         # else:  # Actions (grab, credit)
+    #         GPIO.output(pin, GPIO.HIGH)
+    #     else:
+    #         GPIO.output(pin, GPIO.LOW)
 
 
 if __name__ == '__main__':

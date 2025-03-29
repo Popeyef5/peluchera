@@ -1,55 +1,184 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Claw Machine Control</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <style>
-        body { text-align: center; font-family: Arial, sans-serif; }
-        video { width: 60%; border: 2px solid black; }
-        p { font-size: 20px; }
-        img {width: 500px; aspect-ratio: auto;}
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claw Machine</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+  <!-- WalletConnect and Web3 libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider/dist/umd/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/web3/dist/web3.min.js"></script>
+  <style>
+    body { text-align: center; font-family: Arial, sans-serif; background-color: #000; color: #fff; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+    .container { width: 100%; max-width: 600px; }
+    .price-tag { position: absolute; right: 20px; top: 20px; font-size: 24px; font-weight: bold; }
+    .video-container { width: 450px; position: relative; margin-bottom: 30px; border: 2px solid #fff; overflow: hidden; }
+    #videoFeed { width: 100%; display: block; }
+    .play-button, .wallet-button { background: none; border: 3px solid #fff; color: #fff; font-size: 40px; padding: 10px 60px; margin: 20px 0; cursor: pointer; font-weight: bold; }
+    .queue-info { font-size: 20px; margin-top: 10px; }
+    .controls-info { position: absolute; bottom: 10px; left: 0; right: 0; background-color: rgba(0, 0, 0, 0.7); padding: 5px; font-size: 14px; }
+    .game-controls { display: none; margin-top: 20px; }
+    .control-row { display: flex; justify-content: center; margin: 5px 0; }
+    .control-button { width: 70px; height: 70px; margin: 5px; background: none; border: 3px solid #fff; color: #fff; font-size: 24px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .grab-button { width: 150px; height: 70px; margin-top: 15px; background: none; border: 3px solid #fff; color: #fff; font-size: 24px; font-weight: bold; cursor: pointer; }
+    .timer { font-size: 24px; margin-top: 10px; font-weight: bold; }
+    .queue-section { margin-top: 20px; }
+  </style>
 </head>
 <body>
-    <h1>Claw Machine Control</h1>
-    <img id="videoFeed" src="http://192.168.0.208:5001/video_feed" />
+  <div class="container">
+    <div class="price-tag">Your current price: $15</div>
+    <div class="video-container">
+      <img id="videoFeed" src="http://localhost:5000/video_feed" alt="Claw Machine Video Feed" />
+      <div class="controls-info">
+        Use arrow keys to move, SPACE to grab, and "C" to add credits.
+      </div>
+    </div>
+    
+    <!-- WalletConnect buttons -->
+    <button class="wallet-button" id="connectWallet">Connect Wallet</button>
+    
+    <div id="queueSection" class="queue-section">
+      <button class="play-button" id="playButton">PLAY</button>
+      <div class="queue-info">
+        There are currently <span id="queueCount">0</span> players in queue
+      </div>
+    </div>
+    
+    <div id="gameControls" class="game-controls">
+      <div class="timer">Time left: <span id="timerDisplay">60</span>s</div>
+      <div class="control-row">
+        <div></div>
+        <button class="control-button" id="upButton">&#9650;</button>
+        <div></div>
+      </div>
+      <div class="control-row">
+        <button class="control-button" id="leftButton">&#9664;</button>
+        <div style="width: 70px; height: 70px; margin: 5px;"></div>
+        <button class="control-button" id="rightButton">&#9654;</button>
+      </div>
+      <div class="control-row">
+        <div></div>
+        <button class="control-button" id="downButton">&#9660;</button>
+        <div></div>
+      </div>
+      <button class="grab-button" id="grabButton">GRAB</button>
+    </div>
+  </div>
 
-    <p>Use arrow keys to move, SPACE to grab, and "C" to add credits.</p>
+  <script>
+    var socket = io.connect("http://192.168.0.208:5000");
+    var activeKeys = 0;
+    var inGame = false;
+    var timer = 60;
+    var timerInterval;
 
-    <script>
-        // var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
-        var socket = io.connect("http://192.168.0.208:5001");
-        var activeKeys = 0;
+    // WalletConnect variables
+    let provider, web3, walletAddress;
 
-        // Key mappings
-        const KEYMAP = {
-            "ArrowLeft":  0b0001,  // Left
-            "ArrowRight": 0b0010,  // Right
-            "ArrowUp":    0b0100,  // Up
-            "ArrowDown":  0b1000,  // Down
-            " ":          0b00010000,  // Grab (Spacebar)
-            "c":          0b00100000   // Credit (C key)
-        };
+    // Connect Wallet button handler
+    document.getElementById("connectWallet").addEventListener("click", async function() {
+      provider = new WalletConnectProvider.default({
+        infuraId: "YOUR_INFURA_ID" // Replace with your Infura ID
+      });
+      await provider.enable();
+      web3 = new Web3(provider);
+      const accounts = await web3.eth.getAccounts();
+      walletAddress = accounts[0];
+      alert("Wallet connected: " + walletAddress);
+    });
 
-        function sendMovement() {
-            socket.emit("move", { bitmask: activeKeys });
-        }
+    // Key mappings for game controls
+    const KEYMAP = {
+      "ArrowLeft":  0b0001,
+      "ArrowRight": 0b0010,
+      "ArrowUp":    0b0100,
+      "ArrowDown":  0b1000,
+      " ":          0b00010000,
+      "c":          0b00100000
+    };
 
-        document.addEventListener("keydown", function(event) {
-            if (KEYMAP[event.key] && !(activeKeys & KEYMAP[event.key])) {
-                activeKeys |= KEYMAP[event.key]; // Set bit
-                sendMovement();
-            }
-        });
+    function sendMovement() {
+      if (inGame) {
+        socket.emit("move", { bitmask: activeKeys });
+      }
+    }
 
-        document.addEventListener("keyup", function(event) {
-            if (KEYMAP[event.key]) {
-                activeKeys &= ~KEYMAP[event.key]; // Clear bit
-                sendMovement();
-            }
-        });
-    </script>
+    document.addEventListener("keydown", function(event) {
+      if (KEYMAP[event.key] && !(activeKeys & KEYMAP[event.key])) {
+        activeKeys |= KEYMAP[event.key];
+        sendMovement();
+      }
+    });
+    document.addEventListener("keyup", function(event) {
+      if (KEYMAP[event.key]) {
+        activeKeys &= ~KEYMAP[event.key];
+        sendMovement();
+      }
+    });
+
+    // Button and touch events for game controls (similar to before)
+    document.getElementById("leftButton").addEventListener("mousedown", function() { activeKeys |= 0b0001; sendMovement(); });
+    document.getElementById("leftButton").addEventListener("mouseup", function() { activeKeys &= ~0b0001; sendMovement(); });
+    document.getElementById("rightButton").addEventListener("mousedown", function() { activeKeys |= 0b0010; sendMovement(); });
+    document.getElementById("rightButton").addEventListener("mouseup", function() { activeKeys &= ~0b0010; sendMovement(); });
+    document.getElementById("upButton").addEventListener("mousedown", function() { activeKeys |= 0b0100; sendMovement(); });
+    document.getElementById("upButton").addEventListener("mouseup", function() { activeKeys &= ~0b0100; sendMovement(); });
+    document.getElementById("downButton").addEventListener("mousedown", function() { activeKeys |= 0b1000; sendMovement(); });
+    document.getElementById("downButton").addEventListener("mouseup", function() { activeKeys &= ~0b1000; sendMovement(); });
+    document.getElementById("grabButton").addEventListener("mousedown", function() { activeKeys |= 0b00010000; sendMovement(); });
+    document.getElementById("grabButton").addEventListener("mouseup", function() { activeKeys &= ~0b00010000; sendMovement(); });
+
+    // Play button: Initiates join queue after wallet auth and signing a payment message.
+    document.getElementById("playButton").addEventListener("click", async function() {
+      if (!walletAddress) {
+        alert("Please connect your wallet first!");
+        return;
+      }
+      const message = "Join queue fee payment: 0.001 ETH";
+      try {
+        const signature = await web3.eth.personal.sign(message, walletAddress);
+        // Send wallet address and signature to the server
+        socket.emit("join_queue", { wallet: walletAddress, signature: signature });
+        alert("You've been added to the queue!");
+      } catch (err) {
+        alert("Signature failed: " + err.message);
+      }
+    });
+
+    function startGame() {
+      inGame = true;
+      document.getElementById("queueSection").style.display = "none";
+      document.getElementById("gameControls").style.display = "block";
+      timer = 60;
+      document.getElementById("timerDisplay").textContent = timer;
+      timerInterval = setInterval(updateTimer, 1000);
+    }
+
+    function updateTimer() {
+      timer -= 1;
+      document.getElementById("timerDisplay").textContent = timer;
+      if (timer <= 0) { endGame(); }
+    }
+
+    function endGame() {
+      inGame = false;
+      clearInterval(timerInterval);
+      document.getElementById("gameControls").style.display = "none";
+      document.getElementById("queueSection").style.display = "block";
+      activeKeys = 0;
+      sendMovement();
+    }
+
+    socket.on("queue_update", function(data) {
+      document.getElementById("queueCount").textContent = data.count;
+    });
+    socket.on("your_turn", function() {
+      startGame();
+    });
+    socket.on("auth_error", function(data) {
+      alert("Authentication error: " + data.error);
+    });
+  </script>
 </body>
 </html>
