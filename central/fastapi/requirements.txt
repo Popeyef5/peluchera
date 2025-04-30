@@ -1,0 +1,9 @@
+aiohttp
+eth_account
+fastapi[standard]
+httpx
+psycopg[binary]
+python-socketio
+requests
+sqlalchemy
+web3

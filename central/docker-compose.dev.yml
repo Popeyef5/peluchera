@@ -1,0 +1,84 @@
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: claw_media 
+    restart: unless-stopped
+    environment:
+      - MTX_RTSPTRANSPORTS=tcp
+      - MTX_WEBRTCADDITIONALHOSTS=192.168.0.237
+    ports:
+      - '1935:1935'
+      - '8554:8554'
+      - '8888:8888'
+      - '8889:8889'
+      - '8890:8890/udp'
+      - '8189:8189/udp'
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml
+    networks:
+      - claw_network
+
+  proxy:
+    image: nginx:latest
+    ports:
+      - '80:80'
+    depends_on:
+      - next
+      - fastapi
+      - db
+    volumes:
+      - ./proxy/nginx.dev.conf:/etc/nginx/nginx.conf 
+    networks:
+      - claw_network
+
+  next:
+    build: ./next
+    container_name: claw_next
+    expose:
+      - '3000'
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - db
+    volumes:
+      - ./next:/code
+    networks:
+      - claw_network
+    env_file: .env
+    environment:
+      - NODE_ENV=development
+    command: 'pnpm dev'
+
+  db:
+    image: postgres:latest
+    container_name: claw_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    expose:
+      - '5432'
+    volumes:
+      - claw_postgres_data_dev:/var/lib/postgresql/data
+    env_file: .env
+    networks:
+      - claw_network
+
+  fastapi:
+    build: ./fastapi
+    container_name: claw_fastapi
+    ports:
+      - '5000:5000'
+    volumes:
+      - ./fastapi:/app
+    networks:
+      - claw_network
+    env_file: .env
+
+volumes:
+  claw_postgres_data_dev:
+
+networks:
+  claw_network:
+    name: claw_network
+    driver: bridge

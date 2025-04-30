@@ -1,0 +1,55 @@
+services:
+  rtmp:
+    image: alfg/nginx-rtmp
+    
+  nginx:
+    image: nginx
+    ports:
+      - '80:80'
+    depends_on:
+      - next
+      - fastapi
+      - db
+    
+  next:
+    build: ./next
+    expose:
+      - '3000'
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - db
+    env_file: .env
+    networks:
+      - claw_network
+
+  db:
+    image: postgres:latest
+    container_name: claw_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - claw_network
+    env_file: .env
+
+  fastapi:
+    build: ./fastapi
+    expose:
+      - '5000'
+    env_file: .env
+    networks:
+      - claw_network
+
+volumes:
+  postgres_data:
+
+networks:
+  claw_network:
+    name: claw_network
+    driver: bridge

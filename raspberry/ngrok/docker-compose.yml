@@ -1,0 +1,10 @@
+version: '3'
+
+services:
+  ssh: 
+    image: ngrok/ngrok:latest
+    network_mode: "host"
+    env_file: ./.env
+    command: http 80 --url=peluchera.ngrok.app
+    restart: always
+
