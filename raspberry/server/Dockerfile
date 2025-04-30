@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 COPY . /app/
 
 # CMD ["fastapi", "run", "main.py:socket_app", "--port", "5000"]
-CMD ["uvicorn", "main:socketio", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]

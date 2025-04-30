@@ -1,7 +1,4 @@
-# import cv2
-# import eventlet
-from flask import Flask
-from flask_socketio import SocketIO
+import socketio
 import RPi.GPIO as GPIO
 
 # GPIO Setup
@@ -28,64 +25,22 @@ for pin in PINS.values():
     GPIO.setup(pin, GPIO.OUT)
     GPIO.output(pin, GPIO.LOW)
 
-# Flask setup
-app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# App setup
+sio  = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+app = socketio.ASGIApp(sio)
 
-# # USB Webcam setup
-# camera = cv2.VideoCapture(1)
-
-# def generate_frames():
-#     """ Continuously capture frames from the webcam. """
-#     while True:
-#         success, frame = camera.read()
-#         if not success:
-#             break
-#         else:
-#             _, buffer = cv2.imencode('.jpg', frame)
-#             yield (b'--frame\r\n'
-#                    b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-
-# @app.route('/')
-# def index():
-#     """ Serve the web interface. """
-#     return render_template('index.html')
-
-# @app.route('/video_feed')
-# def video_feed():
-#     """ Stream the webcam feed. """
-#     return send_file("placeholder.jpg", mimetype="image/jpeg")
-#     print(frame)
-#     if frame:
-#       print("frame here", frame)
-#       return make_response(frame)
-#     else:
-#       return send_file("placeholder.jpg", mimetype="image/jpeg")
-
-
-@socketio.on('move')
+@app.on('move')
 def handle_movement(data):
     """ Handle movement commands from the client. """
     value = data.get("bitmask", 0)  # Get encoded movement value
 
-    # Resolve movement directions by summing active values
-    # horizontal = 0
-    # vertical = 0
-    # actions = []
-
     for bit, pin in PINS.items():
         if value & bit:  # Check if the direction is active
-            print("bit:", bit, "value:", value)
-            # if bit in (-2, 2):  # Horizontal movement
-            #     horizontal += bit
-            # elif bit in (-4, 4):  # Vertical movement
-            #     vertical += bit
-            # else:  # Actions (grab, credit)
             GPIO.output(pin, GPIO.HIGH)
         else:
             GPIO.output(pin, GPIO.LOW)
 
-@socketio.on("turn_start")
+@app.on("turn_start")
 def turn_start():
     pass
 
