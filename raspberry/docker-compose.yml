@@ -2,7 +2,7 @@ services:
   flask:
     build: ./server
     devices:
-      - /dev/memgpio:/dev/memgpio
+      - /dev/gpiomem:/dev/gpiomem
     ports:
       - '80:5000'
     
