@@ -1,14 +1,16 @@
 services:
   flask:
     build: ./server
+    devices:
+      - /dev/memgpio:/dev/memgpio
     ports:
       - '80:5000'
     
-  ffmpeg:
-    build: ./ffmpeg
-    devices:
-      - '/dev/video0:/dev/video0'
-    restart: always
+  # ffmpeg:
+  #   build: ./ffmpeg
+  #   devices:
+  #     - '/dev/video0:/dev/video0'
+  #   restart: always
 
   ngrok:
     image: ngrok/ngrok:latest
