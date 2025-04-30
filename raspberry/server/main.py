@@ -29,7 +29,7 @@ for pin in PINS.values():
 sio  = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 app = socketio.ASGIApp(sio)
 
-@app.on('move')
+@sio.on('move')
 def handle_movement(data):
     """ Handle movement commands from the client. """
     value = data.get("bitmask", 0)  # Get encoded movement value
@@ -40,7 +40,7 @@ def handle_movement(data):
         else:
             GPIO.output(pin, GPIO.LOW)
 
-@app.on("turn_start")
+@sio.on("turn_start")
 def turn_start():
     pass
 
