@@ -16,4 +16,5 @@ services:
     image: ngrok/ngrok:latest
     restart: always
     command: http 80 --url=peluchera.ngrok.app
+    network_mode: "host"
     env_file: ./.env
