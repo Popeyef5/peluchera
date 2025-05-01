@@ -1,10 +1,10 @@
 services:
-  flask:
+  socket:
     build: ./server
     devices:
       - /dev/gpiomem:/dev/gpiomem
-    ports:
-      - '80:5000'
+    expose:
+      - '5000'
     
   # ffmpeg:
   #   build: ./ffmpeg
@@ -15,6 +15,5 @@ services:
   ngrok:
     image: ngrok/ngrok:latest
     restart: always
-    command: http 80 --url=peluchera.ngrok.app
-    network_mode: "host"
+    command: http socket:5000 --url=peluchera.ngrok.app
     env_file: ./.env
