@@ -70,7 +70,7 @@ services:
     ports:
       - '5000:5000'
     volumes:
-      - ./fastapi:/app
+      - ./fastapi:/code
     networks:
       - claw_network
     env_file: .env

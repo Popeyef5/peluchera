@@ -1,8 +1,12 @@
 import socketio
+import logging
 import RPi.GPIO as GPIO
 
 # GPIO Setup
 GPIO.setmode(GPIO.BCM)
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("rpi")
 
 COIN = 16
 GRAB = 26
@@ -30,18 +34,18 @@ sio  = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
 app = socketio.ASGIApp(sio)
 
 @sio.on('move')
-def handle_movement(data):
+def handle_movement(sid, data):
     """ Handle movement commands from the client. """
     value = data.get("bitmask", 0)  # Get encoded movement value
-
     for bit, pin in PINS.items():
         if value & bit:  # Check if the direction is active
+            log.info(f"Pin: {pin}")
             GPIO.output(pin, GPIO.HIGH)
         else:
             GPIO.output(pin, GPIO.LOW)
 
 @sio.on("turn_start")
-def turn_start():
+def on_turn_start(data):
     pass
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ import React, {
 } from 'react';
 import { useSocket } from '@/app/components/providers/SocketProvider';
 import {
-	useAppKit, useAppKitAccount, useAppKitNetwork,
+	useAppKitAccount, useAppKitNetwork,
 } from '@reown/appkit/react';
 import { USDCAddress, erc20WithPermitAbi, clawAddress } from '@/lib/crypto/contracts';
 import { readContract, signTypedData } from 'wagmi/actions';
@@ -72,7 +72,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [accountBalance, setAccountBalance] = useState<number>(0)
 
 	/* wallet */
-	const { address, isConnected } = useAppKitAccount();
+	const { address } = useAppKitAccount();
 	const { chainId } = useAppKitNetwork();
 
 	/* tell backend who we are */

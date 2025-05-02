@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import { Button, Flex, VStack, HStack, Grid, GridItem, ButtonProps, FlexProps } from '@chakra-ui/react';
+import { Button, Flex, Grid, GridItem, FlexProps } from '@chakra-ui/react';
 import { useClaw } from '@/app/components/providers/ClawProvider';
 
 type KbdProps =

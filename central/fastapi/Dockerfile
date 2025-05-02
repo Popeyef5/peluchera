@@ -1,12 +1,12 @@
 FROM python:3.9
 
-WORKDIR /app
+WORKDIR /code
 
-COPY ./requirements.txt /app/requirements.txt
+COPY ./requirements.txt /code/requirements.txt
 
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-COPY ./server /app/
+COPY . /code/
 
 # CMD ["fastapi", "run", "main.py:socket_app", "--port", "5000"]
-CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]

@@ -1,19 +1,35 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+
+declare global {
+  interface Window {
+    MediaMTXWebRTCReader: new (params: {
+      url: string;
+      onError?: (err: string) => void;
+      onTrack?: (evt: RTCTrackEvent) => void;
+    }) => { close?: () => void };
+  }
+}
 
 export default function WebRTCPlayer() {
+  /* we keep the reader so we can clean it up later -- avoids “unused” warning */
+  const readerRef = useRef<{ close?: () => void } | null>(null);
+
   useEffect(() => {
     const script = document.createElement('script');
     script.src = '/reader.js';
     script.defer = true;
     script.onload = () => {
-      const reader = new (window as any).MediaMTXWebRTCReader({
+      /* eslint-disable-next-line @typescript-eslint/consistent-type-assertions */
+      const ReaderCtor = (window as unknown as { MediaMTXWebRTCReader: typeof window.MediaMTXWebRTCReader }).MediaMTXWebRTCReader;
+
+      readerRef.current = new ReaderCtor({
         url: 'http://192.168.0.237/video_feed/whep',
         onError: (err: string) => {
           const msg = document.getElementById('message');
           if (msg) msg.innerText = err;
         },
-        onTrack: (evt: any) => {
+        onTrack: (evt: RTCTrackEvent) => {
           const msg = document.getElementById('message');
           if (msg) msg.innerText = '';
           const video = document.getElementById('video') as HTMLVideoElement;

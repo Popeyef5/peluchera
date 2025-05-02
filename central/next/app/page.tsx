@@ -6,7 +6,7 @@ import {
 } from '@chakra-ui/react';
 import { SocketProvider, ClawProvider, useClaw } from '@/app/components/providers';
 import GameController from '@/app/components/GameController';
-import { Slider } from '@/app/components/chakra/slider';
+// import { Slider } from '@/app/components/chakra/slider';
 import WebRTCPlayer from '@/app/components/WebRTCPlayer';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { FiSettings } from 'react-icons/fi';
