@@ -5,6 +5,7 @@ services:
       - /dev/gpiomem:/dev/gpiomem
     expose:
       - '5000'
+    restart: always
     
   ffmpeg:
     build: ./ffmpeg
