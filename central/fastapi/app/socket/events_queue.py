@@ -17,18 +17,38 @@ async def wallet_connected(sid, data):
     addr = data["address"]
     sid_to_addr[sid] = addr
     await sio.enter_room(sid, addr)
-
-    async with async_session() as db:
-        qcount = await db.scalar(
-            select(func.count()).select_from(QueueEntry).where(QueueEntry.status == "queued")
-        )
-
-    w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
-    balance = await w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)\
-                      .functions.getTotalBalance(addr).call()
-    await sio.emit("balance", {"balance": balance}, to=sid)
     
-    return {"status": "ok", "queue": qcount}
+    async with async_session() as db:
+        user_entry = await db.scalar(
+            select(QueueEntry)
+            .where(QueueEntry.status == "queued", QueueEntry.address == addr)
+        )
+    
+        if user_entry:
+            position = await db.scalar(
+                select(func.count())
+                .select_from(QueueEntry)
+                .where(
+                    QueueEntry.status == "queued",
+                    QueueEntry.created_at < user_entry.created_at
+                )
+            ) + 1
+        else:
+            position = -1
+
+    # w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
+    # balance = await w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)\
+    #                   .functions.getTotalBalance(addr).call()
+    
+    return {"status": "ok", "data": {"position": position, "balance": 0}}
+
+
+@sio.on("wallet_disconnected")
+async def wallet_disconnected(sid, data):
+    old_address = sid_to_addr.get(sid)
+    if old_address:
+        await sio.leave_room(sid, old_address)
+    sid_to_addr[sid] = None
 
 
 @sio.on("join_queue")

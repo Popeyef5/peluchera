@@ -1,10 +1,11 @@
 from .sio_instance import sio
 from ..logging import log
-from ..state import sid_to_addr, game_state
+from ..state import sid_to_addr, global_sync
 
 @sio.event
 async def connect(sid, environ):
-    await sio.emit("game_state", data={"state": game_state}, to=sid)
+    await sio.emit("global_state", data=global_sync(), to=sid)
+
 
 @sio.event
 async def disconnect(sid):

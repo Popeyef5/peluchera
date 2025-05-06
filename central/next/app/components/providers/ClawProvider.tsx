@@ -28,8 +28,18 @@ const ACTION_TO_KEY = {
 	grab: ' ',
 } as const;
 
-interface GameStateData {
-	state: [number, number]
+interface GlobalSyncData {
+	state: [number, number];
+	queue_length: number;
+}
+
+interface PersonalSyncData {
+	position: number;
+	balance: number;
+}
+
+interface PersonalSyncData {
+	position: number;
 }
 
 interface AccountBalanceData {
@@ -78,8 +88,10 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	/* tell backend who we are */
 	useEffect(() => {
 		if (!address) return;
-		socket.emit('wallet_connected', { address }, (res: { queue: number }) => {
-			setQueueCount(res.queue);
+		socket.emit('wallet_connected', { address }, (res: { status: string, data: PersonalSyncData }) => {
+			if (res.status === "ok") {
+				setPosition(res.data.position);
+			}
 		});
 	}, [address, socket]);
 
@@ -88,7 +100,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		const onPlayerQueued = () => setQueueCount((q) => q + 1);
 		const onTurnStart = () => {
 			setQueueCount((q) => Math.max(q - 1, 0));
-			setPosition((p) => (p > 0 ? p - 1 : p));
+			setPosition((p) => (p >= 0 ? p - 1 : p));
 			setIsPlaying(false);
 			setActiveKeys(0);
 		};
@@ -100,10 +112,13 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setPosition((p) => (p >= 0 ? p - 1 : p));
 			setActiveKeys(0);
 		};
-		const onGameState = (data: GameStateData) => {
+		const onGlobalSync = (data: GlobalSyncData) => {
 			setGameState(data.state);
+			setQueueCount(data.queue_length);
 		}
-
+		const onPersonalSync = (data: PersonalSyncData) => {
+			setPosition(data.position);
+		}
 		const onAccountBalance = (data: AccountBalanceData) => {
 			setAccountBalance(data.balance);
 		}
@@ -112,7 +127,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		socket.on('turn_start', onTurnStart);
 		socket.on('your_turn', onYourTurn);
 		socket.on('turn_end', onTurnEnd);
-		socket.on('game_state', onGameState)
+		socket.on('global_sync', onGlobalSync)
+		socket.on('personal_sync', onPersonalSync);
 		socket.on('balance', onAccountBalance)
 
 		return () => {
@@ -120,7 +136,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			socket.off('turn_start', onTurnStart);
 			socket.off('your_turn', onYourTurn);
 			socket.off('turn_end', onTurnEnd);
-			socket.off('game_state', onGameState);
+			socket.off('global_sync', onGlobalSync);
+			socket.off('personal_sync', onPersonalSync);
 			socket.off('balance', onAccountBalance);
 		};
 	}, [socket]);
@@ -154,8 +171,20 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	/* keyboard listeners */
 	useEffect(() => {
 		if (!isPlaying) return;
-		const down = (e: KeyboardEvent) => KEYMAP[e.key] && press(e.key as keyof typeof ACTION_TO_KEY);
-		const up = (e: KeyboardEvent) => KEYMAP[e.key] && release(e.key as keyof typeof ACTION_TO_KEY);
+
+		const down = (e: KeyboardEvent) => {
+			if (e.key in KEYMAP) {
+				const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
+				if (action) press(action as keyof typeof ACTION_TO_KEY);
+			}
+		};
+
+		const up = (e: KeyboardEvent) => {
+			if (e.key in KEYMAP) {
+				const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
+				if (action) release(action as keyof typeof ACTION_TO_KEY);
+			}
+		};
 		window.addEventListener('keydown', down);
 		window.addEventListener('keyup', up);
 		return () => {

@@ -4,7 +4,7 @@ from .logging import log
 from .db import engine, Base
 from .deps import async_session, ensure_first_round
 from .pi_client import connect_pi
-from .scheduler import scheduler
+from .schedulers import turn_scheduler
 from .listeners import web3_listener
 import asyncio
 
@@ -23,7 +23,7 @@ async def on_startup():
 
     # background tasks
     asyncio.create_task(connect_pi())
-    asyncio.create_task(scheduler())
+    asyncio.create_task(turn_scheduler())
     asyncio.create_task(web3_listener())
 
 __all__ = ["app"]   # for `uvicorn app:app`

@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import app.state as state
 
@@ -8,9 +9,10 @@ from .models import QueueEntry
 from .deps import async_session
 from .socket.sio_instance import sio
 from .pi_client import pi_client
-from .config import TURN_DURATION, INTER_TURN_DELAY
+from .config import TURN_DURATION, INTER_TURN_DELAY, SYNC_PERIOD
+from .state import global_sync
 
-async def scheduler():
+async def turn_scheduler():
     # clean up any partially-played entry
     while True:
         async with async_session() as db:
@@ -29,7 +31,7 @@ async def scheduler():
             entry = await db.scalar(
                 select(QueueEntry)
                 .where(QueueEntry.status == "queued")
-                .order_by(QueueEntry.created_at)
+                .order_by(QueueEntry.created_at.asc())
             )
             if not entry:
                 state.current_player = None
@@ -61,3 +63,28 @@ async def scheduler():
             entry.status = "played"
             await db.commit()
         await sio.emit("turn_end", room=state.current_player)
+        
+
+async def sync_scheduler():
+    while True:
+        start_time = time.time()
+        
+        # --- Global sync to every socket connection ---
+        await sio.emit("global_sync", await global_sync())
+        
+        # --- Personal sync to every address in queue ---
+        async with async_session() as db:
+            result = await db.execute(
+                select(QueueEntry)
+                .where(QueueEntry.status == "queued")
+                .order_by(QueueEntry.created_at.asc())
+            )
+            queue = result.scalars().all()
+        
+        for i, entry in enumerate(queue):
+            await sio.emit("personal_sync", {"position": i+1}, room=entry.address)
+         
+                
+        spent_time = time.time() - start_time
+        if spent_time < SYNC_PERIOD:
+            asyncio.sleep(SYNC_PERIOD - spent_time) 
