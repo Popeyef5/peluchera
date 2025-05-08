@@ -8,7 +8,7 @@ type KbdProps =
   React.ButtonHTMLAttributes<HTMLButtonElement>; // onMouseDown, disabled, etc.
 
 export const Kbd: React.FC<KbdProps> = ({ children, ...props }) => {
-  return <Flex as="button" align="center" justify="center" border="0.25rem solid black" h={6} w={6} p={8} borderRadius="md" fontSize="6xl" {...props}>
+  return <Flex as="button" fontFamily="auto" align="center" justify="center" border="0.25rem solid black" h={6} w={6} p={8} borderRadius="md" fontSize="6xl" {...props}>
     {children}
   </Flex>
 }

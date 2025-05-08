@@ -1,6 +1,7 @@
 import socketio
 import logging
 import RPi.GPIO as GPIO
+import time
 
 # GPIO Setup
 GPIO.setmode(GPIO.BCM)
@@ -16,7 +17,7 @@ S = 6
 D = 13
 
 # Define GPIO pins with signed values for cancellation logic
-PINS = {
+PINS = {pass
     1 << 0: A,  # Left
     1 << 1: D,   # Right
     1 << 2: W,   # Updata
@@ -46,7 +47,14 @@ def handle_movement(sid, data):
 
 @sio.on("turn_start")
 def on_turn_start(data):
-    pass
+    GPIO.output(COIN, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(COIN, GPIO.LOW)
+    time.sleep(0.1)
+    GPIO.output(W, GPIO.HIGH)
+    time.sleep(0.1)
+    GPIO.output(W, GPIO.LOW)
+    
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5001, debug=True)

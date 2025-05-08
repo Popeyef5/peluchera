@@ -24,7 +24,7 @@ export default function WebRTCPlayer() {
       const ReaderCtor = (window as unknown as { MediaMTXWebRTCReader: typeof window.MediaMTXWebRTCReader }).MediaMTXWebRTCReader;
 
       readerRef.current = new ReaderCtor({
-        url: 'http://cryptoclaw.xyz/video_feed/whep',
+        url: 'http://cryptoclaw.xyz:8889/video_feed/whep',
         onError: (err: string) => {
           const msg = document.getElementById('message');
           if (msg) msg.innerText = err;
@@ -41,10 +41,12 @@ export default function WebRTCPlayer() {
   }, []);
 
   return (
-    <div style={{ aspectRatio: '4/3', width: '50vw', position: 'relative'}}>
+    <div style={{
+      aspectRatio: '4/3', maxWidth: '100%', position: 'relative', flex: 1
+    }}>
       <video
         id="video"
-        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#1e1e1e', borderRadius: "1.5rem" }}
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', aspectRatio: 4/3, background: '#1e1e1e', borderRadius: "1.5rem" }}
         autoPlay
         muted
         playsInline
@@ -56,7 +58,7 @@ export default function WebRTCPlayer() {
           top: 0,
           left: 0,
           width: '100%',
-          height: '100%',
+          aspectRatio: 4/3,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',

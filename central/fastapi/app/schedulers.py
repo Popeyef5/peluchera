@@ -8,6 +8,7 @@ from sqlalchemy import select, func
 from .models import QueueEntry
 from .deps import async_session
 from .socket.sio_instance import sio
+from .logging import log
 from .pi_client import pi_client
 from .config import TURN_DURATION, INTER_TURN_DELAY, SYNC_PERIOD
 from .state import global_sync
@@ -87,4 +88,5 @@ async def sync_scheduler():
                 
         spent_time = time.time() - start_time
         if spent_time < SYNC_PERIOD:
-            asyncio.sleep(SYNC_PERIOD - spent_time) 
+            log.info("Sleeping for %ds" % (SYNC_PERIOD - spent_time))
+            await asyncio.sleep(SYNC_PERIOD - spent_time) 

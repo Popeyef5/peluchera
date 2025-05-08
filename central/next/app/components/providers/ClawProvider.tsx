@@ -91,6 +91,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		socket.emit('wallet_connected', { address }, (res: { status: string, data: PersonalSyncData }) => {
 			if (res.status === "ok") {
 				setPosition(res.data.position);
+        console.log(res.data);
 			}
 		});
 	}, [address, socket]);
@@ -113,6 +114,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setActiveKeys(0);
 		};
 		const onGlobalSync = (data: GlobalSyncData) => {
+			console.log(data.state);
 			setGameState(data.state);
 			setQueueCount(data.queue_length);
 		}
@@ -234,8 +236,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 	const withdraw = useCallback(async () => {
 		if (!address || !chainId) return;
-		socket.emit('withdraw', (r: { status: string; balance: number }) => {
-			if (r.status === 'ok') setAccountBalance(r.balance);
+		socket.emit('withdraw', (r: { status: string }) => {
+			if (r.status === 'ok') setAccountBalance(0);
 		})
 	}, [socket])
 

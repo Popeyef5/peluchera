@@ -9,7 +9,6 @@ from ..logging import log
 async def move(sid, data):
     log.info(f"Received data: {data}")
     if state.sid_to_addr.get(sid) == state.current_player:
-        log.info("Forwarding")
         await pi_client.emit("move", data)
     else:
         log.info(f"Current address missmatch, current player: {state.current_player}, sid to addr: {state.sid_to_addr}, sid: {sid}")

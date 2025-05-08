@@ -1,5 +1,6 @@
 from sqlalchemy import select, func
 from .db import async_session
+from .logging import log
 from .models import QueueEntry
 
 sid_to_addr = {}
@@ -12,4 +13,5 @@ async def global_sync():
             select(func.count()).select_from(QueueEntry).where(QueueEntry.status == "queued")
         )
         
-  return {"game_state": game_state, "queue_length": qcount}
+  log.info("Game state: %d, %d" % (game_state[0], game_state[1]))
+  return {"state": game_state, "queue_length": qcount}

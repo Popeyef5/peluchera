@@ -4,7 +4,7 @@ import os
 FRAME_RATE           = 0.1
 TURN_DURATION        = 60
 INTER_TURN_DELAY     = 3
-SYNC_PERIOD   = 15
+SYNC_PERIOD          = 15
 
 DATABASE_URL     = os.environ.get("DATABASE_URL")
 PI_SERVER_URL    = os.environ.get("PI_SERVER_URL")

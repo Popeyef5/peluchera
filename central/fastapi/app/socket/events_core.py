@@ -4,7 +4,8 @@ from ..state import sid_to_addr, global_sync
 
 @sio.event
 async def connect(sid, environ):
-    await sio.emit("global_state", data=global_sync(), to=sid)
+    log.info("Sending global sync on connect")
+    await sio.emit("global_sync", data=await global_sync(), to=sid)
 
 
 @sio.event

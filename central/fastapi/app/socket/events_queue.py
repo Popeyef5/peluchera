@@ -36,11 +36,11 @@ async def wallet_connected(sid, data):
         else:
             position = -1
 
-    # w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
-    # balance = await w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)\
-    #                   .functions.getTotalBalance(addr).call()
+    w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
+    balance = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)\
+                      .functions.getTotalBalance(addr).call()
     
-    return {"status": "ok", "data": {"position": position, "balance": 0}}
+    return {"status": "ok", "data": {"position": position, "balance": balance}}
 
 
 @sio.on("wallet_disconnected")
@@ -49,6 +49,20 @@ async def wallet_disconnected(sid, data):
     if old_address:
         await sio.leave_room(sid, old_address)
     sid_to_addr[sid] = None
+    
+    
+@sio.on("withdraw")
+async def withdraw(sid, data):
+    addr = sid_to_addr[sid]
+    
+    w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
+    try:
+        withdrawn = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)\
+                      .functions.withdrawFull(addr).call()
+        
+        return {"status": "ok", "data": {"withdrawn": withdrawn}}
+    except:
+        return {"status": "error"}
 
 
 @sio.on("join_queue")
