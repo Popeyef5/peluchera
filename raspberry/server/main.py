@@ -17,7 +17,7 @@ S = 6
 D = 13
 
 # Define GPIO pins with signed values for cancellation logic
-PINS = {pass
+PINS = {
     1 << 0: A,  # Left
     1 << 1: D,   # Right
     1 << 2: W,   # Updata
