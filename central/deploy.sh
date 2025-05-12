@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Load env vars
-if [[-f ".env"]]; then
+if [[ -f ".env" ]]; then
+  echo "Loading environment variables..."
   set -a
   source .env
   set +a
@@ -69,10 +70,10 @@ else
 fi
 
 # Create certificates
-echo "Creating TLS certificates..."
 docker volume inspect "$CERTBOT_ETC_VOL" >/dev/null 2>&1 || docker volume create "$CERTBOT_ETC_VOL"
 docker volume inspect "$CERTBOT_WWW_VOL" >/dev/null 2>&1 || docker volume create "$CERTBOT_WWW_VOL"
 
+echo "Creating TLS certificates..."
 docker run --rm --network host \
   -v "$CERTBOT_ETC_VOL:/etc/letsencrypt" \
   certbot/certbot certonly \
