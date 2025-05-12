@@ -70,6 +70,9 @@ fi
 
 # Create certificates
 echo "Creating TLS certificates..."
+docker volume inspect "$CERTBOT_ETC_VOL" >/dev/null 2>&1 || docker volume create "$CERTBOT_ETC_VOL"
+docker volume inspect "$CERTBOT_WWW_VOL" >/dev/null 2>&1 || docker volume create "$CERTBOT_WWW_VOL"
+
 docker run --rm --network host \
   -v "$CERTBOT_ETC_VOL:/etc/letsencrypt" \
   certbot/certbot certonly \
@@ -92,7 +95,7 @@ docker run --rm -v "$CERTBOT_ETC_VOL:/etc/letsencrypt" \
 ) | sudo crontab -
 
 # Build and run the Docker containers from the app directory (~/myapp)
-cd $APP_DIR
+cd $COMPSOSE_DIR
 sudo docker-compose up --build -d
 
 # Check if Docker Compose started correctly
