@@ -16,6 +16,7 @@ services:
       - claw_network
     
   proxy:
+    container_name: claw_proxy
     image: nginx:latest
     ports:
       - '80:80'

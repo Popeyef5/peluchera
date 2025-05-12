@@ -20,6 +20,11 @@ FROM base AS runner
 RUN npm install -g pnpm
 WORKDIR /code
 ENV NODE_ENV=production
+
+# bring in the prod deps so `next` exists
+COPY --from=deps /code/node_modules ./node_modules
+COPY package.json pnpm-lock.yaml ./
+
 COPY --from=builder /code/public ./public
 COPY --from=builder /code/.next/standalone ./
 COPY --from=builder /code/.next/static ./.next/static
