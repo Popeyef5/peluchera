@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Env Vars
-POSTGRES_USER="myuser"
-POSTGRES_PASSWORD=$(openssl rand -base64 12)  # Generate a random 12-character password
-POSTGRES_DB="mydatabase"
-DOMAIN_NAME="cryptoclaw.xyz" # replace with your own
-EMAIL="rehab@cryptoclaw.xyz" # replace with your own
+# Load env vars
+if [[-f ".env"]]; then
+  set -a
+  source .env
+  set +a
+fi
 
 # Script Vars
 REPO_URL="https://github.com/Popeyef5/peluchera"
@@ -68,56 +68,28 @@ else
   cd $APP_DIR
 fi
 
-# For Docker internal communication ("db" is the name of Postgres container)
-DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@db:5432/$POSTGRES_DB"
+# Create certificates
+echo "Creating TLS certificates..."
+docker run --rm --network host \
+  -v "$CERTBOT_ETC_VOL:/etc/letsencrypt" \
+  certbot/certbot certonly \
+    --standalone \
+    -d "$DOMAIN_NAME" \
+    -m "$EMAIL" --agree-tos --no-eff-email --preferred-challenges http --quiet
 
-# For external tools (like Drizzle Studio)
-DATABASE_URL_EXTERNAL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5432/$POSTGRES_DB"
+# Pull strong-crypto snippets into the volume
+docker run --rm -v "$CERTBOT_ETC_VOL:/etc/letsencrypt" \
+  alpine sh -c 'apk add -q wget openssl && \
+  [ -f /etc/letsencrypt/options-ssl-nginx.conf ] || \
+  wget -qO /etc/letsencrypt/options-ssl-nginx.conf \
+    https://raw.githubusercontent.com/certbot/certbot/main/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf && \
+  [ -f /etc/letsencrypt/ssl-dhparams.pem ] || \
+  openssl dhparam -out /etc/letsencrypt/ssl-dhparams.pem 2048'
 
-# Create the .env file inside the app directory (~/myapp/.env)
-echo "POSTGRES_USER=$POSTGRES_USER" > "$APP_DIR/.env"
-echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> "$APP_DIR/.env"
-echo "POSTGRES_DB=$POSTGRES_DB" >> "$APP_DIR/.env"
-echo "DATABASE_URL=$DATABASE_URL" >> "$APP_DIR/.env"
-echo "DATABASE_URL_EXTERNAL=$DATABASE_URL_EXTERNAL" >> "$APP_DIR/.env"
-
-# These are just for the demo of env vars
-echo "SECRET_KEY=$SECRET_KEY" >> "$APP_DIR/.env"
-echo "NEXT_PUBLIC_SAFE_KEY=$NEXT_PUBLIC_SAFE_KEY" >> "$APP_DIR/.env"
-
-# Install Nginx
-sudo apt install nginx -y
-
-# Remove old Nginx config (if it exists)
-sudo rm -f /etc/nginx/sites-available/myapp
-sudo rm -f /etc/nginx/sites-enabled/myapp
-
-# Stop Nginx temporarily to allow Certbot to run in standalone mode
-sudo systemctl stop nginx
-
-# Obtain SSL certificate using Certbot standalone mode
-sudo apt install certbot -y
-sudo certbot certonly --standalone -d $DOMAIN_NAME --non-interactive --agree-tos -m $EMAIL
-
-# Ensure SSL files exist or generate them
-if [ ! -f /etc/letsencrypt/options-ssl-nginx.conf ]; then
-  sudo wget https://raw.githubusercontent.com/certbot/certbot/main/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf -P /etc/letsencrypt/
-fi
-
-if [ ! -f /etc/letsencrypt/ssl-dhparams.pem ]; then
-  sudo openssl dhparam -out /etc/letsencrypt/ssl-dhparams.pem 2048
-fi
-
-# Create Nginx config with reverse proxy, SSL support, rate limiting, and streaming support
-sudo cat > /etc/nginx/sites-available/myapp <<EOL
-
-EOL
-
-# Create symbolic link if it doesn't already exist
-sudo ln -s /etc/nginx/sites-available/myapp /etc/nginx/sites-enabled/myapp
-
-# Restart Nginx to apply the new configuration
-sudo systemctl restart nginx
+# Certificate renewal
+( sudo crontab -l 2>/dev/null; \
+  echo "0 3 * * * docker run --rm -v $CERTBOT_ETC_VOL:/etc/letsencrypt -v $CERTBOT_WWW_VOL:/var/www/certbot certbot/certbot renew --webroot -w /var/www/certbot --quiet && docker compose -f $COMPOSE_NGINX exec nginx nginx -s reload" \
+) | sudo crontab -
 
 # Build and run the Docker containers from the app directory (~/myapp)
 cd $APP_DIR

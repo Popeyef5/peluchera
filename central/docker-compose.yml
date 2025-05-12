@@ -1,17 +1,35 @@
 services:
-  rtmp:
-    image: alfg/nginx-rtmp
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: claw_media 
+    restart: unless-stopped
+    ports:
+      - '1935:1935'
+      - '8554:8554'
+      - '8888:8888'
+      - '8889:8889'
+      - '8890:8890/udp'
+      - '8189:8189/udp'
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml
+    networks:
+      - claw_network
     
-  nginx:
-    image: nginx
+  proxy:
+    image: nginx:latest
     ports:
       - '80:80'
     depends_on:
       - next
       - fastapi
       - db
-    
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf 
+    networks:
+      - claw_network
+  
   next:
+    container_name: claw_next
     build: ./next
     expose:
       - '3000'
@@ -33,12 +51,13 @@ services:
     ports:
       - '5432:5432'
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - claw_postgres_data:/var/lib/postgresql/data
     networks:
       - claw_network
     env_file: .env
 
   fastapi:
+    container_name: claw_fastapi
     build: ./fastapi
     expose:
       - '5000'
@@ -47,7 +66,11 @@ services:
       - claw_network
 
 volumes:
-  postgres_data:
+  claw_postgres_data:
+  claw_certbot_etc:
+    external: true
+  claw_certbot_www:
+    external: true
 
 networks:
   claw_network:

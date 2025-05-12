@@ -13,3 +13,13 @@ async def connect_pi():
         except Exception as e:
             log.warning("Pi connect error: %s", e)
             await asyncio.sleep(5)
+            
+            
+@pi_client.on("turn_end")
+async def turn_end(data):
+    pass
+
+
+@pi_client.on("win")
+async def on_turn_win(data):
+    pass
