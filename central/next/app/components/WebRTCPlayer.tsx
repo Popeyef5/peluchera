@@ -24,7 +24,7 @@ export default function WebRTCPlayer() {
       const ReaderCtor = (window as unknown as { MediaMTXWebRTCReader: typeof window.MediaMTXWebRTCReader }).MediaMTXWebRTCReader;
 
       readerRef.current = new ReaderCtor({
-        url: 'http://cryptoclaw.xyz:8889/video_feed/whep',
+        url: 'https://cryptoclaw.xyz/video_feed/whep',
         onError: (err: string) => {
           const msg = document.getElementById('message');
           if (msg) msg.innerText = err;
