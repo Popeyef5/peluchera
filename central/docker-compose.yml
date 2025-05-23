@@ -32,6 +32,8 @@ services:
       - claw_certbot_www:/var/www/letsencrypt
     networks:
       - claw_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   
   next:
     container_name: claw_next

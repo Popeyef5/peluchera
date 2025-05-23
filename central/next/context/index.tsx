@@ -18,7 +18,7 @@ if (!projectId) {
 const metadata = {
   name: 'Claw',
   description: 'Claw Example',
-  url: 'http://localhost', // origin must match your domain & subdomain
+  url: 'https://cryptoclaw.xyz', // origin must match your domain & subdomain
   icons: ['https://avatars.githubusercontent.com/u/179229932']
 }
 
@@ -29,6 +29,9 @@ const modal = createAppKit({
   networks: [baseSepolia],
   defaultNetwork: baseSepolia,
   metadata: metadata,
+  featuredWalletIds: [
+    "fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa"
+  ],
   features: {
     analytics: false, // Optional - defaults to your Cloud configuration,
     socials: false,
