@@ -2,7 +2,7 @@ import os
 
 # Central place for env-vars and project constants
 FRAME_RATE           = 0.1
-TURN_DURATION        = 60
+TURN_DURATION        = 30
 INTER_TURN_DELAY     = 3
 SYNC_PERIOD          = 15
 

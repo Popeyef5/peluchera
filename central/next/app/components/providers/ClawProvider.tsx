@@ -91,7 +91,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		socket.emit('wallet_connected', { address }, (res: { status: string, data: PersonalSyncData }) => {
 			if (res.status === "ok") {
 				setPosition(res.data.position);
-        console.log(res.data);
+				setAccountBalance(res.data.balance)
+				console.log(res.data);
 			}
 		});
 	}, [address, socket]);
@@ -121,6 +122,14 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		const onPersonalSync = (data: PersonalSyncData) => {
 			setPosition(data.position);
 		}
+		const onRoundEnd = () => {
+			socket.emit(
+				'check_balance',
+				(r: { status: string; balance: number }) => {
+					if (r.status === 'ok') setAccountBalance(r.balance);
+				},
+			);
+		}
 		const onAccountBalance = (data: AccountBalanceData) => {
 			setAccountBalance(data.balance);
 		}
@@ -131,7 +140,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		socket.on('turn_end', onTurnEnd);
 		socket.on('global_sync', onGlobalSync)
 		socket.on('personal_sync', onPersonalSync);
-		socket.on('balance', onAccountBalance)
+		socket.on('balance', onAccountBalance);
+		socket.on('round_end', onRoundEnd);
 
 		return () => {
 			socket.off('player_queued', onPlayerQueued);
@@ -141,6 +151,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			socket.off('global_sync', onGlobalSync);
 			socket.off('personal_sync', onPersonalSync);
 			socket.off('balance', onAccountBalance);
+			socket.off('round_end', onRoundEnd);
 		};
 	}, [socket]);
 

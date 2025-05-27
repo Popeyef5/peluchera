@@ -24,6 +24,16 @@ async def web3_listener():
             amount = evt["args"]["amount"]
             game_state[0] += amount
             await sio.emit("game_state", {"state": game_state})
+            
+        async def _player_win(ctx: LogsSubscriptionContext):
+            evt = claw.events.PlayerWin().process_log(ctx.result)
+            amount = evt["args"]["amount"]
+            game_state[1] += amount
+            await sio.emit("game_state", {"state": game_state})
+        
+        async def _round_end(ctx: LogsSubscriptionContext):
+            game_state[:] = await claw.functions.gameState().call()
+            await sio.emit("game_state", {"state": game_state})
 
         await w3.subscription_manager.subscribe([
             LogsSubscription(
@@ -31,6 +41,18 @@ async def web3_listener():
                 address=claw.address,
                 topics=[claw.events.PlayerBet().topic],
                 handler=_player_bet,
+            ),
+            LogsSubscription(
+                label="player-win",
+                address=claw.address,
+                topics=[claw.events.PlayerWin().topic],
+                handler=_player_win,
+            ),
+            LogsSubscription(
+                label="round-end",
+                address=claw.address,
+                topics=[claw.events.RoundEnd().topic],
+                handler=_round_end,
             ),
             # ... add others here
         ])

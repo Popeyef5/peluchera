@@ -63,7 +63,19 @@ async def withdraw(sid, data):
         return {"status": "ok", "data": {"withdrawn": withdrawn}}
     except:
         return {"status": "error"}
+    
 
+@sio.on("ckeck_balance")
+async def check_balance(sid, data):
+    addr = sid_to_addr[sid]
+
+    w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
+    try:
+        balance = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)\
+                      .functions.getTotalBalance(addr).call()
+        return {"status": "ok", "balance": balance}       
+    except:
+        return {"status": "error", "balance": -1}
 
 @sio.on("join_queue")
 async def join_queue(sid, data):

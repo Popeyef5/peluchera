@@ -1,6 +1,6 @@
 import { erc20Abi } from "viem";
 
-export const clawAddress = (process.env.CLAW_CONTRACT_ADDRESS || "0xeE8945dA349763bed684493b3e86fBC2243A34CD") as `0x${string}`;
+export const clawAddress = (process.env.CLAW_CONTRACT_ADDRESS || "0x479dfc31B831DED6cF099CAe7eE74C595942c181") as `0x${string}`;
 export const USDCAddress = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
 export const clawABI = [
