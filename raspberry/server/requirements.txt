@@ -1,3 +1,4 @@
 python-socketio
 RPi.GPIO
 uvicorn
+pigpio
