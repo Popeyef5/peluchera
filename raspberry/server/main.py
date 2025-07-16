@@ -1,3 +1,4 @@
+import asyncio
 import socketio
 import logging
 # import RPi.GPIO as GPIO
@@ -79,17 +80,20 @@ def on_turn_start(data):
     # time.sleep(0.1)
     # GPIO.output(W, GPIO.LOW)
     
+def prize_won(gpio, level, tick):
+    if level == 0:
+        log.info("Prize won")
+        loop.call_soon_threadsafe(
+            asyncio.create_task, sio.emit("prize_won")
+        )
 
 def turn_end(gpio, level, tick):
     if level == 1:
-        sio.emit("turn_end")
+        log.info("Turn end")
+        loop.call_soon_threadsafe(
+            asyncio.create_task, sio.emit("turn_end")
+        )
         
-
-def prize_won(gpio, level, tick):
-    if level == 0:
-        sio.emit("prize_won")
-        
-
 pi.callback(BB, pigpio.FALLING_EDGE, prize_won)
 pi.callback(CLAW, pigpio.RISING_EDGE, turn_end)
 

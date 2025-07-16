@@ -5,6 +5,7 @@ services:
       - /dev/gpiomem:/dev/gpiomem
     expose:
       - '5000'
+    network_mode: "host"
     restart: always
     
   ffmpeg:
@@ -16,5 +17,8 @@ services:
   ngrok:
     image: ngrok/ngrok:latest
     restart: always
-    command: http socket:5000 --url=peluchera.ngrok.app
+    command: http localhost:5000 --url=peluchera.ngrok.app --config /etc/ngrok/ngrok.yml
     env_file: ./.env
+    network_mode: "host"
+    volumes:
+      - ./ngrok/ngrok.yml:/etc/ngrok/ngrok.yml

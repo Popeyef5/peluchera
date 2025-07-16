@@ -2,3 +2,4 @@ python-socketio
 RPi.GPIO
 uvicorn
 pigpio
+asyncio
