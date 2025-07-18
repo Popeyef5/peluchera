@@ -31,7 +31,6 @@ OUTPUT_PINS = {
     1 << 5: COIN   # Credit
 }
 
-
 for pin in OUTPUT_PINS.values():
     pi.set_mode(pin, pigpio.OUTPUT)
     pi.write(pin, 0)
@@ -95,6 +94,11 @@ def turn_end(gpio, level, tick):
         loop.call_soon_threadsafe(
             asyncio.create_task, sio.emit("turn_end")
         )
+        time.sleep(0.5)
+        loop.call_soon_threadsafe(
+            asyncio.create_task, sio.emit("prize_won")
+        )
+        
         
 pi.callback(BB, pigpio.FALLING_EDGE, prize_won)
 pi.callback(CLAW, pigpio.RISING_EDGE, turn_end)
