@@ -43,7 +43,7 @@ for pin in (BB, CLAW):
     
 GLITCH = 100
 pi.set_glitch_filter(BB, GLITCH)         # kill sub-GLITCH blips
-pi.set_glitch_filter(CLAW, 10*GLITCH)
+pi.set_glitch_filter(CLAW, 100*GLITCH)
 
 # App setup
 sio  = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
@@ -64,6 +64,7 @@ def handle_movement(sid, data):
 
 @sio.on("turn_start")
 def on_turn_start(data):
+    log.info("Turn start")
     pi.wave_clear()
     pulses = [pigpio.pulse(1<<COIN, 0, 100_000),
               pigpio.pulse(0, 1<<COIN, 100_000),
@@ -88,15 +89,12 @@ def prize_won(gpio, level, tick):
             asyncio.create_task, sio.emit("prize_won")
         )
 
+
 def turn_end(gpio, level, tick):
     if level == 1:
         log.info("Turn end")
         loop.call_soon_threadsafe(
             asyncio.create_task, sio.emit("turn_end")
-        )
-        time.sleep(0.5)
-        loop.call_soon_threadsafe(
-            asyncio.create_task, sio.emit("prize_won")
         )
         
         
