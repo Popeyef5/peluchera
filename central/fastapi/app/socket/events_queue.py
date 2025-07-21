@@ -96,11 +96,11 @@ async def join_queue(sid, data):
 
         # on-chain
         loop = asyncio.get_running_loop()
-        ok = await safe_place_bet(loop, addr, amount, deadline, signature)
+        ok, key = await safe_place_bet(loop, addr, amount, deadline, signature)
         if not ok:
             return {"status": "error", "position": -1}
 
-        db.add(QueueEntry(address=addr, round_id=round_.id))
+        db.add(QueueEntry(address=addr, round_id=round_.id, key=key))
         await db.commit()
 
         qcount = await db.scalar(

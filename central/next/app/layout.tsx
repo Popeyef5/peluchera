@@ -5,6 +5,7 @@ import "./globals.css";
 import { headers } from "next/headers"
 import ContextProvider from "@/context";
 import ChakraProvider from "@/app/components/chakra/provider"
+import { Toaster } from "@/components/ui/toaster";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,6 +39,7 @@ export default async function RootLayout({
         <ContextProvider cookies={cookies}>
           <ChakraProvider>
             {children}
+            <Toaster/>
           </ChakraProvider>
         </ContextProvider>
       </body>

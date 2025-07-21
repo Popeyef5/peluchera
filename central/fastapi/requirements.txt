@@ -7,3 +7,5 @@ python-socketio
 requests
 sqlalchemy
 web3
+eth-abi
+eth-utils

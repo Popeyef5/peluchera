@@ -1,12 +1,13 @@
 'use client';
 
 import React, {
-	createContext, useCallback, useContext, useEffect, useState,
+	createContext, useCallback, useContext, useEffect, useState, useRef
 } from 'react';
 import { useSocket } from '@/app/components/providers/SocketProvider';
 import {
 	useAppKitAccount, useAppKitNetwork,
 } from '@reown/appkit/react';
+import { toaster } from "@/components/ui/toaster"
 import { USDCAddress, erc20WithPermitAbi, clawAddress } from '@/lib/crypto/contracts';
 import { readContract, signTypedData } from 'wagmi/actions';
 import { config } from '@/config';
@@ -74,12 +75,18 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	/* gameplay state */
 	const [queueCount, setQueueCount] = useState(0);
 	const [position, setPosition] = useState(-1);
+	const positionRef = useRef(position);
+	useEffect(() => { positionRef.current = position }, [position]);
 	const [isPlaying, setIsPlaying] = useState(false);
+	const isPlayingRef = useRef(isPlaying);
+	useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying]);
 	const [loading, setLoading] = useState(false);
 	const [betAmount, setBetAmount] = useState(1);
 	const [, setActiveKeys] = useState(0);
 	const [gameState, setGameState] = useState<[number, number]>([0, 0])
 	const [accountBalance, setAccountBalance] = useState<number>(0)
+	const toastId = useRef<string | null>(null);        // keep the id we get back
+	const timerId = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	/* wallet */
 	const { address } = useAppKitAccount();
@@ -100,19 +107,70 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	/* server events */
 	useEffect(() => {
 		const onPlayerQueued = () => setQueueCount((q) => q + 1);
+		// const onTurnStart = () => {
+		// 	setQueueCount((q) => Math.max(q - 1, 0));
+		// 	setPosition((p) => (p >= 0 ? p - 1 : p));
+		// 	setIsPlaying(false);
+		// 	setActiveKeys(0);
+		// };
+		// const onYourTurn = () => {
+		// 	setIsPlaying(true);
+		// };
 		const onTurnStart = () => {
-			setQueueCount((q) => Math.max(q - 1, 0));
-			setPosition((p) => (p >= 0 ? p - 1 : p));
-			setIsPlaying(false);
-			setActiveKeys(0);
-		};
-		const onYourTurn = () => {
-			setIsPlaying(true);
-		};
+			console.log("turn start");
+			console.log("position = ", positionRef.current)
+			setIsPlaying(positionRef.current === 0);
+			if (toastId.current) {
+				toaster.update(toastId.current, {
+					description: "Better luck next time!",
+					type: "error",
+					duration: 1000
+				})
+
+				toastId.current = null;
+			}
+		}
 		const onTurnEnd = () => {
+			console.log("turn end");
+			console.log("position = ", positionRef.current)
+			if (isPlayingRef.current) {
+				toastId.current = toaster.create({
+					description: "Checking result…",
+					type: "loading",      // shows spinner & neutral colour
+				});
+
+				// start fallback timer — go red if we hear nothing
+				timerId.current = setTimeout(() => {
+					if (!toastId.current) return;
+					toaster.update(toastId.current, {
+						description: "Better luck next time...",
+						type: "error",           // red colour scheme
+						duration: 6000,
+						closable: true,
+					});
+					toastId.current = null;
+				}, 6000);
+
+				/** listen ONCE for the outcome, then morph the same toast */
+				socket.once("player_win", () => {
+					if (timerId.current) clearTimeout(timerId.current);       // cancel fallback
+					if (!toastId.current) return;
+
+					toaster.update(toastId.current, {
+						description: "🎉 You won!",
+						type: "success",  // green / red skin
+						duration: 1000,
+						closable: true,
+					});
+
+					toastId.current = null;        // optional: clear ref
+				});
+			}
+			setQueueCount((q) => Math.max(q - 1, 0));
 			setIsPlaying(false);
 			setPosition((p) => (p >= 0 ? p - 1 : p));
 			setActiveKeys(0);
+			console.log(positionRef.current)
 		};
 		const onGlobalSync = (data: GlobalSyncData) => {
 			console.log(data.state);
@@ -136,7 +194,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 		socket.on('player_queued', onPlayerQueued);
 		socket.on('turn_start', onTurnStart);
-		socket.on('your_turn', onYourTurn);
+		// socket.on('your_turn', onYourTurn);
 		socket.on('turn_end', onTurnEnd);
 		socket.on('global_sync', onGlobalSync)
 		socket.on('personal_sync', onPersonalSync);
@@ -146,7 +204,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		return () => {
 			socket.off('player_queued', onPlayerQueued);
 			socket.off('turn_start', onTurnStart);
-			socket.off('your_turn', onYourTurn);
+			// socket.off('your_turn', onYourTurn);
 			socket.off('turn_end', onTurnEnd);
 			socket.off('global_sync', onGlobalSync);
 			socket.off('personal_sync', onPersonalSync);
@@ -235,6 +293,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 				'join_queue',
 				{ address, amount: Number(betAmount), deadline: Number(deadline), signature },
 				(r: { status: string; position: number }) => {
+					console.log("position in join queue callback");
+					console.log(r);
 					if (r.status === 'ok') setPosition(r.position);
 					setLoading(false);
 				},

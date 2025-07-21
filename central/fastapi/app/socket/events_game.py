@@ -7,7 +7,7 @@ from ..logging import log
 
 @sio.on("move")
 async def move(sid, data):
-    log.info(f"Received data: {data}")
+    # log.info(f"Received data: {data}")
     if state.sid_to_addr.get(sid) == state.current_player:
         await pi_client.emit("move", data)
     else:
