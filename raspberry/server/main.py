@@ -21,6 +21,13 @@ D = 13
 BB = 17
 CLAW = 27
 
+class GameState:
+    def __init__(self):
+        self.processing_turn = False
+
+
+game_state = GameState()
+
 # Define GPIO pins with signed values for cancellation logic
 OUTPUT_PINS = {
     1 << 0: A,  # Left
@@ -65,6 +72,7 @@ def handle_movement(sid, data):
 @sio.on("turn_start")
 def on_turn_start(data):
     log.info("Turn start")
+    game_state.processing_turn = False
     pi.wave_clear()
     pulses = [pigpio.pulse(1<<COIN, 0, 100_000),
               pigpio.pulse(0, 1<<COIN, 100_000),
@@ -84,15 +92,19 @@ loop = asyncio.get_event_loop()   # grab the main loop once
 
 def prize_won(gpio, level, tick):
     if level == 0:
+        if not game_state.processing_turn:
+            return
         log.info("Prize won")
         loop.call_soon_threadsafe(
             asyncio.create_task, sio.emit("prize_won")
         )
+        game_state.processing_turn = False
 
 
 def turn_end(gpio, level, tick):
     if level == 1:
         log.info("Turn end")
+        game_state.processing_turn = True
         loop.call_soon_threadsafe(
             asyncio.create_task, sio.emit("turn_end")
         )
