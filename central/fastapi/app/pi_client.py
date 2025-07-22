@@ -39,12 +39,11 @@ async def turn_end(*_):
       if not entry:
           state.current_key = None
           state.current_player = None
+          log.info("No pending turn")
           return
       
       entry.ended_at = datetime.utcnow()
       entry.status = "played"
-      log.info(f"KEY::::{entry.key}")
-      state.print_state()
       await db.commit()
      
       await sio.emit("turn_end")
@@ -64,6 +63,7 @@ async def turn_end(*_):
       state.current_player = entry.address
       state.current_key = entry.key
       state.last_start = datetime.utcnow()
+      log.info(f"Started turn {state.current_key} by player {state.current_player} from turn_end callback")
       await db.commit()
       
       await sio.emit("turn_start")
@@ -76,21 +76,20 @@ async def turn_end(*_):
   
 @pi_client.on("prize_won")
 async def on_turn_win(*_):
-    log.info("Player win!!")
-    state.print_state()
+        
+    key_str = state.current_key
+    if not key_str:
+        return
+    
+    bet_key = to_bytes(hexstr=key_str.replace("\\x", ""))
+    
+    log.info(f"Pi emitted player win. Player: {state.current_player}. Turn key: {bet_key}")
     await sio.emit("player_win")
     
     w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
     contract = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
     owner = w3.eth.account.from_key(PRIVATE_KEY).address
-    
-    key_str = state.current_key
-    if not key_str:
-        return
-    
-    # key from your DB
-    bet_key = to_bytes(hexstr=key_str.replace("\\x", ""))
-    
+
     # build transaction
     txn = contract.functions.notifyWin(bet_key).build_transaction({
         "from": owner,
@@ -105,9 +104,9 @@ async def on_turn_win(*_):
     
     # check result
     if receipt.status == 1:
-        log.info("✅ Win successfully notified!")
+        log.info(f"Win on {state.current_key} successfully notified!")
     else:
-        log.info("❌ Transaction failed.")
+        log.info(f"Win notification transaction on turn {state.current_key} failed.")
     
     
 @pi_client.event

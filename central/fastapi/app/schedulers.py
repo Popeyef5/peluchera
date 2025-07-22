@@ -23,6 +23,7 @@ async def turn_scheduler():
             if entry:
                 entry.status, entry.ended_at = "played", datetime.utcnow()
                 await db.commit()
+                log.info("Cleaned old entry on startup")
             else:
                 break
 
@@ -41,7 +42,7 @@ async def turn_scheduler():
                 .where(QueueEntry.address == state.current_player)
             )
             if old_entry:
-              log.info("Cleaning up old entry...")
+              log.info("Cleaning up old entry in scheduler... This should not happen")
               old_entry.ended_at = datetime.utcnow()
               old_entry.status = "played"
             await db.commit()
@@ -70,15 +71,13 @@ async def turn_scheduler():
             state.current_player = new_entry.address
             state.current_key = new_entry.key
             state.last_start = datetime.utcnow()
-            state.print_state()
             # And launch the next one
             await sio.emit("turn_start")
             await pi_client.emit("turn_start")
 
             new_entry.played_at = datetime.utcnow()
             await db.commit()
-
-        await asyncio.sleep(TURN_DURATION)
+            log.info(f"Started turn {state.current_key} by player {state.current_player} from the scheduler")
 
 
 async def sync_scheduler():
