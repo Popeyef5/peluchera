@@ -123,4 +123,4 @@ async def disconnect():
 # optional: log each attempt
 @pi_client.event
 async def reconnect():
-    log.debug("Reconnecting to Pi...")
+    log.warning("Reconnecting to Pi...")
