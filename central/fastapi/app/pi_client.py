@@ -53,18 +53,20 @@ async def turn_end(*_):
           .order_by(QueueEntry.created_at.asc())
       )
       if not new_entry:
+          await sio.emit("turn_end")
+          await asyncio.sleep(INTER_TURN_DELAY)
           state.current_player = None
           state.current_key = None
-          sio.emit("turn_end")
           log.info("No pending turn")
           return
   
       new_entry.status = "active"
-      state.current_player = new_entry.address
-      state.current_key = new_entry.key
+      await db.commit()
       await sio.emit("turn_end")
       
       await asyncio.sleep(INTER_TURN_DELAY)
+      state.current_player = new_entry.address
+      state.current_key = new_entry.key
       state.last_start = datetime.utcnow()
       
       await sio.emit("turn_start")
