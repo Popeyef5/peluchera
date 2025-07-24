@@ -112,10 +112,13 @@ async def on_turn_win(*_):
 @pi_client.event
 async def connect():
     log.info("Pi socket CONNECTED (reconnect OK)")
+    log.info(f"Connected namespaces: {pi_client.namespaces}")
+
 
 @pi_client.event
 async def disconnect():
     log.warning("Pi socket DISCONNECTED – will retry...")
+
 
 # optional: log each attempt
 @pi_client.event
