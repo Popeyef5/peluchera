@@ -62,14 +62,15 @@ async def turn_scheduler():
             
             await db.commit()
             
+            new_entry.status = "active"
+            await db.commit()
             await sio.emit("turn_end")
+            state.current_player = new_entry.address
+            state.current_key = new_entry.key
         
             # Wait between turns
             await asyncio.sleep(INTER_TURN_DELAY)
             
-            new_entry.status = "active"
-            state.current_player = new_entry.address
-            state.current_key = new_entry.key
             state.last_start = datetime.utcnow()
             # And launch the next one
             await sio.emit("turn_start")

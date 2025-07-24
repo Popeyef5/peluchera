@@ -17,7 +17,6 @@ async def connect_pi():
     while True:
         try:
             await pi_client.connect(PI_SERVER_URL)
-            log.info("Pi socket connected")
             break
         except Exception as e:
             log.warning("Pi connect error: %s", e)
@@ -31,47 +30,48 @@ async def turn_end(*_):
   log.info("Pi informed turn end")
   async with _turn_lock:         # prevent overlapping turn transitions
     async with async_session() as db:
-      entry = await db.scalar(
+      old_entry = await db.scalar(
           select(QueueEntry)
           .where(QueueEntry.status == "active")
           .where(QueueEntry.address == state.current_player)
       )
-      if not entry:
+      if not old_entry:
           state.current_key = None
           state.current_player = None
-          log.info("No pending turn")
+          log.waring("This should not happen, turn ended reported by pi and no player was playing")
           return
       
-      entry.ended_at = datetime.utcnow()
-      entry.status = "played"
+      old_entry.ended_at = datetime.utcnow()
+      old_entry.status = "played"
       await db.commit()
-     
-      await sio.emit("turn_end")
-      await asyncio.sleep(INTER_TURN_DELAY)
+      
+
     
-      entry = await db.scalar(
+      new_entry = await db.scalar(
           select(QueueEntry)
           .where(QueueEntry.status == "queued")
           .order_by(QueueEntry.created_at.asc())
       )
-      if not entry:
+      if not new_entry:
           state.current_player = None
           state.current_key = None
+          sio.emit("turn_end")
+          log.info("No pending turn")
           return
   
-      entry.status = "active"
-      state.current_player = entry.address
-      state.current_key = entry.key
+      new_entry.status = "active"
+      state.current_player = new_entry.address
+      state.current_key = new_entry.key
+      await sio.emit("turn_end")
+      
+      await asyncio.sleep(INTER_TURN_DELAY)
       state.last_start = datetime.utcnow()
-      log.info(f"Started turn {state.current_key} by player {state.current_player} from turn_end callback")
-      await db.commit()
       
       await sio.emit("turn_start")
-      # await sio.emit("your_turn", room=entry.address)
       await pi_client.emit("turn_start")
-  
-      entry.played_at = datetime.utcnow()
+      new_entry.played_at = datetime.utcnow()
       await db.commit()
+      log.info(f"Started turn {state.current_key} by player {state.current_player} from turn_end callback")
     
   
 @pi_client.on("prize_won")
