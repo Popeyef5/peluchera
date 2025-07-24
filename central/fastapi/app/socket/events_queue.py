@@ -99,6 +99,7 @@ async def join_queue(sid, data):
         loop = asyncio.get_running_loop()
         ok, key = await safe_place_bet(loop, addr, amount, deadline, signature)
         if not ok:
+            log.warning("Rejected entry by %s because bet placing threw an error" % addr)
             return {"status": "error", "position": -1}
 
         db.add(QueueEntry(address=addr, round_id=round_.id, key=key))
