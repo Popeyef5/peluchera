@@ -92,6 +92,7 @@ async def join_queue(sid, data):
             .where(QueueEntry.status.in_(["queued", "active"]))
         )
         if in_queue:
+            log.warning("Rejected player %s for double entry" % addr)
             return {"status": "error", "position": -1}
 
         # on-chain
