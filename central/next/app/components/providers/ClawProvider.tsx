@@ -32,6 +32,7 @@ const ACTION_TO_KEY = {
 interface GlobalSyncData {
 	state: [number, number];
 	queue_length: number;
+	con: boolean;
 }
 
 interface PersonalSyncData {
@@ -39,8 +40,12 @@ interface PersonalSyncData {
 	balance: number;
 }
 
-interface PersonalSyncData {
-	position: number;
+// interface PersonalSyncData {
+// 	position: number;
+// }
+
+interface clawConnectionData {
+	con: boolean;
 }
 
 interface AccountBalanceData {
@@ -55,6 +60,7 @@ interface ClawCtx {
 	betAmount: number;
 	gameState: [number, number];
 	accountBalance: number;
+	clawSocketOn: boolean;
 	setBetAmount: (v: number) => void;
 	press: (a: keyof typeof ACTION_TO_KEY) => void;
 	release: (a: keyof typeof ACTION_TO_KEY) => void;
@@ -87,6 +93,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [accountBalance, setAccountBalance] = useState<number>(0)
 	const toastId = useRef<string | null>(null);        // keep the id we get back
 	const timerId = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [clawSocketOn, setClawSocketOn] = useState(false);
 
 	/* wallet */
 	const { address } = useAppKitAccount();
@@ -176,9 +183,13 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			console.log(data.state);
 			setGameState(data.state);
 			setQueueCount(data.queue_length);
+			setClawSocketOn(data.con);
 		}
 		const onPersonalSync = (data: PersonalSyncData) => {
 			setPosition(data.position);
+		}
+		const onClawSocketConnectionChange = (data: clawConnectionData) => {
+			setClawSocketOn(data.con);
 		}
 		const onRoundEnd = () => {
 			socket.emit(
@@ -194,7 +205,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 		socket.on('player_queued', onPlayerQueued);
 		socket.on('turn_start', onTurnStart);
-		// socket.on('your_turn', onYourTurn);
+		socket.on('claw_connection_change', onClawSocketConnectionChange);
 		socket.on('turn_end', onTurnEnd);
 		socket.on('global_sync', onGlobalSync)
 		socket.on('personal_sync', onPersonalSync);
@@ -320,6 +331,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		betAmount,
 		gameState,
 		accountBalance,
+		clawSocketOn,
 		setBetAmount,
 		press,
 		release,

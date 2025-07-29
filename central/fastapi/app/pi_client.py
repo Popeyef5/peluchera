@@ -24,6 +24,21 @@ async def connect_pi():
             
            
 _turn_lock = asyncio.Lock()   # serialize turn transitions
+
+async def safe_pi_emit(event):
+    """
+    Emit to the Pi client only when the connection is healthy.
+    Returns True on success, False otherwise.
+    """
+    if state.pi_connected and state.pi_namespace_ok:
+        try:
+            await pi_client.emit(event)
+            return True
+        except Exception as e:
+            log.warning("pi_client emit failed: %s", e)
+    log.warning(f"pi_client emit failed due to connectivity issues. Connected: {state.pi_connected}. Namespace ok: {state.pi_namespace_ok}")
+    return False
+
  
 @pi_client.on("turn_end")
 async def turn_end(*_):
@@ -34,24 +49,23 @@ async def turn_end(*_):
           select(QueueEntry)
           .where(QueueEntry.status == "active")
           .where(QueueEntry.address == state.current_player)
-      )
-      if not old_entry:
-          state.current_key = None
-          state.current_player = None
-          log.waring("This should not happen, turn ended reported by pi and no player was playing")
-          return
+      ) 
       
-      old_entry.ended_at = datetime.utcnow()
-      old_entry.status = "played"
-      await db.commit()
-      
-
-    
       new_entry = await db.scalar(
           select(QueueEntry)
           .where(QueueEntry.status == "queued")
           .order_by(QueueEntry.created_at.asc())
       )
+      
+      if not old_entry:
+          state.current_key = None
+          state.current_player = None
+          log.warning("This should not happen, turn ended reported by pi and no player was playing")
+      else:
+          old_entry.ended_at = datetime.utcnow()
+          old_entry.status = "played"
+          await db.commit()
+   
       if not new_entry:
           await sio.emit("turn_end")
           await asyncio.sleep(INTER_TURN_DELAY)
@@ -70,7 +84,7 @@ async def turn_end(*_):
       state.last_start = datetime.utcnow()
       
       await sio.emit("turn_start")
-      await pi_client.emit("turn_start")
+      await safe_pi_emit("turn_start")
       new_entry.played_at = datetime.utcnow()
       await db.commit()
       log.info(f"Started turn {state.current_key} by player {state.current_player} from turn_end callback")
@@ -113,12 +127,17 @@ async def on_turn_win(*_):
     
 @pi_client.event
 async def connect():
+    ns_ok = "/" in pi_client.namespaces
+    state.set_pi_status(True, ns_ok)
+    await sio.emit("claw_connection_change", {"con": ns_ok})
     log.info("Pi socket CONNECTED (reconnect OK)")
     log.info(f"Connected namespaces: {pi_client.namespaces}")
 
 
 @pi_client.event
 async def disconnect():
+    state.set_pi_status(False, False)
+    await sio.emit("claw_connection_change", {"con": False})
     log.warning("Pi socket DISCONNECTED – will retry...")
 
 

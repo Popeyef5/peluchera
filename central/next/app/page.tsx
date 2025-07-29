@@ -20,7 +20,7 @@ const HUD: React.FC = () => {
   const { address, isConnected } = useAppKitAccount();
   const {
     queueCount, position, isPlaying, loading,
-    approveAndBet, withdraw, gameState, accountBalance
+    approveAndBet, withdraw, gameState, accountBalance, clawSocketOn
   } = useClaw();
   const { open: isOpen, onToggle } = useDisclosure();
   const [showAccount, setShowAccount] = useState(false);
@@ -60,7 +60,7 @@ const HUD: React.FC = () => {
       <HStack w="100%" justify="space-between" p={4}>
         <Box>
           Queue: {queueCount} | Position: {position} | Playing: {isPlaying ? 'yes' : 'no'}
-          {' '}| Game State: Bet: {gameState[0]} Won: {gameState[1]}
+          {' '}| Game State: Bet: {gameState[0]} Won: {gameState[1]} | Claw socket: {clawSocketOn ? "on" : "off"}
         </Box>
         {/* {isConnected && (
           <Button onClick={() => open()} borderRadius="24px">

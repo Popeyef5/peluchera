@@ -9,30 +9,16 @@ from .models import QueueEntry
 from .deps import async_session
 from .socket.sio_instance import sio
 from .logging import log
-from .pi_client import pi_client
+from .pi_client import pi_client, safe_pi_emit
 from .config import TURN_DURATION, INTER_TURN_DELAY, SYNC_PERIOD
 from .state import global_sync
 
-async def turn_scheduler():
-    # clean up any partially-played entry
-    while True:
-        async with async_session() as db:
-            entry = await db.scalar(
-                select(QueueEntry).where(QueueEntry.status == "active")
-            )
-            if entry:
-                entry.status, entry.ended_at = "played", datetime.utcnow()
-                await db.commit()
-                log.info("Cleaned old entry on startup")
-            else:
-                break
+async def _turn_scheduler_loop():
 
-    # main loop
-    while True:
         # If a turn is being played, rest
         if (datetime.utcnow() - state.last_start).total_seconds() < TURN_DURATION + INTER_TURN_DELAY:
             await asyncio.sleep(1)
-            continue
+            return
         
         # Last game was over TURN_DURATION seconds ago? let's end any game that might have been left pending
         async with async_session() as db:
@@ -58,9 +44,7 @@ async def turn_scheduler():
                 state.current_player = None
                 state.current_key = None
                 await asyncio.sleep(INTER_TURN_DELAY)
-                continue
-            
-            await db.commit()
+                return
             
             new_entry.status = "active"
             await db.commit()
@@ -74,11 +58,33 @@ async def turn_scheduler():
             state.last_start = datetime.utcnow()
             # And launch the next one
             await sio.emit("turn_start")
-            await pi_client.emit("turn_start")
+            await safe_pi_emit("turn_start")
 
             new_entry.played_at = datetime.utcnow()
             await db.commit()
             log.info(f"Started turn {state.current_key} by player {state.current_player} from the scheduler")
+
+
+async def turn_scheduler():    # clean up any partially-played entry
+    while True:
+        async with async_session() as db:
+            entry = await db.scalar(
+                select(QueueEntry).where(QueueEntry.status == "active")
+            )
+            if entry:
+                entry.status, entry.ended_at = "played", datetime.utcnow()
+                await db.commit()
+                log.info("Cleaned old entry on startup")
+            else:
+                break
+
+    # main loop
+    while True:
+        try:
+            await _turn_scheduler_loop()
+        except Exception as e:
+            log.exception(f"turn_scheduler crashed: {e}")
+            await asyncio.sleep(1)          # brief pause before retrying
 
 
 async def sync_scheduler():
