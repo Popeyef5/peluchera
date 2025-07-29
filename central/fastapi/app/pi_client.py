@@ -32,7 +32,7 @@ async def safe_pi_emit(event, data=None):
     """
     if state.pi_connected and state.pi_namespace_ok:
         try:
-            await pi_client.emit(event, data or {})
+            await pi_client.emit(event, data=data)
             return True
         except Exception as e:
             log.warning("pi_client emit failed: %s", e)
