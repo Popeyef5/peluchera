@@ -25,14 +25,14 @@ async def connect_pi():
            
 _turn_lock = asyncio.Lock()   # serialize turn transitions
 
-async def safe_pi_emit(event):
+async def safe_pi_emit(event, data=None):
     """
     Emit to the Pi client only when the connection is healthy.
     Returns True on success, False otherwise.
     """
     if state.pi_connected and state.pi_namespace_ok:
         try:
-            await pi_client.emit(event)
+            await pi_client.emit(event, data or {})
             return True
         except Exception as e:
             log.warning("pi_client emit failed: %s", e)
