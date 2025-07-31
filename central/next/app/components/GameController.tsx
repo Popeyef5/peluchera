@@ -8,7 +8,19 @@ type KbdProps =
   React.ButtonHTMLAttributes<HTMLButtonElement>; // onMouseDown, disabled, etc.
 
 export const Kbd: React.FC<KbdProps> = ({ children, ...props }) => {
-  return <Flex as="button" fontFamily="auto" align="center" justify="center" border="0.25rem solid black" h={4} w={4} p={6} borderRadius="md" fontSize="4xl" {...props}>
+  return <Flex
+    as="button"
+    fontFamily="auto"
+    align="center"
+    justify="center"
+    border={{ base: "0.25rem solid black", _dark: "0.25rem solid white" }}
+    h={4}
+    w={4}
+    p={6}
+    borderRadius="md"
+    fontSize="4xl"
+    {...props}
+  >
     {children}
   </Flex>
 }
@@ -44,9 +56,9 @@ const GameController: React.FC = () => {
       </Grid>
       <Button
         h={28}
-        color="black"
-        bg="white"
-        border="0.25rem solid black"
+        color={{ base: "black", _dark: "white" }}
+        bg={{ base: "white", _dark: "black" }}
+        border={{ base: "0.25rem solid black", _dark: "0.25rem solid white" }}
         borderRadius="full"
         aspectRatio={1}
         fontSize="2xl"

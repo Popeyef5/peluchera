@@ -12,6 +12,8 @@ import { USDCAddress, erc20WithPermitAbi, clawAddress } from '@/lib/crypto/contr
 import { readContract, signTypedData } from 'wagmi/actions';
 import { config } from '@/config';
 import { types } from '@/lib/crypto/permit';
+import confetti from "canvas-confetti";
+import celebrate from '@/components/confetti';
 
 /* bit‑mask helpers */
 const KEYMAP: Record<string, number> = {
@@ -204,6 +206,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 					if (!toastId.current) return;
 
 					setRoundWon((w) => w + 1);
+
+					celebrate()
 
 					toaster.update(toastId.current, {
 						description: "🎉 You won!",

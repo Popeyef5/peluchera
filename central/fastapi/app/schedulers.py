@@ -117,7 +117,7 @@ async def sync_scheduler():
 
 async def round_end_scheduler():
   while True:
-    await asyncio.sleep(24*3600)
+    await asyncio.sleep(3600)
     try:           
       w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
       contract = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)

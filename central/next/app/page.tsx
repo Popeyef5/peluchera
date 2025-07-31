@@ -14,10 +14,9 @@ import { FramedLayoutCard } from '@/components/ui/framedLayoutCard';
 import Rules from '@/components/rules';
 import { InfoTip } from '@/components/ui/toggle-tip';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ColorModeButton } from '@/components/ui/color-mode';
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
-
-
 
 /* ───────── HUD ───────── */
 const HUD: React.FC = () => {
@@ -72,7 +71,7 @@ const HUD: React.FC = () => {
             {address?.slice(0, 6)}…{address?.slice(-4)}
           </Button>
         )} */}
-        <Box />
+        <ColorModeButton />
         {isConnected && (
           <Box position="relative" h="full">
             <Flex
@@ -80,14 +79,14 @@ const HUD: React.FC = () => {
               position="absolute"
               top={0}
               right={0}
-              bg="black"
-              color="white"
+              bg={{ base: "black", _dark: "white" }}
+              color={{ base: "white", _dark: "black" }}
               borderRadius="1rem"
               w="fit-content"
               // h={grow ? "200px" : "50px"}
               transition="all 0.5s ease-in-out"
               // onClick={onToggle}
-              align="center"
+              align="center"canvas-confetti
               justify="center"
               py={grow ? 8 : 3}
               px={8}
@@ -101,7 +100,7 @@ const HUD: React.FC = () => {
                 </HStack>
                 <VStack gap={6} maxH={grow ? "100vh" : "0px"} opacity={showAccount ? 1 : 0} transition="opacity 0.1s ease, max-height 0.5s ease-in-out">
                   <Box fontSize={'xx-large'}>${accountBalance}</Box>
-                  <Button bg="white" color="black" onClick={withdraw} h={12} w={40} fontWeight={"500"} fontSize={"md"} borderRadius={"1rem"}>WITHDRAW</Button>
+                  <Button bg={{ base: "white", _dark: "black" }} color={{ base: "black", _dark: "white" }} onClick={withdraw} h={12} w={40} fontWeight={"500"} fontSize={"md"} borderRadius={"1rem"}>WITHDRAW</Button>
                   <Tabs.Root lazyMount unmountOnExit defaultValue="Bets" onClick={(event) => { event.stopPropagation() }}>
                     <Tabs.List mb={2} borderBottom="0px" gap={4} justifyContent={"space-around"}>
                       {['Bets', 'Withdrawals'].map((label) => (
@@ -109,11 +108,11 @@ const HUD: React.FC = () => {
                           key={label}
                           value={label}
                           color="gray.400"
-                          borderBottom='4px solid black'
+                          borderBottom={{ base: '4px solid black', _dark: '4px solid white' }}
                           fontSize={"md"}
                           _selected={{
-                            borderBottom: '4px solid white',
-                            color: 'white',
+                            borderBottom: { base: '4px solid white', _dark: '4px solid black' },
+                            color: { base: 'white', _dark: 'black' },
                           }}
                         >
                           {label}
@@ -166,7 +165,7 @@ const HUD: React.FC = () => {
               {Math.round(10 * (gameState[0] + 1) / (gameState[1] + 1)) / 10}x
             </FramedLayoutCard>
             <FramedLayoutCard title="Epoch ends" minW={56}>
-              {String(Math.floor(secondsLeft / 3600)).padStart(2, '0')}h{String(Math.ceil((secondsLeft / 60)%60)).padStart(2, '0')}m
+              {String(Math.floor(secondsLeft / 3600)).padStart(2, '0')}h{String(Math.ceil((secondsLeft / 60) % 60)).padStart(2, '0')}m
             </FramedLayoutCard>
           </VStack>
         </GridItem>
