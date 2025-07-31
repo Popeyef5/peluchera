@@ -33,16 +33,19 @@ interface GlobalSyncData {
 	state: [number, number];
 	queue_length: number;
 	con: boolean;
+	seconds_left: number;
 }
 
 interface PersonalSyncData {
 	position: number;
-	balance: number;
 }
 
-// interface PersonalSyncData {
-// 	position: number;
-// }
+interface WalletConnectedData {
+	position: number;
+	balance: number;
+	played: number;
+	won: number;
+}
 
 interface clawConnectionData {
 	con: boolean;
@@ -61,11 +64,37 @@ interface ClawCtx {
 	gameState: [number, number];
 	accountBalance: number;
 	clawSocketOn: boolean;
+	roundPlayed: number;
+	roundWon: number;
+	secondsLeft: number;
 	setBetAmount: (v: number) => void;
 	press: (a: keyof typeof ACTION_TO_KEY) => void;
 	release: (a: keyof typeof ACTION_TO_KEY) => void;
 	approveAndBet: () => void;
 	withdraw: () => void;
+}
+
+function useCountdown(initialSeconds: number): [number, (s: number) => void] {
+  const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
+  const secondsRef = useRef(initialSeconds); // holds latest value without triggering re-renders
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (secondsRef.current > 0) {
+        secondsRef.current -= 1;
+        setSecondsLeft(secondsRef.current);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const updateSeconds = (newSeconds: number) => {
+    secondsRef.current = newSeconds;
+    setSecondsLeft(newSeconds); // update state so UI re-renders
+  };
+
+  return [secondsLeft, updateSeconds];
 }
 
 const ClawContext = createContext<ClawCtx | null>(null);
@@ -94,21 +123,34 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const toastId = useRef<string | null>(null);        // keep the id we get back
 	const timerId = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [clawSocketOn, setClawSocketOn] = useState(false);
+	const [roundPlayed, setRoundPlayed] = useState(0);
+	const [roundWon, setRoundWon] = useState(0);
+	const [secondsLeft, updateSeconds] = useCountdown(0);
 
 	/* wallet */
 	const { address } = useAppKitAccount();
 	const { chainId } = useAppKitNetwork();
 
+
+
 	/* tell backend who we are */
 	useEffect(() => {
-		if (!address) return;
-		socket.emit('wallet_connected', { address }, (res: { status: string, data: PersonalSyncData }) => {
-			if (res.status === "ok") {
-				setPosition(res.data.position);
-				setAccountBalance(res.data.balance)
-				console.log(res.data);
-			}
-		});
+		const linkWallet = () => {
+			if (!address) return;
+
+			socket.emit('wallet_connected', { address }, (res: { status: string, data: WalletConnectedData }) => {
+				if (res.status === "ok") {
+					setPosition(res.data.position);
+					setAccountBalance(res.data.balance);
+					setRoundPlayed(res.data.played);
+					setRoundWon(res.data.won);
+				}
+			});
+		}
+
+		linkWallet();
+		socket.off('connect')
+		socket.on('connect', linkWallet);
 	}, [address, socket]);
 
 	/* server events */
@@ -124,8 +166,6 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		// 	setIsPlaying(true);
 		// };
 		const onTurnStart = () => {
-			console.log("turn start");
-			console.log("position = ", positionRef.current)
 			setIsPlaying(positionRef.current === 0);
 			if (toastId.current) {
 				toaster.update(toastId.current, {
@@ -138,9 +178,9 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			}
 		}
 		const onTurnEnd = () => {
-			console.log("turn end");
-			console.log("position = ", positionRef.current)
 			if (isPlayingRef.current) {
+				setRoundPlayed((p) => p + 1);
+
 				toastId.current = toaster.create({
 					description: "Checking result…",
 					type: "loading",      // shows spinner & neutral colour
@@ -163,6 +203,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 					if (timerId.current) clearTimeout(timerId.current);       // cancel fallback
 					if (!toastId.current) return;
 
+					setRoundWon((w) => w + 1);
+
 					toaster.update(toastId.current, {
 						description: "🎉 You won!",
 						type: "success",  // green / red skin
@@ -177,13 +219,12 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setIsPlaying(false);
 			setPosition((p) => (p >= 0 ? p - 1 : p));
 			setActiveKeys(0);
-			console.log(positionRef.current)
 		};
 		const onGlobalSync = (data: GlobalSyncData) => {
-			console.log(data.state);
 			setGameState(data.state);
 			setQueueCount(data.queue_length);
 			setClawSocketOn(data.con);
+			updateSeconds(data.seconds_left);
 		}
 		const onPersonalSync = (data: PersonalSyncData) => {
 			setPosition(data.position);
@@ -192,6 +233,9 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setClawSocketOn(data.con);
 		}
 		const onRoundEnd = () => {
+			setGameState([0, 0]);
+			setRoundPlayed(0);
+			setRoundWon(0);
 			socket.emit(
 				'check_balance',
 				(r: { status: string; balance: number }) => {
@@ -215,7 +259,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		return () => {
 			socket.off('player_queued', onPlayerQueued);
 			socket.off('turn_start', onTurnStart);
-			// socket.off('your_turn', onYourTurn);
+			socket.off('claw_connection_change', onClawSocketConnectionChange);
 			socket.off('turn_end', onTurnEnd);
 			socket.off('global_sync', onGlobalSync);
 			socket.off('personal_sync', onPersonalSync);
@@ -304,8 +348,6 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 				'join_queue',
 				{ address, amount: Number(betAmount), deadline: Number(deadline), signature },
 				(r: { status: string; position: number }) => {
-					console.log("position in join queue callback");
-					console.log(r);
 					if (r.status === 'ok') setPosition(r.position);
 					setLoading(false);
 				},
@@ -317,11 +359,18 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	}, [address, chainId, betAmount, socket]);
 
 	const withdraw = useCallback(async () => {
-		if (!address || !chainId) return;
+		if (!address || !chainId) {
+			console.log(address);
+			console.log(chainId);
+			console.log("error withdrawing");
+			return;
+		}
+		console.log("withdrawing funds...")
 		socket.emit('withdraw', (r: { status: string }) => {
+			console.log(r);
 			if (r.status === 'ok') setAccountBalance(0);
 		})
-	}, [socket])
+	}, [socket, address, chainId])
 
 	const value: ClawCtx = {
 		queueCount,
@@ -332,6 +381,9 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		gameState,
 		accountBalance,
 		clawSocketOn,
+		roundPlayed,
+		roundWon,
+		secondsLeft,
 		setBetAmount,
 		press,
 		release,

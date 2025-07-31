@@ -2,10 +2,11 @@ import asyncio
 
 from sqlalchemy import select, func
 from web3 import Web3
+from datetime import datetime
 
-from ..config import BASE_RPC_HTTP, CLAW_ADDRESS
+from ..config import BASE_RPC_HTTP, CLAW_ADDRESS, PRIVATE_KEY, CHAIN_ID
 from ..abi import claw_abi
-from ..models import QueueEntry, Round
+from ..models import QueueEntry, Round, Withrawal
 from ..deps import async_session
 from .sio_instance import sio
 from ..state import sid_to_addr, current_player
@@ -17,8 +18,26 @@ async def wallet_connected(sid, data):
     addr = data["address"]
     sid_to_addr[sid] = addr
     await sio.enter_room(sid, addr)
+    log.info(f"Player {addr} joined")
     
     async with async_session() as db:
+        round_ = await db.scalar(select(Round).order_by(Round.created_at.desc()))
+        played = await db.scalar(
+            select(func.count())
+              .select_from(QueueEntry)
+              .where(QueueEntry.status == "played")
+              .where(QueueEntry.address == addr)
+              .where(QueueEntry.round_id == round_.id)
+        )
+        won = await db.scalar(
+            select(func.count())
+              .select_from(QueueEntry)
+              .where(QueueEntry.status == "played")
+              .where(QueueEntry.address == addr)
+              .where(QueueEntry.round_id == round_.id)
+              .where(QueueEntry.win == True)
+        )
+        
         user_entry = await db.scalar(
             select(QueueEntry)
             .where(QueueEntry.status == "queued", QueueEntry.address == addr)
@@ -39,8 +58,8 @@ async def wallet_connected(sid, data):
     w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
     balance = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)\
                       .functions.getTotalBalance(addr).call()
-    
-    return {"status": "ok", "data": {"position": position, "balance": balance}}
+                      
+    return {"status": "ok", "data": {"position": position, "balance": balance, "played": played, "won": won}}
 
 
 @sio.on("wallet_disconnected")
@@ -52,18 +71,42 @@ async def wallet_disconnected(sid, data):
     
     
 @sio.on("withdraw")
-async def withdraw(sid, data):
+async def withdraw(sid, data=None):
     addr = sid_to_addr[sid]
-    
-    w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
+    log.info(f"Player {addr} is issuing a withdrawal of funds")
     try:
-        withdrawn = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)\
-                      .functions.withdrawFull(addr).call()
+        w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
+        contract = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
+        owner = w3.eth.account.from_key(PRIVATE_KEY).address
+
+        # build transaction
+        txn = contract.functions.withdrawFull(addr).build_transaction({
+            "from": owner,
+            "nonce": w3.eth.get_transaction_count(owner, 'pending'),
+            "chainId": CHAIN_ID,
+        })
+        
+        # sign and send
+        signed = w3.eth.account.sign_transaction(txn, private_key=PRIVATE_KEY)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+        logs = contract.events.FullWithrawal().process_receipt(receipt)
+
+        if not logs:
+            raise RuntimeError("No Withdraw event found!")
+        
+        withdrawn = logs[0]["args"]["amount"]
+        log.info(f"Total withdrawn: {withdrawn}")
+        
+        async with async_session() as db:
+          db.add(Withrawal(address=addr, amount=withdrawn, timestamp=datetime.utcnow()))
+          await db.commit()
         
         return {"status": "ok", "data": {"withdrawn": withdrawn}}
-    except:
+    except Exception as e:
+        log.warning(f"Could not withdraw funds: {e}")
         return {"status": "error"}
-    
+        
 
 @sio.on("ckeck_balance")
 async def check_balance(sid, data):
@@ -76,6 +119,7 @@ async def check_balance(sid, data):
         return {"status": "ok", "balance": balance}       
     except:
         return {"status": "error", "balance": -1}
+
 
 @sio.on("join_queue")
 async def join_queue(sid, data):
@@ -102,7 +146,7 @@ async def join_queue(sid, data):
             log.warning("Rejected entry by %s because bet placing threw an error" % addr)
             return {"status": "error", "position": -1}
 
-        db.add(QueueEntry(address=addr, round_id=round_.id, key=key))
+        db.add(QueueEntry(address=addr, round_id=round_.id, key=key.hex()))
         await db.commit()
 
         qcount = await db.scalar(

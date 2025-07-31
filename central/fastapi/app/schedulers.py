@@ -1,16 +1,18 @@
 import asyncio
 import time
+from web3 import Web3
 
 import app.state as state
 
 from datetime import datetime
 from sqlalchemy import select, func
+from .abi import claw_abi
 from .models import QueueEntry
 from .deps import async_session
 from .socket.sio_instance import sio
 from .logging import log
 from .pi_client import pi_client, safe_pi_emit
-from .config import TURN_DURATION, INTER_TURN_DELAY, SYNC_PERIOD
+from .config import TURN_DURATION, INTER_TURN_DELAY, SYNC_PERIOD, BASE_RPC_HTTP, CLAW_ADDRESS, CHAIN_ID, PRIVATE_KEY
 from .state import global_sync
 
 async def _turn_scheduler_loop():
@@ -111,3 +113,27 @@ async def sync_scheduler():
         if spent_time < SYNC_PERIOD:
             # log.info("Sleeping for %ds" % (SYNC_PERIOD - spent_time))
             await asyncio.sleep(SYNC_PERIOD - spent_time) 
+            
+
+async def round_end_scheduler():
+  while True:
+    await asyncio.sleep(24*3600)
+    try:           
+      w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
+      contract = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
+      owner = w3.eth.account.from_key(PRIVATE_KEY).address
+
+      # build transaction
+      txn = contract.functions.endRound().build_transaction({
+          "from": owner,
+          "nonce": w3.eth.get_transaction_count(owner, 'pending'),
+          "chainId": CHAIN_ID,
+      })
+      
+      # sign and send
+      signed = w3.eth.account.sign_transaction(txn, private_key=PRIVATE_KEY)
+      tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+      receipt = w3.eth.wait_for_transaction_receipt(tx_hash)     
+    except Exception as e:
+      log.warning(f"An error occurred while ending the round: {e}")
+        

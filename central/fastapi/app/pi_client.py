@@ -97,9 +97,9 @@ async def on_turn_win(*_):
     if not key_str:
         return
     
-    bet_key = to_bytes(hexstr=key_str.replace("\\x", ""))
+    key_bytes = bytes.fromhex(key_str)
     
-    log.info(f"Pi emitted player win. Player: {state.current_player}. Turn key: {bet_key}")
+    log.info(f"Pi emitted player win. Player: {state.current_player}. Turn key: 0x{key_str}")
     await sio.emit("player_win")
     
     w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
@@ -107,7 +107,7 @@ async def on_turn_win(*_):
     owner = w3.eth.account.from_key(PRIVATE_KEY).address
 
     # build transaction
-    txn = contract.functions.notifyWin(bet_key).build_transaction({
+    txn = contract.functions.notifyWin(key_bytes).build_transaction({
         "from": owner,
         "nonce": w3.eth.get_transaction_count(owner, 'pending'),
         "chainId": CHAIN_ID,

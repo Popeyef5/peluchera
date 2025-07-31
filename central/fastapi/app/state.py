@@ -1,5 +1,5 @@
 from sqlalchemy import select, func
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from .db import async_session
 from .logging import log
 from .models import QueueEntry
@@ -22,10 +22,15 @@ def set_pi_status(connected: bool, namespace_ok: bool) -> None:
  
 async def global_sync():
   async with async_session() as db:
-        qcount = await db.scalar(
-            select(func.count()).select_from(QueueEntry).where(QueueEntry.status == "queued")
-        )
-  return {"state": game_state, "queue_length": qcount, "con": pi_connected and pi_namespace_ok}
+    qcount = await db.scalar(
+      select(func.count()).select_from(QueueEntry).where(QueueEntry.status == "queued")
+    )
+    now = datetime.now(timezone.utc)                          
+    next_midnight = (now + timedelta(days=1)).replace(        
+      hour=0, minute=0, second=0, microsecond=0)            
+    seconds_left = int((next_midnight - now).total_seconds())
+    
+  return {"state": game_state, "queue_length": qcount, "con": pi_connected and pi_namespace_ok, "seconds_left": seconds_left}
 
 
 def print_state():

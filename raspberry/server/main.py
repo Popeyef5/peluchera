@@ -53,7 +53,7 @@ pi.set_glitch_filter(BB, GLITCH)         # kill sub-GLITCH blips
 pi.set_glitch_filter(CLAW, 100*GLITCH)
 
 # App setup
-sio  = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+sio  = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*", ping_timeout=60)
 app = socketio.ASGIApp(sio)
 
 @sio.on('move')

@@ -3,7 +3,7 @@ from .socket.sio_instance import sio, sio_app
 from .db import engine, Base
 from .deps import async_session, ensure_first_round
 from .pi_client import connect_pi
-from .schedulers import turn_scheduler, sync_scheduler
+from .schedulers import turn_scheduler, sync_scheduler, round_end_scheduler
 from .listeners import web3_listener
 import asyncio
 
@@ -24,6 +24,7 @@ async def on_startup():
     asyncio.create_task(connect_pi())
     asyncio.create_task(turn_scheduler())
     asyncio.create_task(sync_scheduler())
+    asyncio.create_task(round_end_scheduler())
     asyncio.create_task(web3_listener())
 
 __all__ = ["app"]   # for `uvicorn app:app`

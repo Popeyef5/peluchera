@@ -26,3 +26,11 @@ class QueueEntry(Base):
     round_id     = Column(Integer, ForeignKey("round.id"))
     
     round        = relationship("Round", back_populates="entries")
+    
+
+class Withrawal(Base):
+    __tablename__ = "withdrawal"
+    id           = Column(Integer, primary_key=True)
+    address      = Column(String, index=True)
+    timestamp    = Column(DateTime, index=True)
+    amount       = Column(Integer, index=True)
