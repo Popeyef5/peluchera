@@ -4,7 +4,7 @@ import "./globals.css";
 
 import { headers } from "next/headers"
 import ContextProvider from "@/context";
-import ChakraProvider from "@/app/components/chakra/provider"
+import ChakraProvider from "@/components/chakra/provider"
 import { Toaster } from "@/components/ui/toaster";
 
 const geistSans = Geist({

@@ -3,7 +3,7 @@
 import React, {
 	createContext, useCallback, useContext, useEffect, useState, useRef
 } from 'react';
-import { useSocket } from '@/app/components/providers/SocketProvider';
+import { useSocket } from '@/components/providers/SocketProvider';
 import {
 	useAppKitAccount, useAppKitNetwork,
 } from '@reown/appkit/react';

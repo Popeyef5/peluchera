@@ -1,7 +1,7 @@
-import { Box, Text, VStack } from '@chakra-ui/react';
+import { Box, BoxProps, Text, VStack } from '@chakra-ui/react';
 import React, { ReactNode } from 'react';
 
-interface FramedLayoutCardProps {
+export interface FramedLayoutCardProps extends BoxProps {
 	title: string;
 	children?: ReactNode;
 	className?: string;
@@ -9,8 +9,10 @@ interface FramedLayoutCardProps {
 	borderColor?: string;
 	backgroundColor?: string;
 	titleBackground?: string;
-	minW?: number;
-	minH?: number;
+	minW?: number | string;
+	minH?: number | string;
+	textFontSize?: string;
+	titleFontSize?: string;
 }
 
 const FramedLayoutCard: React.FC<FramedLayoutCardProps> = ({
@@ -18,7 +20,9 @@ const FramedLayoutCard: React.FC<FramedLayoutCardProps> = ({
 	children,
 	borderColor = 'black',
 	minW = 0,
-	minH = 0
+	minH = 0,
+	textFontSize = '4xl',
+	titleFontSize = 'lg'
 }) => {
 	return (
 		<Box
@@ -29,7 +33,7 @@ const FramedLayoutCard: React.FC<FramedLayoutCardProps> = ({
 			minH={minH}
 			minW={minW}
 			pos="relative"
-			fontSize={"4xl"}
+			fontSize={textFontSize}
 		>
 			<Text
 				pos="absolute"
@@ -37,7 +41,7 @@ const FramedLayoutCard: React.FC<FramedLayoutCardProps> = ({
 				left={3}
 				background={{base:"white", _dark: "black"}}
 				px={2}
-				fontSize={"lg"}
+				fontSize={titleFontSize}
 				fontWeight={600}
 			>
 				{title}

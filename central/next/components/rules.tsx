@@ -1,7 +1,7 @@
 import { Button, CloseButton, Dialog, Portal, VStack, Text, Card } from "@chakra-ui/react"
 
 interface RulesProps {
-	w: number;
+	w: number | string;
 }
 
 const Rules = ({w}: RulesProps) => {
