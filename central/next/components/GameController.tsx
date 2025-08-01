@@ -36,7 +36,11 @@ const GameController: React.FC = () => {
 
   /* helper that wires the proper pointer events */
   const bind = (action: Action) => ({
-    onPointerDown: () => press(action),
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      e.preventDefault();               // <- stops text-selection/drag
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      press(action);
+    },
     onPointerUp: () => release(action),
     onPointerLeave: () => release(action),   // finger slides away
     onPointerCancel: () => release(action),  // browser gesture cancelled
