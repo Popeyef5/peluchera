@@ -19,15 +19,28 @@ export const Kbd: React.FC<KbdProps> = ({ children, ...props }) => {
     p={6}
     borderRadius="md"
     fontSize="4xl"
+    userSelect="none"
+    touchAction="none"
+    onContextMenu={e => e.preventDefault()}
     {...props}
   >
     {children}
   </Flex>
 }
 
+type Action = 'up' | 'down' | 'left' | 'right' | 'grab';
+
 const GameController: React.FC = () => {
   const { isPlaying, press, release } = useClaw();
   if (!isPlaying) return null;
+
+  /* helper that wires the proper pointer events */
+  const bind = (action: Action) => ({
+    onPointerDown: () => press(action),
+    onPointerUp: () => release(action),
+    onPointerLeave: () => release(action),   // finger slides away
+    onPointerCancel: () => release(action),  // browser gesture cancelled
+  });
 
   return (
     <Flex align="center" gap={12}>
@@ -36,22 +49,22 @@ const GameController: React.FC = () => {
       >
         {/* row 1, col 2  ── UP */}
         <GridItem colStart={2} rowStart={1}>
-          <Kbd onMouseDown={() => press('up')} onMouseUp={() => release('up')} onMouseLeave={() => release('up')}>&uarr;</Kbd>
+          <Kbd {...bind('up')}>&uarr;</Kbd>
         </GridItem>
 
         {/* row 2, col 1  ── LEFT */}
         <GridItem colStart={1} rowStart={2}>
-          <Kbd onMouseDown={() => press('left')} onMouseUp={() => release('left')} onMouseLeave={() => release('left')}>&larr;</Kbd>
+          <Kbd {...bind('left')}>&larr;</Kbd>
         </GridItem>
 
         {/* row 2, col 2  ── DOWN */}
         <GridItem colStart={2} rowStart={2}>
-          <Kbd onMouseDown={() => press('down')} onMouseUp={() => release('down')} onMouseLeave={() => release('down')}>&darr;</Kbd>
+          <Kbd {...bind('down')}>&darr;</Kbd>
         </GridItem>
 
         {/* row 2, col 3  ── RIGHT */}
         <GridItem colStart={3} rowStart={2}>
-          <Kbd onMouseDown={() => press('right')} onMouseUp={() => release('right')} onMouseLeave={() => release('right')}>&rarr;</Kbd>
+          <Kbd {...bind('right')}>&rarr;</Kbd>
         </GridItem>
       </Grid>
       <Button
@@ -62,9 +75,9 @@ const GameController: React.FC = () => {
         borderRadius="full"
         aspectRatio={1}
         fontSize="2xl"
-        onMouseDown={() => press('grab')}
-        onMouseUp={() => release('grab')}
-        onMouseLeave={() => release('grab')}
+        touchAction="none"
+        onContextMenu={e => e.preventDefault()}
+        {...bind('grab')}
       >
         GRAB
       </Button>
