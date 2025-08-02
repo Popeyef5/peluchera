@@ -5,7 +5,7 @@ import { SocketProvider, ClawProvider } from '@/components/providers';
 import WebRTCPlayer from '@/components/WebRTCPlayer';
 import Rules from '@/components/rules';
 import { ColorModeButton, useColorMode } from '@/components/ui/color-mode';
-import AccountManager from '@/components/AccountManager';
+import AccountManager, { AccountManagerMobile } from '@/components/AccountManager';
 import GameInfo from '@/components/GameInfo';
 import ActionButton from '@/components/ActionButton';
 import Stats from '@/components/Stats';
@@ -17,44 +17,30 @@ const HUD: React.FC = () => {
   const { colorMode } = useColorMode();
 
   return (
-    <VStack h="100vh" gap={0}>
-      <HStack w="100%" justify="space-between" h={24} px={4} paddingTop={4}>
-        <ColorModeButton />
-        <Image width={250} height={100} src={colorMode === "light" ? "/logo.png" : "/logo_white.png"} alt="logo" />
-        <AccountManager />
-      </HStack>
-
-      <Grid
-        templateColumns="1fr 3fr 1fr"
-        templateRows="5.25fr 1fr"
-        gap={8}
-        minH={0}
-        flex="1"
-        w="100%"
-        p={10}
-      >
-        <GridItem colStart={1} rowStart={1}>
-          <GameInfo minW={56} h="100%" justify="center" align="center" />
-        </GridItem>
-
-        <GridItem colStart={2} rowStart={1}>
-          <VStack h="100%" justify="center">
-            <WebRTCPlayer />
-          </VStack>
-        </GridItem>
-
-        <GridItem colStart={3} rowStart={1}>
-          <VStack h="100%" justify="center" align="center" gap={3}>
-            <Stats minW={72} />
-            <Rules w={72} />
-          </VStack>
-        </GridItem>
-
-        <GridItem colStart={2} rowStart={2}>
-          <ActionButton h="100%" />
-        </GridItem>
-      </Grid>
-    </VStack>
+    <HStack w={"100vw"} h={"100vh"} p={8}>
+      <VStack w="full" h="full" px={8} gap={6}>
+        <HStack justify={"space-between"} w="full">
+          <ColorModeButton />
+          <Image width={500} height={100} src={colorMode === "light" ? "/logo.png" : "/logo_white.png"} alt="logo" />
+          <AccountManagerMobile />
+        </HStack>
+        <ActionButton
+          flex={1}
+          w="full"
+          buttonWidth={"full"}
+          buttonHeight={24}
+          borderBottom={{ base: "2px solid black", _dark: "2px solid white" }}
+          keySize={20}
+          buttonSize={40}
+        />
+        <GameInfo direction={"row"} justify={"space-between"} minW={60} w="full" />
+        <Stats minW={"full"} />
+        <Rules w={"full"} />
+      </VStack>
+      <Flex h={"full"}>
+        <WebRTCPlayer />
+      </Flex>
+    </HStack>
   )
 };
 
@@ -63,9 +49,9 @@ const Mobile = () => {
 
   return <VStack w={"full"} p={8} gap={8}>
     <HStack w="full" justify={"space-between"}>
-      <ColorModeButton/>
+      <ColorModeButton />
       <Image width={200} height={360} src={colorMode === "light" ? "/logo.png" : "/logo_white.png"} alt="logo" />
-      <AccountManager/>
+      <AccountManager />
     </HStack>
     <Flex aspectRatio={4 / 3} w="full" justifyItems={"center"}>
       <WebRTCPlayer />

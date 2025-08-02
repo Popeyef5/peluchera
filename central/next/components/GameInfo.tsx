@@ -5,7 +5,7 @@ import { Stack, StackProps } from "@chakra-ui/react"
 import { useClaw } from '@/components/providers'
 
 interface GameInfoProps extends StackProps {
-	minW: number,
+	minW: number | string,
 	titleFontSize?: string,
 	textFontSize?: string,
 }
@@ -18,7 +18,7 @@ const GameInfo = ({
 }: GameInfoProps) => {
 	const { secondsLeft, gameState } = useClaw();
 
-	return <Stack h="100%" justify="center" align="center" gap={8} {...props}>
+	return <Stack gap={8} {...props}>
 		<FramedLayoutCard
 			title="Current multiplier"
 			minW={minW}

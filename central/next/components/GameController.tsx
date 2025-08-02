@@ -7,15 +7,15 @@ type KbdProps =
   FlexProps &               // chakra styling props
   React.ButtonHTMLAttributes<HTMLButtonElement>; // onMouseDown, disabled, etc.
 
-export const Kbd: React.FC<KbdProps> = ({ children, ...props }) => {
+export const Kbd: React.FC<KbdProps> = ({ children, h = 4, w = 4, ...props }) => {
   return <Flex
     as="button"
     fontFamily="auto"
     align="center"
     justify="center"
     border={{ base: "0.25rem solid black", _dark: "0.25rem solid white" }}
-    h={4}
-    w={4}
+    h={h}
+    w={w}
     p={6}
     borderRadius="md"
     fontSize="4xl"
@@ -28,9 +28,17 @@ export const Kbd: React.FC<KbdProps> = ({ children, ...props }) => {
   </Flex>
 }
 
+interface GameControllerProps {
+  keySize?: number | string,
+  buttonSize?: number | string
+}
+
 type Action = 'up' | 'down' | 'left' | 'right' | 'grab';
 
-const GameController: React.FC = () => {
+const GameController: React.FC<GameControllerProps> = ({
+  keySize = 4,
+  buttonSize = 28
+}: GameControllerProps) => {
   const { isPlaying, press, release } = useClaw();
   if (!isPlaying) return null;
 
@@ -53,26 +61,26 @@ const GameController: React.FC = () => {
       >
         {/* row 1, col 2  ── UP */}
         <GridItem colStart={2} rowStart={1}>
-          <Kbd {...bind('up')}>&uarr;</Kbd>
+          <Kbd w={keySize} h={keySize} {...bind('up')}>&uarr;</Kbd>
         </GridItem>
 
         {/* row 2, col 1  ── LEFT */}
         <GridItem colStart={1} rowStart={2}>
-          <Kbd {...bind('left')}>&larr;</Kbd>
+          <Kbd w={keySize} h={keySize} {...bind('left')}>&larr;</Kbd>
         </GridItem>
 
         {/* row 2, col 2  ── DOWN */}
         <GridItem colStart={2} rowStart={2}>
-          <Kbd {...bind('down')}>&darr;</Kbd>
+          <Kbd w={keySize} h={keySize} {...bind('down')}>&darr;</Kbd>
         </GridItem>
 
         {/* row 2, col 3  ── RIGHT */}
         <GridItem colStart={3} rowStart={2}>
-          <Kbd {...bind('right')}>&rarr;</Kbd>
+          <Kbd w={keySize} h={keySize} {...bind('right')}>&rarr;</Kbd>
         </GridItem>
       </Grid>
       <Button
-        h={28}
+        h={buttonSize}
         color={{ base: "black", _dark: "white" }}
         bg={{ base: "white", _dark: "black" }}
         border={{ base: "0.25rem solid black", _dark: "0.25rem solid white" }}

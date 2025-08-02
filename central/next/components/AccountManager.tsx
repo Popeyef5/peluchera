@@ -10,7 +10,7 @@ import { useIsMobile } from "./hooks/useIsMobile";
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-const AccountManagerDefault = () => {
+export const AccountManagerDefault = () => {
 	const { address, isConnected } = useAppKitAccount();
 	const { open } = useAppKit();
 
@@ -124,7 +124,7 @@ const AccountManagerDefault = () => {
 }
 
 
-const AccountManagerMobile = () => {
+export const AccountManagerMobile = () => {
 	const { address, isConnected } = useAppKitAccount();
 	const { open } = useAppKit();
 	const [drawerOpen, setDrawerOpen] = useState(false);

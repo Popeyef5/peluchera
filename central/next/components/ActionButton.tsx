@@ -1,27 +1,40 @@
 "use client";
 
-import { VStack, Box, Button } from "@chakra-ui/react";
+import { VStack, Box, Button, StackProps } from "@chakra-ui/react";
 import { useClaw } from "@/components/providers"
 import GameController from "./GameController";
 import { useAppKitAccount, useAppKit } from '@reown/appkit/react';
 
-const ActionButton = () => {
+interface ActionButtonProps extends StackProps {
+	buttonWidth?: number | string,
+	buttonHeight?: number | string,
+	buttonFontSize?: string,
+	keySize?: string | number,
+	buttonSize?: string | number,
+}
+
+const ActionButton = ({
+	buttonWidth = 72,
+	buttonHeight = 16,
+	buttonFontSize = "2xl",
+	keySize = 4,
+	buttonSize = 28,
+	...props }: ActionButtonProps) => {
 	const { isPlaying, position, loading, approveAndBet, queueCount } = useClaw();
 	const { isConnected } = useAppKitAccount();
 	const { open } = useAppKit();
-	// const isPlaying = true;
 
-	return <VStack gap={4} h="100%" justify="space-around">
+	return <VStack gap={4} justify="space-evenly" {...props}>
 		{!isPlaying && (
 			<>
 				{position < 0 && (
 					<Button
 						loading={loading}
 						onClick={!isConnected ? () => open() : approveAndBet}
-						size={"2xl"}
-						fontSize={"2xl"}
+						h={buttonHeight}
+						fontSize={buttonFontSize}
 						borderRadius={"1rem"}
-						w={72}
+						w={buttonWidth}
 					>
 						{!isConnected ? 'CONNECT WALLET' : 'PLAY'}
 					</Button>
@@ -36,7 +49,7 @@ const ActionButton = () => {
 				{position < 0 && queueCount === 0 && <Box>No players in queue.</Box>}
 			</>
 		)}
-		{isPlaying && <GameController />}
+		{isPlaying && <GameController keySize={keySize} buttonSize={buttonSize} />}
 	</VStack>
 }
 
