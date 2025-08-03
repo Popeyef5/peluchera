@@ -61,9 +61,15 @@ const Mobile = () => {
     <Flex aspectRatio={4 / 3} w="full" justifyItems={"center"}>
       <WebRTCPlayer />
     </Flex>
-    <Flex w="full" minH="140px" borderBottom={{ base: "1px solid black", _dark: "1px solid white" }} justify={"center"} align={"start"}><ActionButton /></Flex>
-    <GameInfo minW={44} direction="row" titleFontSize='sm' textFontSize='xl' w="full" justify={"space-between"} gap={2} />
-    <Stats w="full" titleFontSize='sm' textFontSize='md' />
+    <Flex w="full" minH="140px" borderBottom={{ base: "1px solid black", _dark: "1px solid white" }} justify={"center"} align={"start"}>
+      <ActionButton userTextSize={"xl"}/>
+    </Flex>
+    <HStack w={"full"}>
+      <WinMultiplier flex={1} titleFontSize='md' textFontSize='2xl' />
+      <EpochCountdown flex={1} titleFontSize='md' textFontSize='2xl' />
+    </HStack>
+    {/* <GameInfo minW={44} direction="row" titleFontSize='sm' textFontSize='xl' w="full" justify={"space-between"} gap={2} /> */}
+    <EpochStats w="full" titleFontSize='md' textFontSize='md' />
     <Rules w={"full"} />
   </VStack>
 }
@@ -71,6 +77,7 @@ const Mobile = () => {
 /* ───────── page wrapper ───────── */
 export default function Page() {
   const isMobile = useIsMobile();
+  console.log(isMobile)
   return (
     <SocketProvider>
       <ClawProvider>

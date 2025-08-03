@@ -12,7 +12,6 @@ import { USDCAddress, erc20WithPermitAbi, clawAddress } from '@/lib/crypto/contr
 import { readContract, signTypedData } from 'wagmi/actions';
 import { config } from '@/config';
 import { types } from '@/lib/crypto/permit';
-import confetti from "canvas-confetti";
 import celebrate from '@/components/confetti';
 
 /* bit‑mask helpers */
@@ -77,26 +76,26 @@ interface ClawCtx {
 }
 
 function useCountdown(initialSeconds: number): [number, (s: number) => void] {
-  const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
-  const secondsRef = useRef(initialSeconds); // holds latest value without triggering re-renders
+	const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
+	const secondsRef = useRef(initialSeconds); // holds latest value without triggering re-renders
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (secondsRef.current > 0) {
-        secondsRef.current -= 1;
-        setSecondsLeft(secondsRef.current);
-      }
-    }, 1000);
+	useEffect(() => {
+		const interval = setInterval(() => {
+			if (secondsRef.current > 0) {
+				secondsRef.current -= 1;
+				setSecondsLeft(secondsRef.current);
+			}
+		}, 1000);
 
-    return () => clearInterval(interval);
-  }, []);
+		return () => clearInterval(interval);
+	}, []);
 
-  const updateSeconds = (newSeconds: number) => {
-    secondsRef.current = newSeconds;
-    setSecondsLeft(newSeconds); // update state so UI re-renders
-  };
+	const updateSeconds = (newSeconds: number) => {
+		secondsRef.current = newSeconds;
+		setSecondsLeft(newSeconds); // update state so UI re-renders
+	};
 
-  return [secondsLeft, updateSeconds];
+	return [secondsLeft, updateSeconds];
 }
 
 const ClawContext = createContext<ClawCtx | null>(null);
@@ -351,28 +350,51 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			socket.emit(
 				'join_queue',
 				{ address, amount: Number(betAmount), deadline: Number(deadline), signature },
-				(r: { status: string; position: number }) => {
-					if (r.status === 'ok') setPosition(r.position);
+				(r: { status: string; position: number, error?: string }) => {
+					if (r.status === 'ok') {
+						setPosition(r.position);
+					} else {
+						toaster.create({
+							description: `Error: ${r.error}`,
+							type: "error",
+							duration: 2500
+						})
+					}
 					setLoading(false);
 				},
 			);
 		} catch (err) {
 			console.error(err);
+			toaster.create({
+				description: `Error: ${err}`,
+				type: "error",
+				duration: 2500
+			})
 			setLoading(false);
 		}
 	}, [address, chainId, betAmount, socket]);
 
 	const withdraw = useCallback(async () => {
 		if (!address || !chainId) {
-			console.log(address);
-			console.log(chainId);
-			console.log("error withdrawing");
+			toaster.create({
+				description: "Error while withdrawing funds: no connected wallet",
+				type: "error",
+				duration: 3000
+			})
 			return;
 		}
 		console.log("withdrawing funds...")
-		socket.emit('withdraw', (r: { status: string }) => {
+		socket.emit('withdraw', (r: { status: string, data?: string, error?: string }) => {
 			console.log(r);
-			if (r.status === 'ok') setAccountBalance(0);
+			if (r.status === 'ok') {
+				setAccountBalance(0);
+			} else {
+				toaster.create({
+					description: "Unexpected error while withdrawing funds...",
+					type: "error",
+					duration: 3000
+				})
+			}
 		})
 	}, [socket, address, chainId])
 

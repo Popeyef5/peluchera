@@ -12,6 +12,7 @@ interface ActionButtonProps extends StackProps {
 	buttonFontSize?: string,
 	keySize?: string | number,
 	buttonSize?: string | number,
+	userTextSize?: string | number
 }
 
 const ActionButton = ({
@@ -20,6 +21,7 @@ const ActionButton = ({
 	buttonFontSize = "2xl",
 	keySize = 4,
 	buttonSize = 28,
+	userTextSize = "2.25vh",
 	...props }: ActionButtonProps) => {
 	const { isPlaying, position, loading, approveAndBet, queueCount } = useClaw();
 	const { isConnected } = useAppKitAccount();
@@ -58,7 +60,7 @@ const ActionButton = ({
 					</Button>
 				)}
 
-				<Box fontSize={"2.5vh"}>{userText}</Box>
+				<Box fontSize={userTextSize}>{userText}</Box>
 			</>
 		)}
 		{isPlaying && <GameController keySize={keySize} buttonSize={buttonSize} />}

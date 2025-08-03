@@ -105,7 +105,7 @@ async def withdraw(sid, data=None):
         return {"status": "ok", "data": {"withdrawn": withdrawn}}
     except Exception as e:
         log.warning(f"Could not withdraw funds: {e}")
-        return {"status": "error"}
+        return {"status": "error", "error": f"{e}"}
         
 
 @sio.on("ckeck_balance")
@@ -137,14 +137,14 @@ async def join_queue(sid, data):
         )
         if in_queue:
             log.warning("Rejected player %s for double entry" % addr)
-            return {"status": "error", "position": -1}
+            return {"status": "error", "position": -1, "error": "user already in queue"}
 
         # on-chain
         loop = asyncio.get_running_loop()
         ok, key = await safe_place_bet(loop, addr, amount, deadline, signature)
         if not ok:
             log.warning("Rejected entry by %s because bet placing threw an error" % addr)
-            return {"status": "error", "position": -1}
+            return {"status": "error", "position": -1, "error": "unexpected error while placing bet"}
 
         db.add(QueueEntry(address=addr, round_id=round_.id, key=key.hex()))
         await db.commit()
