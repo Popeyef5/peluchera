@@ -21,24 +21,26 @@ const FramedLayoutCard: React.FC<FramedLayoutCardProps> = ({
 	borderColor = 'black',
 	minW = 0,
 	minH = 0,
-	textFontSize = '4xl',
-	titleFontSize = 'lg'
+	textFontSize = '2.5vh',
+	titleFontSize = '2vh',
+	...props
 }) => {
 	return (
 		<Box
 			borderRadius="xl"
 			borderColor={{ base: borderColor, _dark: "white" }}
-			borderWidth={3}
-			p={6}
+			borderWidth={"0.4vh"}
+			p={"2.4vh"}
 			minH={minH}
 			minW={minW}
 			pos="relative"
 			fontSize={textFontSize}
+			{...props}
 		>
 			<Text
 				pos="absolute"
-				top={-4}
-				left={3}
+				top={"-1.4vh"}
+				left={"0.9vh"}
 				background={{base:"white", _dark: "black"}}
 				px={2}
 				fontSize={titleFontSize}

@@ -13,12 +13,12 @@ export const Kbd: React.FC<KbdProps> = ({ children, h = 4, w = 4, ...props }) =>
     fontFamily="auto"
     align="center"
     justify="center"
-    border={{ base: "0.25rem solid black", _dark: "0.25rem solid white" }}
+    border={{ base: "0.4vh solid black", _dark: "0.4vh solid white" }}
     h={h}
     w={w}
-    p={6}
+    p={"2.4vh"}
     borderRadius="md"
-    fontSize="4xl"
+    fontSize="3.6vh"
     userSelect="none"
     touchAction="none"
     onContextMenu={e => e.preventDefault()}
@@ -57,7 +57,7 @@ const GameController: React.FC<GameControllerProps> = ({
   return (
     <Flex align="center" gap={12}>
       <Grid
-        gap={2}
+        gap={"0.8vh"}
       >
         {/* row 1, col 2  ── UP */}
         <GridItem colStart={2} rowStart={1}>
@@ -83,10 +83,10 @@ const GameController: React.FC<GameControllerProps> = ({
         h={buttonSize}
         color={{ base: "black", _dark: "white" }}
         bg={{ base: "white", _dark: "black" }}
-        border={{ base: "0.25rem solid black", _dark: "0.25rem solid white" }}
+        border={{ base: "0.4vh solid black", _dark: "0.4vh solid white" }}
         borderRadius="full"
         aspectRatio={1}
-        fontSize="2xl"
+        fontSize="3.6vh"
         touchAction="none"
         onContextMenu={e => e.preventDefault()}
         {...bind('grab')}
