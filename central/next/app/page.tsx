@@ -1,5 +1,5 @@
 "use client";
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Grid, GridItem, HStack, VStack, Box, Flex, Separator } from '@chakra-ui/react';
 import { SocketProvider, ClawProvider } from '@/components/providers';
 import WebRTCPlayer from '@/components/WebRTCPlayer';
@@ -17,19 +17,27 @@ const sidesWidth = "60%";
 /* ───────── HUD ───────── */
 const HUD: React.FC = () => {
   const { colorMode } = useColorMode();
+  const [logoSrc, setLogoSrc] = useState("");
+  useEffect(() => {
+    if (colorMode === "dark") {
+      setLogoSrc("/logo_white.png");
+    } else {
+      setLogoSrc("/logo.png")
+    }
+  }, [colorMode])
 
   return (
     <VStack h="100vh" gap={6} w={"full"} p={4}>
       <HStack w="full" justify="space-between" h={28} px={6}>
         <ColorModeButton />
-        <Image width={250} height={100} src={colorMode === "light" ? "/logo.png" : "/logo_white.png"} alt="logo" />
+        <Image width={250} height={100} src={logoSrc} alt="logo" />
         <AccountManager />
       </HStack>
       <HStack w="full" justify={"space-evenly"} >
         <Flex align={"center"} justify={"center"} flex={1} w={"full"}>
           <VStack gap={6} w={sidesWidth}>
             <WinMultiplier w={"full"} />
-            <EpochCountdown w={"full"}/>
+            <EpochCountdown w={"full"} />
           </VStack>
         </Flex>
         <Flex flex={10} aspectRatio={4 / 3} maxW={"87vh"}>
@@ -42,18 +50,26 @@ const HUD: React.FC = () => {
           </VStack>
         </Flex>
       </HStack>
-      <ActionButton h="100%" paddingBottom={4}/>
+      <ActionButton h="100%" paddingBottom={4} />
     </VStack>
   )
 };
 
 const Mobile = () => {
   const { colorMode } = useColorMode();
+  const [logoSrc, setLogoSrc] = useState("");
+  useEffect(() => {
+    if (colorMode === "dark") {
+      setLogoSrc("/logo_white.png");
+    } else {
+      setLogoSrc("/logo.png")
+    }
+  }, [colorMode])
 
   return <VStack w={"full"} p={8} gap={8}>
     <HStack w="full" justify={"space-between"}>
       <ColorModeButton />
-      <Image width={200} height={360} src={colorMode === "light" ? "/logo.png" : "/logo_white.png"} alt="logo" />
+      <Image width={200} height={360} src={logoSrc} alt="logo" />
       <AccountManager />
     </HStack>
     <Flex aspectRatio={4 / 3} w="full" justifyItems={"center"}>
