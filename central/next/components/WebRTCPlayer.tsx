@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef } from 'react';
+import { Flex } from "@chakra-ui/react"
 
 declare global {
   interface Window {
@@ -40,13 +41,20 @@ export default function WebRTCPlayer() {
     document.body.appendChild(script);
   }, []);
 
+  // return <video
+  //   id="video"
+  //   style={{ width: '100%', aspectRatio: 4 / 3, background: '#1e1e1e', borderRadius: "1.5rem" }}
+  //   autoPlay
+  //   muted
+  //   playsInline
+  // />
   return (
-    <div style={{
-      aspectRatio: '4/3', maxWidth: '100%', position: 'relative', flex: 1
+    <Flex style={{
+      width: '100%', position: 'relative', aspectRatio: 4/3, height: "fit-content", maxHeight: "100%" 
     }}>
       <video
         id="video"
-        style={{ position: 'absolute', top: 0, left: 0, width: '100%', aspectRatio: 4/3, background: '#1e1e1e', borderRadius: "1.5rem" }}
+        style={{ width: '100%', aspectRatio: 4 / 3, background: '#1e1e1e', borderRadius: "1.5rem" }}
         autoPlay
         muted
         playsInline
@@ -54,11 +62,10 @@ export default function WebRTCPlayer() {
       <div
         id="message"
         style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
+          position: "absolute",
+          maxHeight: "100%",
           width: '100%',
-          aspectRatio: 4/3,
+          aspectRatio: 4 / 3,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -72,6 +79,6 @@ export default function WebRTCPlayer() {
           textShadow: '0 0 5px black',
         }}
       ></div>
-    </div>
+    </Flex>
   );
 }

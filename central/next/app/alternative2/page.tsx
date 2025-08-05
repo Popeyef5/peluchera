@@ -14,7 +14,7 @@ import Image from 'next/image'
 /* ───────── HUD ───────── */
 const HUD: React.FC = () => {
   const { colorMode } = useColorMode();
-  const [logoSrc, setLogoSrc] = useState("");
+  const [logoSrc, setLogoSrc] = useState("/logo.png");
   useEffect(() => {
     if (colorMode === "dark") {
       setLogoSrc("/logo_white.png");
@@ -24,8 +24,13 @@ const HUD: React.FC = () => {
   }, [colorMode])
 
   return (
-    <HStack w={"100vw"} h={"100vh"} p={"3.2vh"}>
-      <VStack w="full" h="full" px={"3.2vh"} gap={"2.4vh"}>
+    <HStack w={"100vw"} h={"100vh"} p={"3.2vh"} gap={"3.2vh"} containerType={"size"}>
+      <VStack
+        w="full"
+        h="full"
+        gap={"2.4vh"}
+        flex={"1 0 33.5vh"}
+      >
         <HStack justify={"space-between"} w="full">
           <ColorModeButton />
           <Box w="80%" maxW={"40vh"}>
@@ -49,7 +54,12 @@ const HUD: React.FC = () => {
         <EpochStats w={"full"} />
         <Rules w={"full"} />
       </VStack>
-      <Flex h={"full"}>
+      <Flex
+        h={"full"}
+        maxW={"133cqh"}
+        flex={"1000 1 auto"}
+        align={"center"}
+      >
         <WebRTCPlayer />
       </Flex>
     </HStack>

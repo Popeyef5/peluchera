@@ -11,10 +11,12 @@ export const WinMultiplier = (props: GameInfoProps) => {
 	const { gameState } = useClaw();
 
 	return <FramedLayoutCard
-		title="Current multiplier"
+		title="Multiplier"
 		{...props}
 	>
-		{Math.round(10 * (gameState[0] + 1) / (gameState[1] + 1)) / 10}x
+		<Text>
+			{Math.round(10 * (gameState[0] + 1) / (gameState[1] + 1)) / 10}x <InfoTip content="This value can fluctuate as win-rate varies during the epoch. Read the rules for more details." />
+		</Text>
 	</FramedLayoutCard>
 }
 
