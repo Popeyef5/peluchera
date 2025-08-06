@@ -1,7 +1,7 @@
 "use client";
 
 import { FramedLayoutCard, FramedLayoutCardProps } from "./ui/framedLayoutCard";
-import { VStack, HStack, Text } from "@chakra-ui/react"
+import { VStack, HStack, Text, Box } from "@chakra-ui/react"
 import { useClaw } from '@/components/providers'
 import { InfoTip } from "./ui/toggle-tip";
 
@@ -14,9 +14,9 @@ export const WinMultiplier = (props: GameInfoProps) => {
 		title="Multiplier"
 		{...props}
 	>
-		<Text>
+		<Box>
 			{Math.round(10 * (gameState[0] + 1) / (gameState[1] + 1)) / 10}x <InfoTip content="This value can fluctuate as win-rate varies during the epoch. Read the rules for more details." />
-		</Text>
+		</Box>
 	</FramedLayoutCard>
 }
 
