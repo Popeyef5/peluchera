@@ -92,7 +92,7 @@ docker run --rm -v "$CERTBOT_ETC_VOL:/etc/letsencrypt" \
 
 # Certificate renewal
 ( sudo crontab -l 2>/dev/null; \
-  echo "0 3 * * * docker run --rm -v $CERTBOT_ETC_VOL:/etc/letsencrypt -v $CERTBOT_WWW_VOL:/var/www/certbot certbot/certbot renew --webroot -w /var/www/certbot --quiet && docker compose -f $COMPOSE_NGINX exec nginx nginx -s reload" \
+  echo "0 3 * * * docker run --rm -v $CERTBOT_ETC_VOL:/etc/letsencrypt -v $CERTBOT_WWW_VOL:/var/www/certbot certbot/certbot renew --webroot -w /var/www/certbot --quiet && docker compose exec nginx nginx -s reload" \
 ) | sudo crontab -
 
 # Build and run the Docker containers from the app directory (~/myapp)

@@ -3,17 +3,8 @@ services:
     image: bluenviron/mediamtx:latest-ffmpeg
     container_name: claw_media 
     restart: unless-stopped
-    # ports:
-    #   - '1935:1935'
-    #   - '8554:8554'
-    #   - '8888:8888'
-    #   - '8889:8889'
-    #   - '8890:8890/udp'
-    #   - '8189:8189/udp'
     volumes:
       - ./mediamtx/mediamtx.yml:/mediamtx.yml
-    # networks:
-    #   - claw_network
     network_mode: "host"
     
   proxy:
