@@ -1,11 +1,11 @@
 "use client";
-import React, { useEffect, useState } from 'react';
-import { HStack, VStack, Box, Flex } from '@chakra-ui/react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Grid, GridItem, HStack, VStack, Box, Flex, Drawer } from '@chakra-ui/react';
 import { SocketProvider, ClawProvider } from '@/components/providers';
 import WebRTCPlayer from '@/components/WebRTCPlayer';
 import Rules from '@/components/rules';
 import { ColorModeButton, useColorMode } from '@/components/ui/color-mode';
-import AccountManager, { AccountManagerMobile } from '@/components/AccountManager';
+import AccountManager from '@/components/AccountManager';
 import { WinMultiplier, EpochCountdown, EpochStats } from '@/components/GameInfo';
 import ActionButton from '@/components/ActionButton';
 import { useIsMobile } from '@/components/hooks/useIsMobile';
@@ -14,7 +14,7 @@ import Image from 'next/image'
 /* ───────── HUD ───────── */
 const HUD: React.FC = () => {
   const { colorMode } = useColorMode();
-  const [logoSrc, setLogoSrc] = useState("");
+  const [logoSrc, setLogoSrc] = useState("/logo.png");
   useEffect(() => {
     if (colorMode === "dark") {
       setLogoSrc("/logo_white.png");
@@ -22,19 +22,24 @@ const HUD: React.FC = () => {
       setLogoSrc("/logo.png")
     }
   }, [colorMode])
+  const columnRef = useRef<HTMLDivElement>(null);
 
   return (
-    <HStack w={"100vw"} h={"100vh"} p={"3.2vh"}>
-      <Flex h={"full"}>
-        <WebRTCPlayer />
-      </Flex>
-      <VStack w="full" h="full" px={"3.2vh"} gap={"2.4vh"}>
+    <HStack w={"100vw"} h={"100vh"} p={"3.2vh"} gap={"3.2vh"} containerType={"size"}>
+      <VStack
+        w="full"
+        h="full"
+        gap={"2.4vh"}
+        flex={"1 0 33.5vh"}
+        ref={columnRef}
+        pos={"relative"}
+      >
         <HStack justify={"space-between"} w="full">
           <ColorModeButton />
           <Box w="80%" maxW={"40vh"}>
             <Image width={800} height={200} src={logoSrc} alt="logo" />
           </Box>
-          <AccountManagerMobile />
+          <AccountManager containerRef={columnRef} />
         </HStack>
         <ActionButton
           flex={1}
@@ -42,8 +47,8 @@ const HUD: React.FC = () => {
           buttonWidth={"full"}
           buttonHeight={"12vh"}
           borderBottom={{ base: "2px solid black", _dark: "2px solid white" }}
-          keySize={'8vh'}
-          buttonSize={'18vh'}
+          keySize={'13cqw'}
+          buttonSize={'30cqw'}
         />
         <HStack w={"full"}>
           <WinMultiplier flex={1} textFontSize='3.5vh' />
@@ -52,13 +57,21 @@ const HUD: React.FC = () => {
         <EpochStats w={"full"} />
         <Rules w={"full"} />
       </VStack>
+      <Flex
+        h={"full"}
+        maxW={"133cqh"}
+        flex={"1000 1 auto"}
+        align={"center"}
+      >
+        <WebRTCPlayer />
+      </Flex>
     </HStack>
   )
 };
 
 const Mobile = () => {
   const { colorMode } = useColorMode();
-  const [logoSrc, setLogoSrc] = useState("");
+  const [logoSrc, setLogoSrc] = useState("/logo.png");
   useEffect(() => {
     if (colorMode === "dark") {
       setLogoSrc("/logo_white.png");
@@ -77,13 +90,12 @@ const Mobile = () => {
       <WebRTCPlayer />
     </Flex>
     <Flex w="full" minH="140px" borderBottom={{ base: "1px solid black", _dark: "1px solid white" }} justify={"center"} align={"start"}>
-      <ActionButton userTextSize={"xl"} />
+      <ActionButton userTextSize={"xl"} buttonWidth={"full"} w={"full"} />
     </Flex>
     <HStack w={"full"}>
       <WinMultiplier flex={1} titleFontSize='md' textFontSize='2xl' />
       <EpochCountdown flex={1} titleFontSize='md' textFontSize='2xl' />
     </HStack>
-    {/* <GameInfo minW={44} direction="row" titleFontSize='sm' textFontSize='xl' w="full" justify={"space-between"} gap={2} /> */}
     <EpochStats w="full" titleFontSize='md' textFontSize='md' />
     <Rules w={"full"} />
   </VStack>

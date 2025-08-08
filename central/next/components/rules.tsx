@@ -8,7 +8,7 @@ const Rules = ({w}: RulesProps) => {
 	return (
 		<Dialog.Root placement={"center"}>
 			<Dialog.Trigger asChild>
-				<Button borderRadius="1rem" fontSize="md" w={w}>
+				<Button borderRadius="1.5rem" fontSize="lg" w={w} p={"3vh"}>
 					Rules
 				</Button>
 			</Dialog.Trigger>

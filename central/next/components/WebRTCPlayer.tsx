@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Flex, IconButton } from "@chakra-ui/react"
 import { BsFullscreen, BsFullscreenExit } from "react-icons/bs";
 import { useColorMode } from './ui/color-mode';
+import { useIsMobile } from './hooks/useIsMobile';
 
 declare global {
   interface Window {
@@ -15,6 +16,7 @@ declare global {
 }
 
 export default function WebRTCPlayer() {
+  const isMobile = useIsMobile();
   const { colorMode } = useColorMode();
 
   /* we keep the reader so we can clean it up later -- avoids “unused” warning */
@@ -113,7 +115,7 @@ export default function WebRTCPlayer() {
       >
 
       </div>
-      <IconButton
+      {!isMobile && <IconButton
         position={"absolute"}
         bottom={"2.5vh"}
         right={"3.33vh"}
@@ -125,7 +127,7 @@ export default function WebRTCPlayer() {
         _hover={{color: colorMode === "light" ? "black" : "white"}}
       >
         {isFS ? <BsFullscreenExit /> : <BsFullscreen />}
-      </IconButton>
+      </IconButton>}
     </Flex>
   );
 }

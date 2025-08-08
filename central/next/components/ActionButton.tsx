@@ -53,7 +53,7 @@ const ActionButton = ({
 						onClick={!isConnected ? () => open() : approveAndBet}
 						h={buttonHeight}
 						fontSize={buttonFontSize}
-						borderRadius={"1rem"}
+						borderRadius={"1.5rem"}
 						w={buttonWidth}
 					>
 						{!isConnected ? 'CONNECT WALLET' : 'PLAY'}

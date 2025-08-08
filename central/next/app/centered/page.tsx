@@ -5,16 +5,19 @@ import { SocketProvider, ClawProvider } from '@/components/providers';
 import WebRTCPlayer from '@/components/WebRTCPlayer';
 import Rules from '@/components/rules';
 import { ColorModeButton, useColorMode } from '@/components/ui/color-mode';
-import AccountManager, { AccountManagerMobile } from '@/components/AccountManager';
+import AccountManager from '@/components/AccountManager';
 import { WinMultiplier, EpochCountdown, EpochStats } from '@/components/GameInfo';
 import ActionButton from '@/components/ActionButton';
+import Stats from '@/components/Stats';
 import { useIsMobile } from '@/components/hooks/useIsMobile';
 import Image from 'next/image'
+
+const sidesWidth = "60%";
 
 /* ───────── HUD ───────── */
 const HUD: React.FC = () => {
   const { colorMode } = useColorMode();
-  const [logoSrc, setLogoSrc] = useState("/logo.png");
+  const [logoSrc, setLogoSrc] = useState("");
   useEffect(() => {
     if (colorMode === "dark") {
       setLogoSrc("/logo_white.png");
@@ -24,45 +27,31 @@ const HUD: React.FC = () => {
   }, [colorMode])
 
   return (
-    <HStack w={"100vw"} h={"100vh"} p={"3.2vh"} gap={"3.2vh"} containerType={"size"}>
-      <VStack
-        w="full"
-        h="full"
-        gap={"2.4vh"}
-        flex={"1 0 33.5vh"}
-      >
-        <HStack justify={"space-between"} w="full">
-          <ColorModeButton />
-          <Box w="80%" maxW={"40vh"}>
-            <Image width={800} height={200} src={logoSrc} alt="logo" />
-          </Box>
-          <AccountManagerMobile />
-        </HStack>
-        <ActionButton
-          flex={1}
-          w="full"
-          buttonWidth={"full"}
-          buttonHeight={"12vh"}
-          borderBottom={{ base: "2px solid black", _dark: "2px solid white" }}
-          keySize={'8vh'}
-          buttonSize={'18vh'}
-        />
-        <HStack w={"full"}>
-          <WinMultiplier flex={1} textFontSize='3.5vh' />
-          <EpochCountdown flex={1} textFontSize='3.5vh' />
-        </HStack>
-        <EpochStats w={"full"} />
-        <Rules w={"full"} />
-      </VStack>
-      <Flex
-        h={"full"}
-        maxW={"133cqh"}
-        flex={"1000 1 auto"}
-        align={"center"}
-      >
-        <WebRTCPlayer />
-      </Flex>
-    </HStack>
+    <VStack h="100vh" gap={6} w={"full"} p={4}>
+      <HStack w="full" justify="space-between" h={28} px={6}>
+        <ColorModeButton />
+        <Image width={250} height={100} src={logoSrc} alt="logo" />
+        <AccountManager />
+      </HStack>
+      <HStack w="full" justify={"space-evenly"} >
+        <Flex align={"center"} justify={"center"} flex={1} w={"full"}>
+          <VStack gap={6} w={sidesWidth}>
+            <WinMultiplier w={"full"} />
+            <EpochCountdown w={"full"} />
+          </VStack>
+        </Flex>
+        <Flex flex={10} aspectRatio={4 / 3} maxW={"87vh"}>
+          <WebRTCPlayer />
+        </Flex>
+        <Flex align={"center"} justify={"center"} flex={1} w={"full"}>
+          <VStack gap={3} w={sidesWidth}>
+            <EpochStats w={"full"} />
+            <Rules w={"full"} />
+          </VStack>
+        </Flex>
+      </HStack>
+      <ActionButton h="100%" paddingBottom={4} />
+    </VStack>
   )
 };
 
@@ -99,10 +88,10 @@ const Mobile = () => {
   </VStack>
 }
 
+
 /* ───────── page wrapper ───────── */
 export default function Page() {
   const isMobile = useIsMobile();
-  console.log(isMobile)
   return (
     <SocketProvider>
       <ClawProvider>

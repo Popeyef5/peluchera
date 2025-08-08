@@ -15,8 +15,10 @@ export const Kbd: React.FC<KbdProps> = ({ children, h = 4, w = 4, ...props }) =>
     justify="center"
     border={{ base: "0.4vh solid black", _dark: "0.4vh solid white" }}
     h={h}
+    minH={"6.5vh"}
     w={w}
-    p={"2.4vh"}
+    minW={"6.5vh"}
+    p={"1.4vw"}
     borderRadius="md"
     fontSize="3.6vh"
     userSelect="none"
@@ -55,7 +57,16 @@ const GameController: React.FC<GameControllerProps> = ({
   });
 
   return (
-    <Flex align="center" gap={12}>
+    <Flex
+      align="center"
+      justify={"space-evenly"}
+      w={"100%"}
+      h={"100%"}
+      containerType={"size"}
+      css={{"@media (max-width: 175vh)": {
+        flexDirection: "column"
+      }}}
+    >
       <Grid
         gap={"0.8vh"}
       >
@@ -81,6 +92,7 @@ const GameController: React.FC<GameControllerProps> = ({
       </Grid>
       <Button
         h={buttonSize}
+        minH={"14vh"}
         color={{ base: "black", _dark: "white" }}
         bg={{ base: "white", _dark: "black" }}
         border={{ base: "0.4vh solid black", _dark: "0.4vh solid white" }}

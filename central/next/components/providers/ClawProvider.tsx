@@ -61,6 +61,7 @@ interface ClawCtx {
 	position: number;
 	isPlaying: boolean;
 	loading: boolean;
+	withdrawing: boolean;
 	betAmount: number;
 	gameState: [number, number];
 	accountBalance: number;
@@ -117,6 +118,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const isPlayingRef = useRef(isPlaying);
 	useEffect(() => { isPlayingRef.current = isPlaying }, [isPlaying]);
 	const [loading, setLoading] = useState(false);
+	const [withdrawing, setWithdrawing] = useState(false);
 	const [betAmount, setBetAmount] = useState(1);
 	const [, setActiveKeys] = useState(0);
 	const [gameState, setGameState] = useState<[number, number]>([0, 0])
@@ -224,6 +226,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setActiveKeys(0);
 		};
 		const onGlobalSync = (data: GlobalSyncData) => {
+			console.log(data.state);
 			setGameState(data.state);
 			setQueueCount(data.queue_length);
 			setClawSocketOn(data.con);
@@ -383,19 +386,35 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			})
 			return;
 		}
-		console.log("withdrawing funds...")
-		socket.emit('withdraw', (r: { status: string, data?: string, error?: string }) => {
-			console.log(r);
-			if (r.status === 'ok') {
-				setAccountBalance(0);
-			} else {
-				toaster.create({
-					description: "Unexpected error while withdrawing funds...",
-					type: "error",
-					duration: 3000
-				})
-			}
-		})
+		setWithdrawing(true);
+		try {
+			console.log("withdrawing funds...")
+			socket.emit('withdraw', (r: { status: string, data?: string, error?: string }) => {
+				console.log(r);
+				if (r.status === 'ok') {
+					setAccountBalance(0);
+					toaster.create({
+						description: "Funds withdrawn successfully...",
+						type: "success",
+						duration: 3000
+					})
+				} else {
+					toaster.create({
+						description: "Unexpected error while withdrawing funds...",
+						type: "error",
+						duration: 3000
+					})
+				}
+				setWithdrawing(false);
+			})
+		} catch (err) {
+			setWithdrawing(false);
+			toaster.create({
+				description: "Unexpected error withdrawing funds...",
+				type: "error",
+				duration: 3000
+			})
+		}
 	}, [socket, address, chainId])
 
 	const value: ClawCtx = {
@@ -403,6 +422,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		position,
 		isPlaying,
 		loading,
+		withdrawing,
 		betAmount,
 		gameState,
 		accountBalance,
