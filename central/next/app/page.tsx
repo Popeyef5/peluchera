@@ -55,7 +55,7 @@ const HUD: React.FC = () => {
           <EpochCountdown flex={1} textFontSize='3.5vh' />
         </HStack>
         <EpochStats w={"full"} />
-        <Rules w={"full"} />
+        <Rules w={"full"} containerRef={columnRef} />
       </VStack>
       <Flex
         h={"full"}
@@ -89,7 +89,7 @@ const Mobile = () => {
     <Flex aspectRatio={4 / 3} w="full" justifyItems={"center"}>
       <WebRTCPlayer />
     </Flex>
-    <Flex w="full" minH="140px" borderBottom={{ base: "1px solid black", _dark: "1px solid white" }} justify={"center"} align={"start"}>
+    <Flex w="full" minH="140px" justify={"center"} align={"center"}>
       <ActionButton userTextSize={"xl"} buttonWidth={"full"} w={"full"} />
     </Flex>
     <HStack w={"full"}>

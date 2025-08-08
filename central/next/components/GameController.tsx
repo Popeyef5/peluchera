@@ -2,6 +2,7 @@
 import React from 'react';
 import { Button, Flex, Grid, GridItem, FlexProps } from '@chakra-ui/react';
 import { useClaw } from '@/components/providers/ClawProvider';
+import { useIsMobile } from './hooks/useIsMobile';
 
 type KbdProps =
   FlexProps &               // chakra styling props
@@ -41,6 +42,7 @@ const GameController: React.FC<GameControllerProps> = ({
   keySize = 4,
   buttonSize = 28
 }: GameControllerProps) => {
+  const isMobile = useIsMobile();
   const { isPlaying, press, release } = useClaw();
   if (!isPlaying) return null;
 
@@ -63,7 +65,7 @@ const GameController: React.FC<GameControllerProps> = ({
       w={"100%"}
       h={"100%"}
       containerType={"size"}
-      css={{"@media (max-width: 175vh)": {
+      css={!isMobile && {"@media (max-width: 175vh)": {
         flexDirection: "column"
       }}}
     >
