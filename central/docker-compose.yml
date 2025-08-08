@@ -29,7 +29,7 @@ services:
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/nginx.conf
       - claw_certbot_etc:/etc/letsencrypt
-      - claw_certbot_www:/var/www/letsencrypt
+      - claw_certbot_www:/var/www/certbot
     networks:
       - claw_network
     extra_hosts:
