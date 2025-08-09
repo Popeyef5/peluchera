@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
-import { Grid, GridItem, HStack, VStack, Box, Flex, Separator } from '@chakra-ui/react';
+import { HStack, VStack, Flex} from '@chakra-ui/react';
 import { SocketProvider, ClawProvider } from '@/components/providers';
 import WebRTCPlayer from '@/components/WebRTCPlayer';
 import Rules from '@/components/rules';
@@ -8,7 +8,6 @@ import { ColorModeButton, useColorMode } from '@/components/ui/color-mode';
 import AccountManager from '@/components/AccountManager';
 import { WinMultiplier, EpochCountdown, EpochStats } from '@/components/GameInfo';
 import ActionButton from '@/components/ActionButton';
-import Stats from '@/components/Stats';
 import { useIsMobile } from '@/components/hooks/useIsMobile';
 import Image from 'next/image'
 

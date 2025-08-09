@@ -1,6 +1,6 @@
 "use client";
-import { Box, Drawer, Flex, VStack, HStack, Text, Tabs, Button, Icon, useDisclosure, IconButton, Portal } from "@chakra-ui/react"
-import { useEffect, useState } from "react";
+import { Box, Drawer, VStack, HStack, Text, Tabs, Button, IconButton, Portal } from "@chakra-ui/react"
+import { useState } from "react";
 import { useClaw } from "./providers";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';

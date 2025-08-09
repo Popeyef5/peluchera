@@ -27,7 +27,7 @@ export default function WebRTCPlayer() {
     script.src = '/reader.js';
     script.defer = true;
     script.onload = () => {
-      /* eslint-disable-next-line @typescript-eslint/consistent-type-assertions */
+      // /* eslint-disable-next-line @typescript-eslint/consistent-type-assertions */
       const ReaderCtor = (window as unknown as { MediaMTXWebRTCReader: typeof window.MediaMTXWebRTCReader }).MediaMTXWebRTCReader;
 
       readerRef.current = new ReaderCtor({

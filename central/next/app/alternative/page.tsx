@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useRef, useState } from 'react';
-import { Grid, GridItem, HStack, VStack, Box, Flex, Drawer } from '@chakra-ui/react';
+import { HStack, VStack, Box, Flex } from '@chakra-ui/react';
 import { SocketProvider, ClawProvider } from '@/components/providers';
 import WebRTCPlayer from '@/components/WebRTCPlayer';
 import Rules from '@/components/rules';

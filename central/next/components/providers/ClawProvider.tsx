@@ -272,7 +272,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			socket.off('balance', onAccountBalance);
 			socket.off('round_end', onRoundEnd);
 		};
-	}, [socket]);
+	}, [socket, updateSeconds]);
 
 	/* emit bit‑mask */
 	const emitMovement = useCallback((mask: number) => {
@@ -407,7 +407,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 				}
 				setWithdrawing(false);
 			})
-		} catch (err) {
+		} catch {
 			setWithdrawing(false);
 			toaster.create({
 				description: "Unexpected error withdrawing funds...",

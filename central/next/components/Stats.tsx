@@ -1,7 +1,7 @@
 "use client";
 
 import { FramedLayoutCard } from "./ui/framedLayoutCard";
-import { VStack, HStack, Text, Separator, BoxProps } from "@chakra-ui/react";
+import { VStack, HStack, Text, BoxProps } from "@chakra-ui/react";
 import { InfoTip } from "./ui/toggle-tip";
 import { useClaw } from "@/components/providers"
 
