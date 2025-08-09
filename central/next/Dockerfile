@@ -11,19 +11,19 @@ RUN pnpm install --frozen-lockfile
 FROM base AS builder
 RUN npm install -g pnpm
 WORKDIR /code
-COPY --from=deps /code/node_modules ./node_modules
 COPY . .
+COPY --from=deps /code/node_modules ./node_modules
 RUN pnpm build
 
 # Stage 3: Production server
 FROM base AS runner
-RUN npm install -g pnpm
+# RUN npm install -g pnpm
 WORKDIR /code
 ENV NODE_ENV=production
 
 # bring in the prod deps so `next` exists
-COPY --from=deps /code/node_modules ./node_modules
-COPY package.json pnpm-lock.yaml ./
+# COPY --from=deps /code/node_modules ./node_modules
+# COPY package.json pnpm-lock.yaml ./
 
 COPY --from=builder /code/public ./public
 COPY --from=builder /code/.next/standalone ./
