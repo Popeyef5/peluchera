@@ -226,7 +226,6 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setActiveKeys(0);
 		};
 		const onGlobalSync = (data: GlobalSyncData) => {
-			console.log(data.state);
 			setGameState(data.state);
 			setQueueCount(data.queue_length);
 			setClawSocketOn(data.con);
@@ -388,9 +387,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		}
 		setWithdrawing(true);
 		try {
-			console.log("withdrawing funds...")
 			socket.emit('withdraw', (r: { status: string, data?: string, error?: string }) => {
-				console.log(r);
 				if (r.status === 'ok') {
 					setAccountBalance(0);
 					toaster.create({
