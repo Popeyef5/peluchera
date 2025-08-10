@@ -1,11 +1,15 @@
 import { erc20Abi } from "viem";
 
-export const clawAddress = (process.env.CLAW_CONTRACT_ADDRESS || "0x479dfc31B831DED6cF099CAe7eE74C595942c181") as `0x${string}`;
+export const clawAddress = (process.env.NEXT_PUBLIC_CLAW_CONTRACT_ADDRESS ||
+  "0x64cb07E871C6aAd8Ef6E2Fe2654735AA4eab6E04") as `0x${string}`;
 export const USDCAddress = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
 export const clawABI = [
   {
-    inputs: [{ internalType: "uint256", name: "_maxFee", type: "uint256" }],
+    inputs: [
+      { internalType: "uint256", name: "_maxFee", type: "uint256" },
+      { internalType: "uint256", name: "_feeGrowth", type: "uint256" },
+    ],
     stateMutability: "nonpayable",
     type: "constructor",
   },
@@ -35,11 +39,57 @@ export const clawABI = [
       {
         indexed: false,
         internalType: "uint256",
-        name: "newFee",
+        name: "newFeeGrowth",
         type: "uint256",
       },
     ],
-    name: "FeeUpdate",
+    name: "FeeGrowthUpdate",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "roundId",
+        type: "uint256",
+      },
+    ],
+    name: "FeesCollected",
+    type: "event",
+  },
+  { anonymous: false, inputs: [], name: "FeesCollectedFull", type: "event" },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "address",
+        name: "player",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "amount",
+        type: "uint256",
+      },
+    ],
+    name: "FullWithrawal",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "newMaxFee",
+        type: "uint256",
+      },
+    ],
+    name: "MaxFeeUpdate",
     type: "event",
   },
   {
@@ -94,7 +144,14 @@ export const clawABI = [
     name: "PlayerWin",
     type: "event",
   },
-  { anonymous: false, inputs: [], name: "RoundEnd", type: "event" },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: false, internalType: "uint256", name: "id", type: "uint256" },
+    ],
+    name: "RoundEnd",
+    type: "event",
+  },
   {
     anonymous: false,
     inputs: [
@@ -225,10 +282,38 @@ export const clawABI = [
     type: "function",
   },
   {
+    inputs: [{ internalType: "uint256", name: "_roundId", type: "uint256" }],
+    name: "collectFees",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "collectFeesFull",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
     inputs: [],
     name: "endRound",
     outputs: [],
     stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "feeGrowth",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    name: "feesCollected",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "view",
     type: "function",
   },
   {
@@ -238,6 +323,13 @@ export const clawABI = [
       { internalType: "uint256", name: "", type: "uint256" },
       { internalType: "uint256", name: "", type: "uint256" },
     ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "address", name: "_player", type: "address" }],
+    name: "getTotalBalance",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",
   },
@@ -273,8 +365,22 @@ export const clawABI = [
     type: "function",
   },
   {
+    inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    name: "roundFeeGrowths",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
     inputs: [],
     name: "roundId",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    name: "roundMaxFees",
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",
@@ -311,6 +417,13 @@ export const clawABI = [
       { internalType: "bool", name: "approved", type: "bool" },
     ],
     name: "setApprovalForAll",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "_feeGrowth", type: "uint256" }],
+    name: "setFeeGrowth",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",
@@ -357,6 +470,13 @@ export const clawABI = [
     ],
     name: "withdraw",
     outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "address", name: "_player", type: "address" }],
+    name: "withdrawFull",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
     stateMutability: "nonpayable",
     type: "function",
   },

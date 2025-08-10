@@ -23,7 +23,7 @@ const ActionButton = ({
 	buttonSize = 28,
 	userTextSize = "2.25vh",
 	...props }: ActionButtonProps) => {
-	const { isPlaying, position, loading, approveAndBet, queueCount } = useClaw();
+	const { isPlaying, position, loading, approveAndBet, queueCount, clawSocketOn } = useClaw();
 	const { isConnected } = useAppKitAccount();
 	const { open } = useAppKit();
 	const [userText, setUserText] = useState("");
@@ -55,6 +55,7 @@ const ActionButton = ({
 						fontSize={buttonFontSize}
 						borderRadius={"1.5rem"}
 						w={buttonWidth}
+						disabled={!clawSocketOn}
 					>
 						{!isConnected ? 'CONNECT WALLET' : 'PLAY'}
 					</Button>
