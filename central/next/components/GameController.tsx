@@ -57,7 +57,6 @@ const GameController: React.FC<GameControllerProps> = ({
 }: GameControllerProps) => {
   const isMobile = useIsMobile();
   const { isPlaying, press, release } = useClaw();
-  if (!isPlaying) return null;
 
   /* helper that wires the proper pointer events */
   const bind = (action: Action) => ({
@@ -113,6 +112,8 @@ const GameController: React.FC<GameControllerProps> = ({
       window.removeEventListener('keyup', up);
     };
   }, [isPlaying, press, release]);
+
+  if (!isPlaying) return null;
 
   return (
     <Flex

@@ -134,8 +134,6 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const { address } = useAppKitAccount();
 	const { chainId } = useAppKitNetwork();
 
-
-
 	/* tell backend who we are */
 	useEffect(() => {
 		const linkWallet = () => {
