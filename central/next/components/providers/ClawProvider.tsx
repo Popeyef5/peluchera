@@ -15,14 +15,14 @@ import { types } from '@/lib/crypto/permit';
 import celebrate from '@/components/confetti';
 
 /* bit‑mask helpers */
-const KEYMAP: Record<string, number> = {
+export const KEYMAP: Record<string, number> = {
 	ArrowLeft: 0b0001,
 	ArrowRight: 0b0010,
 	ArrowUp: 0b0100,
 	ArrowDown: 0b1000,
 	' ': 0b0001_0000,  // Grab
 };
-const ACTION_TO_KEY = {
+export const ACTION_TO_KEY = {
 	left: 'ArrowLeft',
 	right: 'ArrowRight',
 	up: 'ArrowUp',
@@ -299,30 +299,30 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		});
 	}, [emitMovement]);
 
-	/* keyboard listeners */
-	useEffect(() => {
-		if (!isPlaying) return;
+	// /* keyboard listeners */
+	// useEffect(() => {
+	// 	if (!isPlaying) return;
 
-		const down = (e: KeyboardEvent) => {
-			if (e.key in KEYMAP) {
-				const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
-				if (action) press(action as keyof typeof ACTION_TO_KEY);
-			}
-		};
+	// 	const down = (e: KeyboardEvent) => {
+	// 		if (e.key in KEYMAP) {
+	// 			const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
+	// 			if (action) press(action as keyof typeof ACTION_TO_KEY);
+	// 		}
+	// 	};
 
-		const up = (e: KeyboardEvent) => {
-			if (e.key in KEYMAP) {
-				const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
-				if (action) release(action as keyof typeof ACTION_TO_KEY);
-			}
-		};
-		window.addEventListener('keydown', down);
-		window.addEventListener('keyup', up);
-		return () => {
-			window.removeEventListener('keydown', down);
-			window.removeEventListener('keyup', up);
-		};
-	}, [isPlaying, press, release]);
+	// 	const up = (e: KeyboardEvent) => {
+	// 		if (e.key in KEYMAP) {
+	// 			const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
+	// 			if (action) release(action as keyof typeof ACTION_TO_KEY);
+	// 		}
+	// 	};
+	// 	window.addEventListener('keydown', down);
+	// 	window.addEventListener('keyup', up);
+	// 	return () => {
+	// 		window.removeEventListener('keydown', down);
+	// 		window.removeEventListener('keyup', up);
+	// 	};
+	// }, [isPlaying, press, release]);
 
 	/* approve + bet */
 	const approveAndBet = useCallback(async () => {

@@ -1,7 +1,7 @@
 'use client';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button, Flex, Grid, GridItem, FlexProps } from '@chakra-ui/react';
-import { useClaw } from '@/components/providers/ClawProvider';
+import { useClaw, ACTION_TO_KEY, KEYMAP } from '@/components/providers/ClawProvider';
 import { useIsMobile } from './hooks/useIsMobile';
 
 type KbdProps =
@@ -25,6 +25,12 @@ export const Kbd: React.FC<KbdProps> = ({ children, h = 4, w = 4, ...props }) =>
     userSelect="none"
     touchAction="none"
     onContextMenu={e => e.preventDefault()}
+    css={{
+      "&[data-active]": {
+        background: { base: "black", _dark: "white" },
+        color: { base: "white", _dark: "black" }
+      }
+    }}
     {...props}
   >
     {children}
@@ -38,6 +44,13 @@ interface GameControllerProps {
 
 type Action = 'up' | 'down' | 'left' | 'right' | 'grab';
 
+const setActiveByAction = (action: Action, on: boolean) => {
+  const el = document.querySelector<HTMLElement>(`[data-action="${action}"]`);
+  if (!el) return;
+  if (on) el.setAttribute('data-active', '');
+  else el.removeAttribute('data-active');
+};
+
 const GameController: React.FC<GameControllerProps> = ({
   keySize = 4,
   buttonSize = 28
@@ -48,15 +61,58 @@ const GameController: React.FC<GameControllerProps> = ({
 
   /* helper that wires the proper pointer events */
   const bind = (action: Action) => ({
+    'data-action': action,
     onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
       e.preventDefault();               // <- stops text-selection/drag
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      setActiveByAction(action, true);
       press(action);
     },
-    onPointerUp: () => release(action),
-    onPointerLeave: () => release(action),   // finger slides away
-    onPointerCancel: () => release(action),  // browser gesture cancelled
-  });
+    onPointerUp: () => {
+      setActiveByAction(action, false);
+      release(action);
+    },
+    onPointerLeave: () => {
+      setActiveByAction(action, false);
+      release(action);
+    },   // finger slides away
+    onPointerCancel: () => {
+      setActiveByAction(action, false);
+      release(action);
+    },  // browser gesture cancelled
+  }
+  );
+
+  /* keyboard listeners */
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const down = (e: KeyboardEvent) => {
+      if (e.key in KEYMAP) {
+        const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
+        if (action) {
+          setActiveByAction(action as Action, true);
+          press(action as keyof typeof ACTION_TO_KEY);
+        }
+      }
+    };
+
+    const up = (e: KeyboardEvent) => {
+      if (e.key in KEYMAP) {
+        const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
+        if (action) {
+          setActiveByAction(action as Action, false);
+          release(action as keyof typeof ACTION_TO_KEY);
+        }
+      }
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+  }, [isPlaying, press, release]);
 
   return (
     <Flex
@@ -65,9 +121,11 @@ const GameController: React.FC<GameControllerProps> = ({
       w={"100%"}
       h={"100%"}
       containerType={"size"}
-      css={!isMobile && {"@media (max-width: 175vh)": {
-        flexDirection: "column"
-      }}}
+      css={!isMobile && {
+        "@media (max-width: 175vh)": {
+          flexDirection: "column"
+        }
+      }}
     >
       <Grid
         gap={"0.8vh"}
@@ -103,6 +161,12 @@ const GameController: React.FC<GameControllerProps> = ({
         fontSize="3.6vh"
         touchAction="none"
         onContextMenu={e => e.preventDefault()}
+        css={{
+          "&[data-active]": {
+            background: { base: "black", _dark: "white" },
+            color: { base: "white", _dark: "black" }
+          }
+        }}
         {...bind('grab')}
       >
         GRAB
