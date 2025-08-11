@@ -12,7 +12,7 @@ const Rules = ({ w, containerRef }: RulesProps) => {
 	const [drawerOpen, setDrawerOpen] = useState(false);
 
 	return <Drawer.Root
-		placement={isMobile ? "top" : "bottom"}
+		placement={"bottom"}
 		open={drawerOpen}
 		onOpenChange={(e) => { setDrawerOpen(e.open) }}
 	>
@@ -23,10 +23,10 @@ const Rules = ({ w, containerRef }: RulesProps) => {
 		</Drawer.Trigger>
 		<Portal container={containerRef}>
 			<Drawer.Backdrop />
-			<Drawer.Positioner pos={"absolute"} boxSize={"full"}>
+			<Drawer.Positioner pos={containerRef ? "absolute" : "fixed"} boxSize={"full"}>
 				<Drawer.Content
-					borderBottomRadius={"1.5rem"}
-					borderTopRadius={isMobile ? "0" : "1.5rem"}
+					borderTopRadius={"1.5rem"}
+					borderBottomRadius={isMobile ? "0" : "1.5rem"}
 					color={{ base: "white", _dark: "black" }}
 					backgroundColor={{ base: "black", _dark: "white" }}
 				>

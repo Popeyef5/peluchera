@@ -154,7 +154,6 @@ export const AccountManager = (
 	return (
 		<Drawer.Root
 			placement={"top"}
-			// closeOnInteractOutside={false}
 			open={drawerOpen}
 			onOpenChange={(e) => { setDrawerOpen(e.open) }}
 		>
@@ -165,7 +164,7 @@ export const AccountManager = (
 			</Drawer.Trigger>
 			<Portal container={containerRef}>
 				<Drawer.Backdrop />
-				<Drawer.Positioner pos={"absolute"} boxSize={"full"}>
+				<Drawer.Positioner pos={containerRef ? "absolute" : "fixed"} boxSize={"full"}>
 					<Drawer.Content
 						borderBottomRadius={"1.5rem"}
 						borderTopRadius={isMobile ? "0" : "1.5rem"}
