@@ -38,7 +38,7 @@ const Rules = ({ w, containerRef }: RulesProps) => {
 							<VStack gap={4} align={"start"}>
 								<p>Every time you play, your USDC goes into a prize pool.</p>
 								<p>Every win earns you one share of the prize pool.</p>
-								<p>At the end of each epoch (24h), the prize pool (minus a fee) is split amongst the winners. Each one gets a cut proportional to their numner of shares.</p>
+								<p>At the end of each epoch (24h), the prize pool (minus a fee) is split amongst the winners. Each one gets a cut proportional to their number of shares.</p>
 								<p>The fee will not exceed 20% and winning plays will never lose money.</p>
 							</VStack>
 							<Card.Root variant={"elevated"} backgroundColor={"gray.400"}>

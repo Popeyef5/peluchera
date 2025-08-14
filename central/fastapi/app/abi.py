@@ -161,9 +161,21 @@ claw_abi = [
                 "internalType": "uint256",
                 "name": "id",
                 "type": "uint256",
-            }
+            },
+            {
+                "indexed": False,
+                "internalType": "uint256",
+                "name": "maxFee",
+                "type": "uint256",
+            },
+            {
+                "indexed": False,
+                "internalType": "uint256",
+                "name": "feeGrowth",
+                "type": "uint256",
+            },
         ],
-        "name": "RoundEnd",
+        "name": "RoundStart",
         "type": "event",
     },
     {
@@ -424,6 +436,16 @@ claw_abi = [
         "inputs": [],
         "name": "roundId",
         "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "roundInfo",
+        "outputs": [
+            {"internalType": "uint256", "name": "", "type": "uint256"},
+            {"internalType": "uint256", "name": "", "type": "uint256"},
+        ],
         "stateMutability": "view",
         "type": "function",
     },

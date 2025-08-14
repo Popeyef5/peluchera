@@ -4,18 +4,19 @@ import { FramedLayoutCard, FramedLayoutCardProps } from "./ui/framedLayoutCard";
 import { VStack, HStack, Text, Box } from "@chakra-ui/react"
 import { useClaw } from '@/components/providers'
 import { InfoTip } from "./ui/toggle-tip";
+import { currentPayout, marginalMultiplier } from "@/lib/utils";
 
 type GameInfoProps = Partial<FramedLayoutCardProps>
 
 export const WinMultiplier = (props: GameInfoProps) => {
-	const { gameState } = useClaw();
+	const { gameState, roundInfo } = useClaw();
 
 	return <FramedLayoutCard
 		title="Multiplier"
 		{...props}
 	>
 		<Box>
-			{Math.round(10 * (gameState[0] + 1) / (gameState[1] + 1)) / 10}x <InfoTip content="This value can fluctuate as win-rate varies during the epoch. Read the rules for more details." />
+			{Math.round(10 * marginalMultiplier(gameState, roundInfo)) / 10}x <InfoTip content="This value can fluctuate as win-rate varies during the epoch. Read the rules for more details." />
 		</Box>
 	</FramedLayoutCard>
 }
@@ -34,7 +35,7 @@ export const EpochCountdown = (props: GameInfoProps) => {
 
 
 export const EpochStats = (props: GameInfoProps) => {
-	const { roundWon, roundPlayed, gameState } = useClaw();
+	const { roundWon, roundPlayed, gameState, roundInfo } = useClaw();
 
 	return <FramedLayoutCard
 		title="Your stats this epoch"
@@ -54,7 +55,7 @@ export const EpochStats = (props: GameInfoProps) => {
 					<Text>Current payout</Text>
 					<InfoTip content="Remember this can change if by the end of the epoch the ratio of wins and losses changes" />
 				</HStack>
-				<Text>{Math.round(100 * roundWon * gameState[0] / Math.max(gameState[1], 1)) / 100}</Text>
+				<Text>{Math.round(100 * currentPayout(gameState, roundInfo, roundWon)) / 100}</Text>
 			</HStack>
 		</VStack>
 	</FramedLayoutCard>

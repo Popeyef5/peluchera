@@ -148,8 +148,20 @@ export const clawABI = [
     anonymous: false,
     inputs: [
       { indexed: false, internalType: "uint256", name: "id", type: "uint256" },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "maxFee",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "feeGrowth",
+        type: "uint256",
+      },
     ],
-    name: "RoundEnd",
+    name: "RoundStart",
     type: "event",
   },
   {
@@ -375,6 +387,16 @@ export const clawABI = [
     inputs: [],
     name: "roundId",
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "roundInfo",
+    outputs: [
+      { internalType: "uint256", name: "", type: "uint256" },
+      { internalType: "uint256", name: "", type: "uint256" },
+    ],
     stateMutability: "view",
     type: "function",
   },

@@ -20,3 +20,38 @@ export function parseTimestamp(ts: number) {
   };
   return `${month} ${day}${suf(day)}`;
 }
+
+export function effectiveCommission(
+  gameState: [number, number],
+  roundInfo: [number, number]
+): number {
+  const [maxFee, feeGrowth] = roundInfo;
+  const [played, won] = gameState;
+
+  if (played === 0) return 0;
+  if (won === 0) return played;
+
+  return Math.min((maxFee * played) / 100, (feeGrowth * (played - won)) / 100);
+}
+
+export function marginalMultiplier(
+  gameState: [number, number],
+  roundInfo: [number, number]
+): number {
+  const [played, won] = gameState;
+  const commission = effectiveCommission([played + 1, won + 1], roundInfo);
+  const loot = played + 1 - commission;
+
+  return loot / (won + 1);
+}
+
+export function currentPayout(
+  gameState: [number, number],
+  roundInfo: [number, number],
+  playerWon: number
+): number {
+  const [played, won] = gameState;
+  const commission = effectiveCommission(gameState, roundInfo);
+  const loot = played - commission;
+  return (playerWon * loot) / Math.max(won, 1);
+}

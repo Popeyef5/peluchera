@@ -43,7 +43,8 @@ interface Withdrawal {
 }
 
 interface GlobalSyncData {
-	state: [number, number];
+	state: [number, number]; // [Played, Won]
+	round_info: [number, number]; // [MaxFee, FeeGrowth]
 	queue_length: number;
 	con: boolean;
 	seconds_left: number;
@@ -72,6 +73,10 @@ interface AccountBalanceData {
 	withdrawals: Withdrawal[]
 }
 
+interface RoundStartData {
+	round_info: [number, number]; // [MaxFee, FeeGrowth]
+}
+
 interface ClawCtx {
 	queueCount: number;
 	position: number;
@@ -80,6 +85,7 @@ interface ClawCtx {
 	withdrawing: boolean;
 	betAmount: number;
 	gameState: [number, number];
+	roundInfo: [number, number];
 	accountBalance: number;
 	accountBets: PlayedRound[] | null;
 	accountWithdrawals: Withdrawal[] | null;
@@ -140,6 +146,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [betAmount, setBetAmount] = useState(1);
 	const [, setActiveKeys] = useState(0);
 	const [gameState, setGameState] = useState<[number, number]>([0, 0])
+	const [roundInfo, setRoundInfo] = useState<[number, number]>([0, 0])
 	const [accountBalance, setAccountBalance] = useState<number>(0)
 	const [accountBets, setAccountBets] = useState<PlayedRound[] | null>(null)
 	const [accountWithdrawals, setAccountWithdrawals] = useState<Withdrawal[] | null>(null)
@@ -214,7 +221,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 					if (!toastId.current) return;
 					toaster.update(toastId.current, {
 						description: "Better luck next time...",
-						type: "error",          
+						type: "error",
 						duration: 6000,
 						closable: true,
 					});
@@ -232,12 +239,12 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 					toaster.update(toastId.current, {
 						description: "🎉 You won!",
-						type: "success", 
+						type: "success",
 						duration: 1000,
 						closable: true,
 					});
 
-					toastId.current = null;        
+					toastId.current = null;
 				});
 			}
 			setQueueCount((q) => Math.max(q - 1, 0));
@@ -247,6 +254,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		};
 		const onGlobalSync = (data: GlobalSyncData) => {
 			setGameState(data.state);
+			setRoundInfo(data.round_info);
 			setQueueCount(data.queue_length);
 			setClawSocketOn(data.con);
 			updateSeconds(data.seconds_left);
@@ -257,14 +265,19 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		const onClawSocketConnectionChange = (data: clawConnectionData) => {
 			setClawSocketOn(data.con);
 		}
-		const onRoundEnd = () => {
+		const onRoundStart = (data: RoundStartData) => {
 			setGameState([0, 0]);
 			setRoundPlayed(0);
 			setRoundWon(0);
+			setRoundInfo(data.round_info);
 			socket.emit(
 				'check_balance',
-				(r: { status: string; balance: number }) => {
-					if (r.status === 'ok') setAccountBalance(r.balance);
+				(r: { status: string; balance: number, bets: PlayedRound[], withdrawals: Withdrawal[] }) => {
+					if (r.status === 'ok') {
+						setAccountBalance(r.balance);
+						setAccountBets(r.bets);
+						setAccountWithdrawals(r.withdrawals);
+					}
 				},
 			);
 		}
@@ -281,7 +294,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		socket.on('global_sync', onGlobalSync)
 		socket.on('personal_sync', onPersonalSync);
 		socket.on('balance', onAccountBalance);
-		socket.on('round_end', onRoundEnd);
+		socket.on('round_start', onRoundStart);
 
 		return () => {
 			socket.off('player_queued', onPlayerQueued);
@@ -291,7 +304,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			socket.off('global_sync', onGlobalSync);
 			socket.off('personal_sync', onPersonalSync);
 			socket.off('balance', onAccountBalance);
-			socket.off('round_end', onRoundEnd);
+			socket.off('round_start', onRoundStart);
 		};
 	}, [socket, updateSeconds]);
 
@@ -419,6 +432,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		withdrawing,
 		betAmount,
 		gameState,
+		roundInfo,
 		accountBalance,
 		accountBets,
 		accountWithdrawals,

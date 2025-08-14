@@ -3,12 +3,15 @@ from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, B
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
+from .config import DEFAULT_FEE_GROWTH, DEFAULT_MAX_FEE
 from .db import Base
 
 class Round(Base):
     __tablename__ = "round"
     id         = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    max_fee    = Column(Integer, default=DEFAULT_MAX_FEE)
+    fee_growth = Column(Integer, default=DEFAULT_FEE_GROWTH)
     multiplier = Column(Integer, default=0)
     
     entries    = relationship("QueueEntry", back_populates="round", lazy="selectin")

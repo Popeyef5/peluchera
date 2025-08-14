@@ -10,5 +10,5 @@ async def get_session() -> AsyncGenerator:
 
 async def ensure_first_round(session):
     if not await session.scalar(select(Round).limit(1)):
-        session.add(Round())
+        session.add(Round(id=1))
         await session.commit()

@@ -14,6 +14,10 @@ CLAW_ADDRESS     = os.environ.get("CLAW_CONTRACT_ADDRESS")
 CHAIN_ID         = int(os.environ.get("CHAIN_ID"))
 PRIVATE_KEY      = os.environ.get("CLAW_PRIVATE_KEY")
 
+# Default game settings
+DEFAULT_MAX_FEE    = os.environ.get("DEFAULT_MAX_FEE", 20)
+DEFAULT_FEE_GROWTH = os.environ.get("DEFAULT_FEE_GROWTH", 50)
+
 # reconciler config
 # START_BLOCK = 0              # deploy block
 # CONFIRMATIONS = 50           # finality buffer

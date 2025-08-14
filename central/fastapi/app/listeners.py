@@ -9,7 +9,7 @@ from .config import BASE_RPC_WS, CLAW_ADDRESS
 from .db import async_session
 from .models import QueueEntry, Round
 from .socket.sio_instance import sio
-from .state import game_state
+from .state import game_state, round_info
 from .logging import log
 
 
@@ -26,6 +26,7 @@ async def web3_listener():
 
                 # seed state
                 game_state[:] = await claw.functions.gameState().call()
+                round_info[:] = await claw.functions.roundInfo().call()
 
                 # async def _save_raw(ctx, db, name: str, args: dict):
                 #     bn = ctx.result["blockNumber"]
@@ -85,12 +86,20 @@ async def web3_listener():
                     game_state[1] += amount
                     await sio.emit("game_state", {"state": game_state})
 
-                async def _round_end(ctx: LogsSubscriptionContext):
+                async def _round_start(ctx: LogsSubscriptionContext):
                     log.info("Round end callback")
-                    await sio.emit("round_end")
+                    evt = claw.events.RoundStart().process_log(ctx.result)
+                    #TODO: should I link the rounds Ids?
+                    id = evt["args"]["id"]
+                    max_fee = evt["args"]["maxFee"]
+                    fee_growth = evt["args"]["feeGrowth"]
+                    round_info[:] = [max_fee, fee_growth]
+                    
                     async with async_session() as db:
-                        db.add(Round())
+                        db.add(Round(id=id, max_fee=max_fee, fee_growth=fee_growth))
                         await db.commit()
+                        
+                    await sio.emit("round_start", {"round_info": round_info})
                     game_state[:] = await claw.functions.gameState().call()
                     await sio.emit("game_state", {"state": game_state})
 
@@ -109,10 +118,10 @@ async def web3_listener():
                             handler=_player_win,
                         ),
                         LogsSubscription(
-                            label="round-end",
+                            label="round-start",
                             address=claw.address,
-                            topics=[claw.events.RoundEnd().topic],
-                            handler=_round_end,
+                            topics=[claw.events.RoundStart().topic],
+                            handler=_round_start,
                         ),
                         # ... add others here
                     ]
