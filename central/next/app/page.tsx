@@ -30,7 +30,7 @@ const HUD: React.FC = () => {
         w="full"
         h="full"
         gap={"2.4vh"}
-        flex={"1 0 33.5vh"}
+        flex={"1 0 34.5vh"}
         ref={columnRef}
         pos={"relative"}
       >

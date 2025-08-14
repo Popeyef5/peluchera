@@ -18,6 +18,11 @@ PRIVATE_KEY      = os.environ.get("CLAW_PRIVATE_KEY")
 DEFAULT_MAX_FEE    = os.environ.get("DEFAULT_MAX_FEE", 20)
 DEFAULT_FEE_GROWTH = os.environ.get("DEFAULT_FEE_GROWTH", 50)
 
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", None)
+TELEGRAM_BOT_CHATS = {
+	'regular': int(info) if (info := os.environ.get("TELEGRAM_BOT_CHAT_INFO", None)) is not None else None
+}
+
 # reconciler config
 # START_BLOCK = 0              # deploy block
 # CONFIRMATIONS = 50           # finality buffer

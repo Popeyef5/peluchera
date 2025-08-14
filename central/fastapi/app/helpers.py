@@ -44,6 +44,9 @@ async def safe_place_bet(loop, *args):
         except (requests.exceptions.RequestException, ConnectionResetError) as e:
             log.warning("RPC error: %s (retry %s/3)", e, attempt + 1)
             await asyncio.sleep(1.5**attempt)
+        except Exception as e:
+            log.warning("Unexpected error placing bet")
+            return False, None
     return False, None
 
 

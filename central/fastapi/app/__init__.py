@@ -5,6 +5,7 @@ from .deps import async_session, ensure_first_round
 from .pi_client import connect_pi
 from .schedulers import turn_scheduler, sync_scheduler, round_end_scheduler
 from .listeners import web3_listener
+from .notifier import alertBot
 import asyncio
 
 api = FastAPI()
@@ -19,7 +20,7 @@ async def on_startup():
     # first round
     async with async_session() as db:
         await ensure_first_round(db)
-
+        
     # background tasks
     asyncio.create_task(connect_pi())
     asyncio.create_task(turn_scheduler())
