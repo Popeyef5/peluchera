@@ -9,6 +9,8 @@ from sqlalchemy import select
 from .abi import claw_abi
 from .models import QueueEntry
 from .deps import async_session
+from .errors import NewRoundError
+from .models import Round
 from .socket.sio_instance import sio
 from .logging import log
 from .pi_client import safe_pi_emit
@@ -26,10 +28,10 @@ from .state import global_sync
 
 async def _turn_scheduler_loop():
 
-    # If a turn is being played, rest
+    # If a turn is being played or the round is being ended, rest
     if (
         datetime.utcnow() - state.last_start
-    ).total_seconds() < TURN_DURATION + INTER_TURN_DELAY:
+    ).total_seconds() < TURN_DURATION + INTER_TURN_DELAY or state.changing_round:
         await asyncio.sleep(1)
         return
 
@@ -135,23 +137,41 @@ async def round_end_scheduler():
         )
         seconds_left = int((next_midnight - now).total_seconds())
         await asyncio.sleep(seconds_left)
+
         try:
+            state.changing_round = True
+            await asyncio.sleep(TURN_DURATION * 1.5)
+
             w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
             contract = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
             owner = w3.eth.account.from_key(PRIVATE_KEY).address
 
-            # build transaction
-            txn = contract.functions.endRound().build_transaction(
-                {
-                    "from": owner,
-                    "nonce": w3.eth.get_transaction_count(owner, "pending"),
-                    "chainId": CHAIN_ID,
-                }
-            )
+            async with async_session() as db:
+                round = await db.scalar(select(Round).order_by(Round.created_at.desc()))
+                multiplier = contract.functions.winMultiplier(round.id).call()
+                round.multiplier = multiplier
 
-            # sign and send
-            signed = w3.eth.account.sign_transaction(txn, private_key=PRIVATE_KEY)
-            tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+                # build round end transaction
+                txn = contract.functions.endRound().build_transaction(
+                    {
+                        "from": owner,
+                        "nonce": w3.eth.get_transaction_count(owner, "pending"),
+                        "chainId": CHAIN_ID,
+                    }
+                )
+
+                # sign and send
+                signed = w3.eth.account.sign_transaction(txn, private_key=PRIVATE_KEY)
+                tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+                receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+
+                if receipt["status"] != 1:
+                    log.warning(receipt)
+                    raise NewRoundError("Error terminating round")
+
+                await db.commit()
+                state.changing_round = False
+
         except Exception as e:
             log.warning(f"An error occurred while ending the round: {e}")
+            state.changing_round = False

@@ -30,6 +30,18 @@ export const ACTION_TO_KEY = {
 	grab: ' ',
 } as const;
 
+interface PlayedRound {
+	bet: number,
+	win: boolean,
+	multiplier: number,
+	played_at: number,
+}
+
+interface Withdrawal {
+	amount: number,
+	timestamp: number,
+}
+
 interface GlobalSyncData {
 	state: [number, number];
 	queue_length: number;
@@ -46,6 +58,8 @@ interface WalletConnectedData {
 	balance: number;
 	played: number;
 	won: number;
+	bets: PlayedRound[],
+	withdrawals: Withdrawal[]
 }
 
 interface clawConnectionData {
@@ -53,7 +67,9 @@ interface clawConnectionData {
 }
 
 interface AccountBalanceData {
-	balance: number
+	balance: number,
+	bets: PlayedRound[],
+	withdrawals: Withdrawal[]
 }
 
 interface ClawCtx {
@@ -65,6 +81,8 @@ interface ClawCtx {
 	betAmount: number;
 	gameState: [number, number];
 	accountBalance: number;
+	accountBets: PlayedRound[] | null;
+	accountWithdrawals: Withdrawal[] | null;
 	clawSocketOn: boolean;
 	roundPlayed: number;
 	roundWon: number;
@@ -123,6 +141,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [, setActiveKeys] = useState(0);
 	const [gameState, setGameState] = useState<[number, number]>([0, 0])
 	const [accountBalance, setAccountBalance] = useState<number>(0)
+	const [accountBets, setAccountBets] = useState<PlayedRound[] | null>(null)
+	const [accountWithdrawals, setAccountWithdrawals] = useState<Withdrawal[] | null>(null)
 	const toastId = useRef<string | null>(null);        // keep the id we get back
 	const timerId = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [clawSocketOn, setClawSocketOn] = useState(false);
@@ -143,6 +163,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 				if (res.status === "ok") {
 					setPosition(res.data.position);
 					setAccountBalance(res.data.balance);
+					setAccountBets(res.data.bets);
+					setAccountWithdrawals(res.data.withdrawals);
 					setRoundPlayed(res.data.played);
 					setRoundWon(res.data.won);
 				}
@@ -192,7 +214,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 					if (!toastId.current) return;
 					toaster.update(toastId.current, {
 						description: "Better luck next time...",
-						type: "error",           // red colour scheme
+						type: "error",          
 						duration: 6000,
 						closable: true,
 					});
@@ -210,12 +232,12 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 					toaster.update(toastId.current, {
 						description: "🎉 You won!",
-						type: "success",  // green / red skin
+						type: "success", 
 						duration: 1000,
 						closable: true,
 					});
 
-					toastId.current = null;        // optional: clear ref
+					toastId.current = null;        
 				});
 			}
 			setQueueCount((q) => Math.max(q - 1, 0));
@@ -248,6 +270,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		}
 		const onAccountBalance = (data: AccountBalanceData) => {
 			setAccountBalance(data.balance);
+			setAccountBets(data.bets);
+			setAccountWithdrawals(data.withdrawals);
 		}
 
 		socket.on('player_queued', onPlayerQueued);
@@ -296,31 +320,6 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			return next;
 		});
 	}, [emitMovement]);
-
-	// /* keyboard listeners */
-	// useEffect(() => {
-	// 	if (!isPlaying) return;
-
-	// 	const down = (e: KeyboardEvent) => {
-	// 		if (e.key in KEYMAP) {
-	// 			const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
-	// 			if (action) press(action as keyof typeof ACTION_TO_KEY);
-	// 		}
-	// 	};
-
-	// 	const up = (e: KeyboardEvent) => {
-	// 		if (e.key in KEYMAP) {
-	// 			const action = Object.entries(ACTION_TO_KEY).find(([, key]) => key === e.key)?.[0];
-	// 			if (action) release(action as keyof typeof ACTION_TO_KEY);
-	// 		}
-	// 	};
-	// 	window.addEventListener('keydown', down);
-	// 	window.addEventListener('keyup', up);
-	// 	return () => {
-	// 		window.removeEventListener('keydown', down);
-	// 		window.removeEventListener('keyup', up);
-	// 	};
-	// }, [isPlaying, press, release]);
 
 	/* approve + bet */
 	const approveAndBet = useCallback(async () => {
@@ -421,6 +420,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		betAmount,
 		gameState,
 		accountBalance,
+		accountBets,
+		accountWithdrawals,
 		clawSocketOn,
 		roundPlayed,
 		roundWon,

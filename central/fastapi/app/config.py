@@ -13,3 +13,10 @@ BASE_RPC_WS      = os.environ.get("BASE_RPC_WS")
 CLAW_ADDRESS     = os.environ.get("CLAW_CONTRACT_ADDRESS")
 CHAIN_ID         = int(os.environ.get("CHAIN_ID"))
 PRIVATE_KEY      = os.environ.get("CLAW_PRIVATE_KEY")
+
+# reconciler config
+# START_BLOCK = 0              # deploy block
+# CONFIRMATIONS = 50           # finality buffer
+# CHUNK_SIZE = 2000            # tune to provider
+# RECONCILE_INTERVAL_SEC = 60
+# NEARHEAD_POLL_SEC = 3

@@ -9,6 +9,7 @@ current_player = None
 last_start = datetime.min
 current_key = None
 game_state = [0, 0]   # list so it’s mutable in-place
+changing_round = False
 pi_connected = False
 pi_namespace_ok = False
 

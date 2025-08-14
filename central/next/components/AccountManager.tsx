@@ -1,5 +1,5 @@
 "use client";
-import { Box, Drawer, VStack, HStack, Text, Tabs, Button, IconButton, Portal } from "@chakra-ui/react"
+import { Box, Drawer, VStack, HStack, Text, Tabs, Button, IconButton, Portal, Skeleton, Flex } from "@chakra-ui/react"
 import { useState } from "react";
 import { useClaw } from "./providers";
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -7,6 +7,7 @@ import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { FiSettings } from 'react-icons/fi';
 import { FaWallet } from "react-icons/fa";
 import { useIsMobile } from "./hooks/useIsMobile";
+import { parseTimestamp } from "@/lib/utils";
 
 // const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
@@ -148,7 +149,7 @@ export const AccountManager = (
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const isMobile = useIsMobile();
 
-	const { accountBalance, withdraw, withdrawing } = useClaw();
+	const { accountBalance, withdraw, withdrawing, accountBets, accountWithdrawals } = useClaw();
 	if (!isConnected) return <Box w={"40px"} />
 
 	return (
@@ -237,18 +238,47 @@ export const AccountManager = (
 									<Tabs.Content value="Bets" p={0}>
 										<ScrollArea className='h-[100px]'>
 											<VStack>
-												{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) =>
-													<HStack key={i} justify={"space-between"} w={"full"} paddingEnd={6}><Text>Apr 2</Text><Text>$5</Text><Text>2x</Text></HStack>
-												)}
+												{accountBets === null ?
+													[1, 2, 3, 4].map((i) => <Skeleton key={i} w={"100%"} h={"1rem"} />) :
+													!accountBets.length ?
+														<Flex w={"100%"} minH={"4rem"} align="center" justify={"center"}>
+															<Text>You have no settled bets</Text>
+														</Flex> :
+														accountBets.map((b, i) =>
+															<HStack
+																key={i}
+																justify={"space-between"}
+																w={"full"}
+																paddingEnd={6}
+															>
+																<Text>{parseTimestamp(b.played_at)}</Text>
+																<Text>${b.bet}</Text>
+																<Text>{b.multiplier / 100}x</Text>
+															</HStack>
+														)}
 											</VStack>
 										</ScrollArea>
 									</Tabs.Content>
 									<Tabs.Content value="Withdrawals" p={0}>
 										<ScrollArea className='h-[100px]'>
 											<VStack>
-												{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) =>
-													<HStack key={i} justify={"space-between"} w={"full"} paddingEnd={6}><Text>Apr 2</Text><Text>$25</Text></HStack>
-												)}
+												{accountWithdrawals === null ?
+													[1, 2, 3, 4].map((i) => <Skeleton key={i} w={"100%"} h={"1rem"} />) :
+													!accountWithdrawals.length ?
+														<Flex w={"100%"} minH={"4rem"} align="center" justify={"center"}>
+															<Text>You have no withdrawals</Text>
+														</Flex> :
+														accountWithdrawals.map((w, i) =>
+															<HStack
+																key={i}
+																justify={"space-between"}
+																w={"full"}
+																paddingEnd={6}
+															>
+																<Text>{parseTimestamp(w.timestamp)}</Text>
+																<Text>${w.amount}</Text>
+															</HStack>
+														)}
 											</VStack>
 										</ScrollArea>
 									</Tabs.Content>

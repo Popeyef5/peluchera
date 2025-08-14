@@ -1,9 +1,10 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Flex, IconButton } from "@chakra-ui/react"
+import { Flex, IconButton, Box } from "@chakra-ui/react"
 import { BsFullscreen, BsFullscreenExit } from "react-icons/bs";
 import { useColorMode } from './ui/color-mode';
 import { useIsMobile } from './hooks/useIsMobile';
+import { useClaw } from './providers';
 
 declare global {
   interface Window {
@@ -18,6 +19,8 @@ declare global {
 export default function WebRTCPlayer() {
   const isMobile = useIsMobile();
   const { colorMode } = useColorMode();
+  const { clawSocketOn } = useClaw();
+  const [videoMsg, setVideoMsg] = useState("");
 
   /* we keep the reader so we can clean it up later -- avoids “unused” warning */
   const readerRef = useRef<{ close?: () => void } | null>(null);
@@ -31,21 +34,19 @@ export default function WebRTCPlayer() {
       const ReaderCtor = (window as unknown as { MediaMTXWebRTCReader: typeof window.MediaMTXWebRTCReader }).MediaMTXWebRTCReader;
 
       readerRef.current = new ReaderCtor({
-        url: 'https://cryptoclaw.xyz/video_feed/whep',
+        url: 'https://cl4ws.com/video_feed/whep',
         onError: (err: string) => {
-          const msg = document.getElementById('message');
-          if (msg) msg.innerText = err;
+          setVideoMsg(err);
         },
         onTrack: (evt: RTCTrackEvent) => {
-          const msg = document.getElementById('message');
-          if (msg) msg.innerText = '';
+          setVideoMsg("");
           const video = document.getElementById('video') as HTMLVideoElement;
           video.srcObject = evt.streams[0];
         },
       });
     };
     document.body.appendChild(script);
-  }, []);
+  }, [setVideoMsg]);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -79,6 +80,7 @@ export default function WebRTCPlayer() {
       p={isFS ? "24px" : 0}
       justify={"center"}
       background={colorMode === "dark" ? "black" : "white"}
+      borderRadius={"2rem"}
     >
       <video
         id="video"
@@ -93,41 +95,41 @@ export default function WebRTCPlayer() {
         playsInline
         ref={videoRef}
       />
-      <div
-        id="message"
-        style={{
-          position: "absolute",
-          maxHeight: "100%",
-          width: '100%',
-          aspectRatio: 4 / 3,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: 'bold',
-          fontSize: '16px',
-          color: 'white',
-          padding: '20px',
-          pointerEvents: 'none',
-          textAlign: 'center',
-          boxSizing: 'border-box',
-          textShadow: '0 0 5px black',
-        }}
+      <Box
+        position="absolute"
+        maxHeight="100%"
+        width='100%'
+        aspectRatio={4 / 3}
+        display='flex'
+        alignItems='center'
+        justifyContent='center'
+        fontWeight='bold'
+        fontSize='16px'
+        color='white'
+        padding='20px'
+        pointerEvents='none'
+        textAlign='center'
+        boxSizing='border-box'
+        textShadow='0 0 5px black'
+        borderRadius='1.5rem'
       >
-
-      </div>
-      {!isMobile && <IconButton
-        position={"absolute"}
-        bottom={"2.5vh"}
-        right={"3.33vh"}
-        size={"2xl"}
-        variant={"ghost"}
-        rounded={"full"}
-        color={isFS ? colorMode === "dark" ? "white" : "black" : "white"}
-        onClick={toggleFullscreen}
-        _hover={{color: colorMode === "light" ? "black" : "white"}}
-      >
-        {isFS ? <BsFullscreenExit /> : <BsFullscreen />}
-      </IconButton>}
-    </Flex>
+        {videoMsg}
+      </Box>
+      {
+        clawSocketOn && !isMobile && <IconButton
+          position={"absolute"}
+          bottom={"2.5vh"}
+          right={"3.33vh"}
+          size={"2xl"}
+          variant={"ghost"}
+          rounded={"full"}
+          color={isFS ? colorMode === "dark" ? "white" : "black" : "white"}
+          onClick={toggleFullscreen}
+          _hover={{ color: colorMode === "light" ? "black" : "white" }}
+        >
+          {isFS ? <BsFullscreenExit /> : <BsFullscreen />}
+        </IconButton>
+      }
+    </Flex >
   );
 }
