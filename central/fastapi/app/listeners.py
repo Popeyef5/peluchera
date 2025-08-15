@@ -18,6 +18,7 @@ async def web3_listener():
         BASE_RPC_WS,
         websocket_kwargs={"ping_interval": 20, "ping_timeout": None},
     )
+    backoff = 2
 
     while True:
         try:
