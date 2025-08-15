@@ -88,6 +88,17 @@ def on_turn_start(data):
     # time.sleep(0.1)
     # GPIO.output(W, GPIO.LOW)
     
+
+@sio.event
+def connect(sid, environ, *_):
+    log.info(f"Client connected with sid {sid}")
+    
+
+@sio.event
+def disconnect(sid, reason):
+    log.info(f"Client {sid} disconnected because of: {reason}")
+    
+    
 loop = asyncio.get_event_loop()   # grab the main loop once
 
 def prize_won(gpio, level, tick):
