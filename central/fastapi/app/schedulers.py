@@ -131,13 +131,12 @@ async def sync_scheduler():
 
 async def round_end_scheduler():
     while True:
-        # now = datetime.now(timezone.utc)
-        # next_midnight = (now + timedelta(days=1)).replace(
-        #     hour=0, minute=0, second=0, microsecond=0
-        # )
-        # seconds_left = int((next_midnight - now).total_seconds())
-        # await asyncio.sleep(seconds_left)
-        await asyncio.sleep(240)
+        now = datetime.now(timezone.utc)
+        next_midnight = (now + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        seconds_left = int((next_midnight - now).total_seconds())
+        await asyncio.sleep(seconds_left)
         log.info("Attempting round change")
 
         try:
