@@ -138,7 +138,7 @@ async def connect():
 async def disconnect(reason):
     state.set_pi_status(False, False)
     await sio.emit("claw_connection_change", {"con": False})
-    log.warning("Pi socket DISCONNECTED because of: {reason} – will retry...")
+    log.warning(f"Pi socket DISCONNECTED because of: {reason} – will retry...")
 
 
 # optional: log each attempt
