@@ -126,7 +126,7 @@ async def on_turn_win(*_):
     
     
 @pi_client.event
-async def connect(sid):
+async def connect():
     ns_ok = "/" in pi_client.namespaces
     state.set_pi_status(True, ns_ok)
     await sio.emit("claw_connection_change", {"con": ns_ok})
@@ -135,7 +135,7 @@ async def connect(sid):
 
 
 @pi_client.event
-async def disconnect(sid, reason):
+async def disconnect(reason):
     state.set_pi_status(False, False)
     await sio.emit("claw_connection_change", {"con": False})
     log.warning("Pi socket DISCONNECTED because of: {reason} – will retry...")
