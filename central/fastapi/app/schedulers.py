@@ -131,12 +131,14 @@ async def sync_scheduler():
 
 async def round_end_scheduler():
     while True:
-        now = datetime.now(timezone.utc)
-        next_midnight = (now + timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        seconds_left = int((next_midnight - now).total_seconds())
-        await asyncio.sleep(seconds_left)
+        # now = datetime.now(timezone.utc)
+        # next_midnight = (now + timedelta(days=1)).replace(
+        #     hour=0, minute=0, second=0, microsecond=0
+        # )
+        # seconds_left = int((next_midnight - now).total_seconds())
+        # await asyncio.sleep(seconds_left)
+        await asyncio.sleep(240)
+        log.info("Attempting round change")
 
         try:
             state.changing_round = True
@@ -170,7 +172,7 @@ async def round_end_scheduler():
                     raise NewRoundError("Error terminating round")
 
                 await db.commit()
-                state.changing_round = False
+                # state.changing_round = False
 
         except Exception as e:
             log.warning(f"An error occurred while ending the round: {e}")

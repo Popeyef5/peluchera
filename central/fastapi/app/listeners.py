@@ -9,7 +9,7 @@ from .config import BASE_RPC_WS, CLAW_ADDRESS
 from .db import async_session
 from .models import QueueEntry, Round
 from .socket.sio_instance import sio
-from .state import game_state, round_info
+from . import state
 from .logging import log
 
 
@@ -25,8 +25,8 @@ async def web3_listener():
                 claw = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
 
                 # seed state
-                game_state[:] = await claw.functions.gameState().call()
-                round_info[:] = await claw.functions.roundInfo().call()
+                state.game_state[:] = await claw.functions.gameState().call()
+                state.round_info[:] = await claw.functions.roundInfo().call()
 
                 # async def _save_raw(ctx, db, name: str, args: dict):
                 #     bn = ctx.result["blockNumber"]
@@ -49,8 +49,8 @@ async def web3_listener():
                 async def _player_bet(ctx: LogsSubscriptionContext):
                     evt = claw.events.PlayerBet().process_log(ctx.result)
                     amount = evt["args"]["amount"]
-                    game_state[0] += amount
-                    await sio.emit("game_state", {"state": game_state})
+                    state.game_state[0] += amount
+                    await sio.emit("game_state", {"state": state.game_state})
 
                 async def _player_win(ctx: LogsSubscriptionContext):
                     evt = claw.events.PlayerWin().process_log(ctx.result)
@@ -83,8 +83,8 @@ async def web3_listener():
                         entry.win = True
                         await db.commit()
 
-                    game_state[1] += amount
-                    await sio.emit("game_state", {"state": game_state})
+                    state.game_state[1] += amount
+                    await sio.emit("game_state", {"state": state.game_state})
 
                 async def _round_start(ctx: LogsSubscriptionContext):
                     log.info("Round end callback")
@@ -93,15 +93,16 @@ async def web3_listener():
                     id = evt["args"]["id"]
                     max_fee = evt["args"]["maxFee"]
                     fee_growth = evt["args"]["feeGrowth"]
-                    round_info[:] = [max_fee, fee_growth]
+                    state.round_info[:] = [max_fee, fee_growth]
                     
                     async with async_session() as db:
                         db.add(Round(id=id, max_fee=max_fee, fee_growth=fee_growth))
                         await db.commit()
                         
-                    await sio.emit("round_start", {"round_info": round_info})
-                    game_state[:] = await claw.functions.gameState().call()
-                    await sio.emit("game_state", {"state": game_state})
+                    await sio.emit("round_start", {"round_info": state.round_info})
+                    state.changing_round = False
+                    state.game_state[:] = await claw.functions.gameState().call()
+                    await sio.emit("game_state", {"state": state.game_state})
 
                 await w3.subscription_manager.subscribe(
                     [
