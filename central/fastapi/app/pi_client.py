@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 from .deps import async_session
 from .models import QueueEntry
 
-pi_client = socketio.AsyncClient()
+pi_client = socketio.AsyncClient(logger=True, engineio_logger=True)
 log.info(f"[pi_client create] PID={os.getpid()} TID={threading.get_ident()} pi_client_id={id(pi_client)}")
 
 async def connect_pi():
@@ -87,7 +87,7 @@ async def turn_end(*_):
       state.current_player = new_entry.address
       state.current_key = new_entry.key
       state.last_start = datetime.utcnow()
-      
+       
       await sio.emit("turn_start")
       await safe_pi_emit("turn_start")
       new_entry.played_at = datetime.utcnow()
