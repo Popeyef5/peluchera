@@ -7,7 +7,6 @@ from ..logging import log
 
 @sio.on("move")
 async def move(sid, data):
-    # log.info(f"Received data: {data}")
     if state.sid_to_addr.get(sid) == state.current_player:
         if not await safe_pi_emit("move", data):
             log.warning("Pi offline: 'move' not sent")

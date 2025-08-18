@@ -1,6 +1,7 @@
 import socketio, asyncio
 from datetime import datetime
 from eth_utils import to_bytes
+import os, threading
 from web3 import Web3
 import app.state as state
 from .socket.sio_instance import sio
@@ -12,10 +13,12 @@ from .deps import async_session
 from .models import QueueEntry
 
 pi_client = socketio.AsyncClient()
+log.info(f"[pi_client create] PID={os.getpid()} TID={threading.get_ident()} pi_client_id={id(pi_client)}")
 
 async def connect_pi():
     while True:
         try:
+            log.info(f"[pi connect] PID={os.getpid()} pi_client_id={id(pi_client)} namespaces={pi_client.namespaces}")
             await pi_client.connect(PI_SERVER_URL, transports=['websocket'])
             break
         except Exception as e:
@@ -30,6 +33,8 @@ async def safe_pi_emit(event, data=None):
     Emit to the Pi client only when the connection is healthy.
     Returns True on success, False otherwise.
     """
+    log.info(f"[{event}] PID={os.getpid()} pi_client_id={id(pi_client)} connected={state.pi_connected} ns_ok={state.pi_namespace_ok}")
+
     if state.pi_connected and state.pi_namespace_ok:
         try:
             await pi_client.emit(event, data=data)
