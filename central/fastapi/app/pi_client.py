@@ -16,7 +16,7 @@ pi_client = socketio.AsyncClient()
 async def connect_pi():
     while True:
         try:
-            await pi_client.connect(PI_SERVER_URL)
+            await pi_client.connect(PI_SERVER_URL, transports=['websocket'])
             break
         except Exception as e:
             log.warning("Pi connect error: %s", e)

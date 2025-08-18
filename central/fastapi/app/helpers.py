@@ -82,7 +82,7 @@ async def user_account_data(addr, db):
     withdrawals_mappings = await db.execute(
         select(
             Withdrawal.amount.label("amount"),
-            Withdrawal.timestamp.label("amount"),
+            Withdrawal.timestamp.label("timestamp"),
         )
         .where(Withdrawal.address == addr)
         .order_by(Withdrawal.timestamp.desc())
@@ -90,7 +90,7 @@ async def user_account_data(addr, db):
 
     withdrawals = [
         {
-            "amount": r["bet"],
+            "amount": r["amount"],
             "timestamp": int(r["timestamp"].timestamp()),
         }
         for r in withdrawals_mappings.mappings().all()

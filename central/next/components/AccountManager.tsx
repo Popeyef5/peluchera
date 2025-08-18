@@ -1,11 +1,12 @@
 "use client";
-import { Box, Drawer, VStack, HStack, Text, Tabs, Button, IconButton, Portal, Skeleton, Flex } from "@chakra-ui/react"
+import { Box, Drawer, VStack, HStack, Text, Tabs, Button, IconButton, Portal, Skeleton, Flex, Icon } from "@chakra-ui/react"
 import { useState } from "react";
 import { useClaw } from "./providers";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { FiSettings } from 'react-icons/fi';
 import { FaWallet } from "react-icons/fa";
+import { RxCross2 } from "react-icons/rx";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { parseTimestamp } from "@/lib/utils";
 
@@ -251,9 +252,15 @@ export const AccountManager = (
 																w={"full"}
 																paddingEnd={6}
 															>
-																<Text>{parseTimestamp(b.played_at)}</Text>
-																<Text>${b.bet}</Text>
-																<Text>{b.multiplier / 100}x</Text>
+																<Text flex={1} textAlign={"start"}>{parseTimestamp(b.played_at)}</Text>
+																<Text flex={1} textAlign={"center"}>${b.bet}</Text>
+																<Text flex={1} textAlign={"end"}>{
+																	b.win ?
+																		`${b.multiplier / 100}x` :
+																		<Icon color={"red"}>
+																			<RxCross2 />
+																		</Icon>
+																}</Text>
 															</HStack>
 														)}
 											</VStack>

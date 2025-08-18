@@ -42,5 +42,6 @@ next-env.d.ts
 
 old/
 test/
+todo.md
 
 __pycache__
