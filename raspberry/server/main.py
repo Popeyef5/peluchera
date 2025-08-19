@@ -79,7 +79,7 @@ def handle_movement(sid, data):
 
 
 @sio.on("turn_start")
-def on_turn_start(sid, data):
+def on_turn_start(sid):
     log.info("Turn start")
     game_state.processing_turn = False
     pi.wave_clear()
