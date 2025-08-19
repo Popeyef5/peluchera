@@ -58,8 +58,8 @@ pi.set_glitch_filter(CLAW, 100 * GLITCH)
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins="*",
-    ping_timeout=10,
-    ping_interval=5,
+    ping_timeout=50,
+    ping_interval=60,
     transports=["websocket"],
 )
 app = socketio.ASGIApp(sio)

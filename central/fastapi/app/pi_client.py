@@ -13,12 +13,12 @@ from .deps import async_session
 from .models import QueueEntry
 
 pi_client = socketio.AsyncClient(engineio_logger=True)
-log.info(f"[pi_client create] PID={os.getpid()} TID={threading.get_ident()} pi_client_id={id(pi_client)}")
+# log.info(f"[pi_client create] PID={os.getpid()} TID={threading.get_ident()} pi_client_id={id(pi_client)}")
 
 async def connect_pi():
     while True:
         try:
-            log.info(f"[pi connect] PID={os.getpid()} pi_client_id={id(pi_client)} namespaces={pi_client.namespaces}")
+            # log.info(f"[pi connect] PID={os.getpid()} pi_client_id={id(pi_client)} namespaces={pi_client.namespaces}")
             await pi_client.connect(PI_SERVER_URL, transports=['websocket'])
             break
         except Exception as e:
@@ -33,7 +33,7 @@ async def safe_pi_emit(event, data=None):
     Emit to the Pi client only when the connection is healthy.
     Returns True on success, False otherwise.
     """
-    log.info(f"[{event}] PID={os.getpid()} pi_client_id={id(pi_client)} connected={state.pi_connected} ns_ok={state.pi_namespace_ok}")
+    # log.info(f"[{event}] PID={os.getpid()} pi_client_id={id(pi_client)} connected={state.pi_connected} ns_ok={state.pi_namespace_ok}")
 
     if state.pi_connected and state.pi_namespace_ok:
         try:
@@ -65,7 +65,7 @@ async def turn_end(*_):
       if not old_entry:
           state.current_key = None
           state.current_player = None
-          log.warning("This should not happen, turn ended reported by pi and no player was playing")
+          log.warning("This should not happen, turn ended reported by pi and no player was playing. Maybe someone is playing live.")
       else:
           old_entry.ended_at = datetime.utcnow()
           old_entry.status = "played"
@@ -137,6 +137,13 @@ async def connect():
     await sio.emit("claw_connection_change", {"con": ns_ok})
     log.info("Pi socket CONNECTED (reconnect OK)")
     log.info(f"Connected namespaces: {pi_client.namespaces}")
+    
+
+@pi_client.event
+async def connect_error(data):
+    state.set_pi_status(False, False)
+    await sio.emit("claw_connection_change", {"con": False})
+    log.warning(f"Pi socket CONNECTION FAILED because of: {data}")
 
 
 @pi_client.event
@@ -144,9 +151,3 @@ async def disconnect(reason):
     state.set_pi_status(False, False)
     await sio.emit("claw_connection_change", {"con": False})
     log.warning(f"Pi socket DISCONNECTED because of: {reason} – will retry...")
-
-
-# optional: log each attempt
-@pi_client.event
-async def reconnect():
-    log.warning("Reconnecting to Pi...")
