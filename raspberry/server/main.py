@@ -60,7 +60,7 @@ sio = socketio.AsyncServer(
     cors_allowed_origins="*",
     ping_timeout=10,
     ping_interval=5,
-    transports=["websockets"],
+    transports=["websocket"],
 )
 app = socketio.ASGIApp(sio)
 
@@ -79,7 +79,7 @@ def handle_movement(sid, data):
 
 
 @sio.on("turn_start")
-def on_turn_start(data):
+def on_turn_start(sid, data):
     log.info("Turn start")
     game_state.processing_turn = False
     pi.wave_clear()

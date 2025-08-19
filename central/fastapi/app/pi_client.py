@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 from .deps import async_session
 from .models import QueueEntry
 
-pi_client = socketio.AsyncClient(logger=True, engineio_logger=True)
+pi_client = socketio.AsyncClient(engineio_logger=True)
 log.info(f"[pi_client create] PID={os.getpid()} TID={threading.get_ident()} pi_client_id={id(pi_client)}")
 
 async def connect_pi():
