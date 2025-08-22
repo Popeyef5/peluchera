@@ -1,10 +1,8 @@
 import asyncio
 import socketio
 import logging
-
-# import RPi.GPIO as GPIO
 import pigpio
-import time
+from fastapi import FastAPI
 
 # GPIO Setup
 pi = pigpio.pi()
@@ -58,15 +56,15 @@ pi.set_glitch_filter(CLAW, 100 * GLITCH)
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins="*",
-    ping_timeout=50,
-    ping_interval=60,
+    # ping_timeout=50, # 60
+    # ping_interval=60, # 30
     transports=["websocket"],
 )
-app = socketio.ASGIApp(sio)
-
+fast_app = FastAPI()
+app = socketio.ASGIApp(sio, fast_app)
 
 @sio.on("move")
-def handle_movement(sid, data):
+async def handle_movement(sid, data):
     """Handle movement commands from the client."""
     mask = data.get("bitmask", 0)  # Get encoded movement value
     for bit, pin in OUTPUT_PINS.items():
@@ -79,7 +77,7 @@ def handle_movement(sid, data):
 
 
 @sio.on("turn_start")
-def on_turn_start(sid):
+async def on_turn_start(sid):
     log.info("Turn start")
     game_state.processing_turn = False
     pi.wave_clear()
@@ -91,27 +89,19 @@ def on_turn_start(sid):
     ]
     pi.wave_add_generic(pulses)
     pi.wave_send_once(pi.wave_create())
-    # GPIO.output(COIN, GPIO.HIGH)
-    # time.sleep(0.1)
-    # GPIO.output(COIN, GPIO.LOW)
-    # time.sleep(0.1)
-    # GPIO.output(W, GPIO.HIGH)
-    # time.sleep(0.1)
-    # GPIO.output(W, GPIO.LOW)
 
 
 @sio.event
-def connect(sid, environ, *_):
+async def connect(sid, environ, *_):
     log.info(f"Client connected with sid {sid}")
 
 
 @sio.event
-def disconnect(sid, reason):
+async def disconnect(sid, reason):
     log.info(f"Client {sid} disconnected because of: {reason}")
 
 
 loop = asyncio.get_event_loop()  # grab the main loop once
-
 
 def prize_won(gpio, level, tick):
     if level == 0:
@@ -131,6 +121,10 @@ def turn_end(gpio, level, tick):
 
 pi.callback(BB, pigpio.FALLING_EDGE, prize_won)
 pi.callback(CLAW, pigpio.RISING_EDGE, turn_end)
+
+@fast_app.get("/")
+async def check_status():
+    pass
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5001, debug=True)

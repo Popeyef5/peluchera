@@ -3,3 +3,4 @@ RPi.GPIO
 uvicorn
 pigpio
 asyncio
+fastapi
