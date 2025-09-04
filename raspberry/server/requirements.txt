@@ -4,3 +4,4 @@ uvicorn
 pigpio
 asyncio
 fastapi
+websockets
