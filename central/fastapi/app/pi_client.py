@@ -1,4 +1,4 @@
-import socketio, asyncio
+# import socketio, asyncio, websockets, json
 from datetime import datetime
 from eth_utils import to_bytes
 import os, threading
@@ -11,20 +11,86 @@ from .logging import log
 from sqlalchemy import select, func
 from .deps import async_session
 from .models import QueueEntry
+import asyncio, websockets, json
 
-pi_client = socketio.AsyncClient()
+PI_WEBSOCKET_URL = PI_SERVER_URL.replace('http://', 'ws://').replace('https://', 'wss://')
+
+pi_websocket = None
 # log.info(f"[pi_client create] PID={os.getpid()} TID={threading.get_ident()} pi_client_id={id(pi_client)}")
 
+# Connection event handlers (equivalent to socketio decorators)
+async def on_connect():
+    """Called when WebSocket connects successfully"""
+    state.set_pi_status(True)
+    await sio.emit("claw_connection_change", {"con": True})
+    log.info("Pi socket CONNECTED (reconnect OK)")
+
+async def on_connect_error(error_data):
+    """Called when WebSocket connection fails"""
+    state.set_pi_status(False)
+    await sio.emit("claw_connection_change", {"con": False})
+    log.warning(f"Pi socket CONNECTION FAILED because of: {error_data}")
+
+async def on_disconnect(reason):
+    """Called when WebSocket disconnects"""
+    state.set_pi_status(False)
+    await sio.emit("claw_connection_change", {"con": False})
+    log.warning(f"Pi socket DISCONNECTED because of: {reason} – will retry...")
+
+async def _attempt_connection():
+    """Single connection attempt"""
+    global pi_websocket
+    
+    # log.info(f"[pi connect] PID={os.getpid()} pi_client_id={id(pi_websocket)}")
+    pi_websocket = await websockets.connect(PI_WEBSOCKET_URL)
+    
+
+async def handle_pi_messages():
+    """Handle incoming messages from Pi WebSocket"""
+    global pi_websocket
+    try:
+        while True:  # Keep listening indefinitely
+            message = await pi_websocket.recv()  # This blocks until message received
+            try:
+                data = json.loads(message)
+                message_type = data.get("type")
+                
+                if message_type == "turn_end":
+                    await turn_end()
+                elif message_type == "prize_won":
+                    await on_turn_win()
+                else:
+                    log.warning(f"Unknown message type from Pi: {message_type}")
+                    
+            except json.JSONDecodeError:
+                log.warning(f"Invalid JSON from Pi: {message}")
+                
+    except websockets.exceptions.ConnectionClosed as e:
+        await on_disconnect(f"Connection closed: {e}")
+        raise  # Re-raise to trigger reconnect
+    except Exception as e:
+        await on_disconnect(f"Handler error: {e}")
+        raise  # Re-raise to trigger reconnect
+    
 async def connect_pi():
+    """Main connection loop that handles reconnects"""
+    global pi_websocket
+    
     while True:
         try:
-            # log.info(f"[pi connect] PID={os.getpid()} pi_client_id={id(pi_client)} namespaces={pi_client.namespaces}")
-            await pi_client.connect(PI_SERVER_URL, transports=['websocket'])
-            break
-        except Exception as e:
-            log.warning("Pi connect error: %s", e)
-            await asyncio.sleep(5)
+            await _attempt_connection()
+            # If we get here, connection was successful
+            await on_connect()
             
+            # Handle messages until connection drops - this blocks here
+            await handle_pi_messages()
+            
+        except Exception as e:
+            await on_connect_error(str(e))
+            log.warning("Pi connect error: %s", e)
+            pi_websocket = None
+            await asyncio.sleep(5)  # Wait before retry
+    
            
 _turn_lock = asyncio.Lock()   # serialize turn transitions
 
@@ -35,17 +101,16 @@ async def safe_pi_emit(event, data=None):
     """
     # log.info(f"[{event}] PID={os.getpid()} pi_client_id={id(pi_client)} connected={state.pi_connected} ns_ok={state.pi_namespace_ok}")
 
-    if state.pi_connected and state.pi_namespace_ok:
+    if state.pi_connected:
         try:
-            await pi_client.emit(event, data=data)
+            await pi_websocket.send_json({"type": event, "data": data})
             return True
         except Exception as e:
-            log.warning("pi_client emit failed: %s", e)
-    log.warning(f"pi_client emit failed due to connectivity issues. Connected: {state.pi_connected}. Namespace ok: {state.pi_namespace_ok}")
+            log.warning("pi_websocket emit failed: %s", e)
+    log.warning(f"pi_websocket emit failed due to connectivity issues. Connected: {state.pi_connected}.")
     return False
 
  
-@pi_client.on("turn_end")
 async def turn_end(*_):
   log.info("Pi informed turn end")
   async with _turn_lock:         # prevent overlapping turn transitions
@@ -95,7 +160,6 @@ async def turn_end(*_):
       log.info(f"Started turn {state.current_key} by player {state.current_player} from turn_end callback")
     
   
-@pi_client.on("prize_won")
 async def on_turn_win(*_):
         
     key_str = state.current_key
@@ -130,24 +194,24 @@ async def on_turn_win(*_):
         log.info(f"Win notification transaction on turn {state.current_key} failed.")
     
     
-@pi_client.event
-async def connect():
-    ns_ok = "/" in pi_client.namespaces
-    state.set_pi_status(True, ns_ok)
-    await sio.emit("claw_connection_change", {"con": ns_ok})
-    log.info("Pi socket CONNECTED (reconnect OK)")
-    log.info(f"Connected namespaces: {pi_client.namespaces}")
+# @pi_client.event
+# async def connect():
+#     ns_ok = "/" in pi_client.namespaces
+#     state.set_pi_status(True, ns_ok)
+#     await sio.emit("claw_connection_change", {"con": ns_ok})
+#     log.info("Pi socket CONNECTED (reconnect OK)")
+#     log.info(f"Connected namespaces: {pi_client.namespaces}")
     
 
-@pi_client.event
-async def connect_error(data):
-    state.set_pi_status(False, False)
-    await sio.emit("claw_connection_change", {"con": False})
-    log.warning(f"Pi socket CONNECTION FAILED because of: {data}")
+# @pi_client.event
+# async def connect_error(data):
+#     state.set_pi_status(False, False)
+#     await sio.emit("claw_connection_change", {"con": False})
+#     log.warning(f"Pi socket CONNECTION FAILED because of: {data}")
 
 
-@pi_client.event
-async def disconnect(reason):
-    state.set_pi_status(False, False)
-    await sio.emit("claw_connection_change", {"con": False})
-    log.warning(f"Pi socket DISCONNECTED because of: {reason} – will retry...")
+# @pi_client.event
+# async def disconnect(reason):
+#     state.set_pi_status(False, False)
+#     await sio.emit("claw_connection_change", {"con": False})
+#     log.warning(f"Pi socket DISCONNECTED because of: {reason} – will retry...")
