@@ -13,16 +13,13 @@ game_state = [0, 0]  # list so it’s mutable in-place
 round_info = [DEFAULT_MAX_FEE, DEFAULT_FEE_GROWTH]
 changing_round = False
 pi_connected = False
-pi_namespace_ok = False
 
-
-def set_pi_status(connected: bool, namespace_ok: bool) -> None:
+def set_pi_status(connected: bool) -> None:
     """Update global flags that reflect the Pi‑side socket health."""
-    global pi_connected, pi_namespace_ok
+    global pi_connected
     pi_connected = connected
-    pi_namespace_ok = namespace_ok
     log.info(
-        f"\033[95m[PI STATUS] connected={pi_connected} namespace_ok={pi_namespace_ok}\033[0m"
+        f"\033[95m[PI STATUS] connected={pi_connected}\033[0m"
     )
 
 
@@ -43,7 +40,7 @@ async def global_sync():
         "state": game_state,
         "round_info": round_info,
         "queue_length": qcount,
-        "con": pi_connected and pi_namespace_ok,
+        "con": pi_connected,
         "seconds_left": seconds_left,
     }
 

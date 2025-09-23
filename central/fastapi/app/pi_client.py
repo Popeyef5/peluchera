@@ -103,7 +103,7 @@ async def safe_pi_emit(event, data=None):
 
     if state.pi_connected:
         try:
-            await pi_websocket.send_json({"type": event, "data": data})
+            await pi_websocket.send(json.dumps({"type": event, "data": data}))
             return True
         except Exception as e:
             log.warning("pi_websocket emit failed: %s", e)
