@@ -161,7 +161,7 @@ def prize_won(gpio, level, tick):
         if not game_state.processing_turn:
             return
         log.info("Prize won")
-        loop.call_soon_threadsafe(asyncio.create_task, manager.broadcast("prize_won"))
+        loop.call_soon_threadsafe(asyncio.create_task, manager.broadcast(json.dumps({"type": "prize_won"})))
         game_state.processing_turn = False
 
 
@@ -169,7 +169,7 @@ def turn_end(gpio, level, tick):
     if level == 1:
         log.info("Turn end")
         game_state.processing_turn = True
-        loop.call_soon_threadsafe(asyncio.create_task, manager.broadcast("turn_end"))
+        loop.call_soon_threadsafe(asyncio.create_task, manager.broadcast(json.dumps({"type": "turn_end"})))
 
 
 pi.callback(BB, pigpio.FALLING_EDGE, prize_won)
