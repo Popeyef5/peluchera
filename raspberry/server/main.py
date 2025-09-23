@@ -32,7 +32,7 @@ game_state = GameState()
 OUTPUT_PINS = {
     1 << 0: A,  # Left
     1 << 1: D,  # Right
-    1 << 2: W,  # Updata
+    1 << 2: W,  # Up
     1 << 3: S,  # Down
     1 << 4: GRAB,  # Grab
     1 << 5: COIN,  # Credit
@@ -61,7 +61,6 @@ pi.set_glitch_filter(CLAW, 100 * GLITCH)
 app = FastAPI()
 # app = socketio.ASGIApp(sio, fast_app)
 
-@app.websocket("move")
 async def on_move(websocket, message):
     """Handle movement commands from the client."""
     mask = message.get("bitmask", 0)  # Get encoded movement value
@@ -97,14 +96,20 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        try:
+            self.active_connections.remove(websocket)
+        except Exception as e:
+            log.warning(f"Error removing connection: {e}")
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
         await websocket.send_text(message)
 
     async def broadcast(self, message: str):
         for connection in self.active_connections:
-            await connection.send_text(message)
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                log.warning(f"Error sending message to connection: {e}")
 
 manager = ConnectionManager()
     
