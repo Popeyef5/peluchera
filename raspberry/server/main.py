@@ -125,11 +125,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Parse JSON message
                 message = json.loads(data)
                 message_type = message.get("type")
+                message_data = message.get("data")
                 
                 # Check if message type is supported
                 if message_type in MESSAGE_HANDLERS:
                     # Call appropriate handler
-                    await MESSAGE_HANDLERS[message_type](websocket, message)
+                    await MESSAGE_HANDLERS[message_type](websocket, message_data)
                 else:
                     # Send error for unknown message type
                     error_response = {
