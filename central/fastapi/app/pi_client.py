@@ -57,9 +57,9 @@ async def handle_pi_messages():
                 log.info(f"Received message type: {message_type}")
                 
                 if message_type == "turn_end":
-                    await turn_end()
+                    asyncio.create_task(turn_end())
                 elif message_type == "prize_won":
-                    await on_turn_win()
+                    asyncio.create_task(on_turn_win())
                 else:
                     log.warning(f"Unknown message type from Pi: {message_type}")
                     
