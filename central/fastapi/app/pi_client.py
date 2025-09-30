@@ -165,6 +165,7 @@ async def on_turn_win(*_):
         
     key_str = state.current_key
     if not key_str:
+        log.info("No current key, win is not from game")
         return
     
     key_bytes = bytes.fromhex(key_str)
