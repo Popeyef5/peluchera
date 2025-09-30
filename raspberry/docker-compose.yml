@@ -12,6 +12,15 @@ services:
     build: ./ffmpeg
     devices:
       - '/dev/video0:/dev/video0'
+    healthcheck:
+      test: >
+        curl --silent --fail --max-time 10 
+        http://cl4ws.com:9997/v3/paths/get/video_feed |
+        grep -q '"ready":true'
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
     restart: always
 
   ngrok:
