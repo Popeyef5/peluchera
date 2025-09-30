@@ -54,6 +54,7 @@ async def handle_pi_messages():
             try:
                 data = json.loads(message)
                 message_type = data.get("type")
+                log.info(f"Received message type: {message_type}")
                 
                 if message_type == "turn_end":
                     await turn_end()
