@@ -1,15 +1,25 @@
 import asyncio
-# import socketio
 import json
 import logging
-import pigpio
+import lgpio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException
-
-# GPIO Setup
-pi = pigpio.pi()
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("rpi")
+
+
+# Pi 5 RP1 header: /dev/gpiochip0 on current Bookworm; /dev/gpiochip4 on early Pi 5 kernels.
+def _open_gpiochip():
+    last_err = None
+    for chip in (0, 4):
+        try:
+            return lgpio.gpiochip_open(chip)
+        except lgpio.error as e:
+            last_err = e
+    raise RuntimeError(f"No usable gpiochip found (tried 0 and 4): {last_err}")
+
+
+h = _open_gpiochip()
 
 COIN = 16
 GRAB = 26
@@ -28,7 +38,6 @@ class GameState:
 
 game_state = GameState()
 
-# Define GPIO pins with signed values for cancellation logic
 OUTPUT_PINS = {
     1 << 0: A,  # Left
     1 << 1: D,  # Right
@@ -39,48 +48,36 @@ OUTPUT_PINS = {
 }
 
 for pin in OUTPUT_PINS.values():
-    pi.set_mode(pin, pigpio.OUTPUT)
-    pi.write(pin, 0)
+    lgpio.gpio_claim_output(h, pin, 0)
 
 for pin in (BB, CLAW):
-    pi.set_mode(pin, pigpio.INPUT)
-    pi.set_pull_up_down(pin, pigpio.PUD_UP)
+    lgpio.gpio_claim_input(h, pin, lgpio.SET_PULL_UP)
 
-GLITCH = 100
-pi.set_glitch_filter(BB, GLITCH)  # kill sub-GLITCH blips
-pi.set_glitch_filter(CLAW, 100 * GLITCH)
+GLITCH_US = 100
+lgpio.gpio_set_debounce_micros(h, BB, GLITCH_US)
+lgpio.gpio_set_debounce_micros(h, CLAW, 100 * GLITCH_US)
 
-# App setup
-# sio = socketio.AsyncServer(
-#     async_mode="asgi",
-#     cors_allowed_origins="*",
-#     # ping_timeout=50, # 60
-#     # ping_interval=60, # 30
-#     transports=["websocket"],
-# )
 app = FastAPI()
-# app = socketio.ASGIApp(sio, fast_app)
+
 
 async def on_move(websocket, message):
     """Handle movement commands from the client."""
-    mask = message.get("bitmask", 0)  # Get encoded movement value
+    mask = message.get("bitmask", 0)
     for bit, pin in OUTPUT_PINS.items():
-        pi.write(pin, 1 if mask & bit else 0)
+        lgpio.gpio_write(h, pin, 1 if mask & bit else 0)
 
 
 async def on_turn_start(websocket, message):
     log.info("Turn start")
     game_state.processing_turn = False
-    pi.wave_clear()
-    pulses = [
-        pigpio.pulse(1 << COIN, 0, 100_000),
-        pigpio.pulse(0, 1 << COIN, 100_000),
-        pigpio.pulse(1 << W, 0, 100_000),
-        pigpio.pulse(0, 1 << W, 100_000),
-    ]
-    pi.wave_add_generic(pulses)
-    pi.wave_send_once(pi.wave_create())
-    
+    lgpio.gpio_write(h, COIN, 1)
+    await asyncio.sleep(0.1)
+    lgpio.gpio_write(h, COIN, 0)
+    await asyncio.sleep(0.1)
+    lgpio.gpio_write(h, W, 1)
+    await asyncio.sleep(0.1)
+    lgpio.gpio_write(h, W, 0)
+
 
 MESSAGE_HANDLERS = {
     "move": on_move,
@@ -112,12 +109,12 @@ class ConnectionManager:
                 log.warning(f"Error sending message to connection: {e}")
 
 manager = ConnectionManager()
-    
+
 @app.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     log.info(f"WebSocket connected")
-    
+
     try:
         while True:
             data = await websocket.receive_text()
@@ -126,7 +123,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 message = json.loads(data)
                 message_type = message.get("type")
                 message_data = message.get("data")
-                
+
                 # Check if message type is supported
                 if message_type in MESSAGE_HANDLERS:
                     # Call appropriate handler
@@ -139,7 +136,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "supported_types": list(MESSAGE_HANDLERS.keys())
                     }
                     await websocket.send_text(json.dumps(error_response))
-                    
+
             except json.JSONDecodeError:
                 # Handle invalid JSON
                 error_response = {
@@ -147,7 +144,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "message": "Invalid JSON format"
                 }
                 await websocket.send_text(json.dumps(error_response))
-    
+
     except (WebSocketDisconnect, WebSocketException) as e:
         manager.disconnect(websocket)
         log.warning("WebSocket disconnected")
@@ -156,7 +153,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 loop = asyncio.get_event_loop()  # grab the main loop once
 
-def prize_won(gpio, level, tick):
+def prize_won(chip, gpio, level, tick):
     if level == 0:
         if not game_state.processing_turn:
             return
@@ -165,15 +162,16 @@ def prize_won(gpio, level, tick):
         game_state.processing_turn = False
 
 
-def turn_end(gpio, level, tick):
+def turn_end(chip, gpio, level, tick):
     if level == 1:
         log.info("Turn end")
         game_state.processing_turn = True
         loop.call_soon_threadsafe(asyncio.create_task, manager.broadcast(json.dumps({"type": "turn_end"})))
 
 
-pi.callback(BB, pigpio.FALLING_EDGE, prize_won)
-pi.callback(CLAW, pigpio.RISING_EDGE, turn_end)
+# lgpio.callback returns a handle that must stay alive for the callback to keep firing.
+_bb_cb = lgpio.callback(h, BB, lgpio.FALLING_EDGE, prize_won)
+_claw_cb = lgpio.callback(h, CLAW, lgpio.RISING_EDGE, turn_end)
 
 if __name__ == "__main__":
     import fastapi

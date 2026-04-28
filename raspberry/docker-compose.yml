@@ -2,7 +2,7 @@ services:
   socket:
     build: ./server
     devices:
-      - /dev/gpiomem:/dev/gpiomem
+      - /dev/gpiochip0:/dev/gpiochip0
     expose:
       - '5000'
     network_mode: "host"

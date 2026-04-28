@@ -1,7 +1,4 @@
-python-socketio
-RPi.GPIO
 uvicorn
-pigpio
-asyncio
 fastapi
 websockets
+lgpio
