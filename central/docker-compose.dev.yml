@@ -33,7 +33,9 @@ services:
       - claw_network
 
   next:
-    build: ./next
+    build:
+      context: ./next
+      target: dev
     container_name: claw_next
     expose:
       - '3000'
@@ -43,10 +45,10 @@ services:
       - db
     volumes:
       - ./next:/code
+      - /code/node_modules
     networks:
       - claw_network
     env_file: .env
-    command: 'pnpm dev'
 
   db:
     image: postgres:latest
@@ -72,7 +74,24 @@ services:
       - ./fastapi:/code
     networks:
       - claw_network
-    env_file: .env
+    env_file:
+      - .env
+      - path: .env.dev
+        required: false
+    environment:
+      - PI_SERVER_URL=${PI_DEV_URL:-http://mock-pi:5001}
+    depends_on:
+      - mock-pi
+
+  mock-pi:
+    build: ../mock/raspberry
+    container_name: claw_mock_pi
+    ports:
+      - '5001:5001'
+    volumes:
+      - ../mock/raspberry:/app
+    networks:
+      - claw_network
 
 volumes:
   claw_postgres_data_dev:

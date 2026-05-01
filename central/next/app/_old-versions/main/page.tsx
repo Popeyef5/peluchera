@@ -6,7 +6,7 @@ import WebRTCPlayer from '@/components/WebRTCPlayer';
 import Rules from '@/components/rules';
 import { ColorModeButton, useColorMode } from '@/components/ui/color-mode';
 import AccountManager from '@/components/AccountManager';
-import PrizeOdds from '@/components/PrizeOdds';
+import { WinMultiplier, EpochCountdown, EpochStats } from '@/components/GameInfo';
 import ActionButton from '@/components/ActionButton';
 import { useIsMobile } from '@/components/hooks/useIsMobile';
 import Image from 'next/image'
@@ -50,7 +50,11 @@ const HUD: React.FC = () => {
           keySize={'13cqw'}
           buttonSize={'30cqw'}
         />
-        <PrizeOdds w={"full"} />
+        <HStack w={"full"}>
+          <WinMultiplier flex={1} textFontSize='3.5vh' />
+          <EpochCountdown flex={1} textFontSize='3.5vh' />
+        </HStack>
+        <EpochStats w={"full"} />
         <Rules w={"full"} containerRef={columnRef} />
       </VStack>
       <Flex
@@ -88,21 +92,22 @@ const Mobile = () => {
     <Flex w="full" minH="140px" justify={"center"} align={"center"}>
       <ActionButton userTextSize={"xl"} buttonWidth={"full"} w={"full"} />
     </Flex>
-    <PrizeOdds w="full" />
+    <HStack w={"full"}>
+      <WinMultiplier flex={1} titleFontSize='md' textFontSize='2xl' />
+      <EpochCountdown flex={1} titleFontSize='md' textFontSize='2xl' />
+    </HStack>
+    <EpochStats w="full" titleFontSize='md' textFontSize='md' />
     <Rules w={"full"} />
   </VStack>
 }
 
 /* ───────── page wrapper ───────── */
 export default function Page() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
   const isMobile = useIsMobile();
-  const showMobile = mounted && isMobile;
   return (
     <SocketProvider>
       <ClawProvider>
-        {!showMobile ? <HUD /> : <Mobile />}
+        {!isMobile ? <HUD /> : <Mobile />}
       </ClawProvider>
     </SocketProvider>
   );

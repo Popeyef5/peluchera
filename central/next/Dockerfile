@@ -15,6 +15,14 @@ COPY . .
 COPY --from=deps /code/node_modules ./node_modules
 RUN pnpm build
 
+# Dev stage: hot-reload server. Used by docker-compose.dev.yml via `target: dev`.
+FROM base AS dev
+RUN npm install -g pnpm
+WORKDIR /code
+COPY --from=deps /code/node_modules ./node_modules
+EXPOSE 3000
+CMD ["pnpm", "dev"]
+
 # Stage 3: Production server
 FROM base AS runner
 # RUN npm install -g pnpm

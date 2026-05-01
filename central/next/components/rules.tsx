@@ -36,18 +36,18 @@ const Rules = ({ w, containerRef }: RulesProps) => {
 					<Drawer.Body >
 						<VStack gap={8}>
 							<VStack gap={4} align={"start"}>
-								<p>Every time you play, your USDC goes into a prize pool.</p>
-								<p>Every win earns you one share of the prize pool.</p>
-								<p>At the end of each epoch (24h), the prize pool (minus a fee) is split amongst the winners. Each one gets a cut proportional to their number of shares.</p>
-								<p>The fee will not exceed 20% and winning plays will never lose money.</p>
+								<p>Pay to play, control the claw, and try to grab a sphere. Each sphere holds a Pokémon booster pack.</p>
+								<p>If you grab one, you choose what to do with the pack:</p>
+								<p>• <b>Cash out</b> instantly for its USDC value.</p>
+								<p>• <b>Hold in your vault</b> for up to 30 days, then request bulk shipping of all your loot.</p>
+								<p>Pack rarity is shown in the &quot;What&apos;s in the machine&quot; panel. Odds are fixed per pack tier.</p>
 							</VStack>
 							<Card.Root variant={"elevated"} backgroundColor={"gray.400"}>
 								<Card.Header><Text fontWeight={500}>Example</Text></Card.Header>
 								<Card.Body>
-									<p>Final prize pool: $1000</p>
-									<p>Prize after fee: $800</p>
-									<p>Total wins: 20 → each win = $40</p>
-									<p>You won 2 times → you get $80</p>
+									<p>You grab a Rare pack ($12 cash-out value).</p>
+									<p>Cash out → $12 USDC in your wallet.</p>
+									<p>Hold in vault → keep the physical pack, ship it with the rest of your wins anytime within 30 days.</p>
 								</Card.Body>
 							</Card.Root>
 						</VStack>
