@@ -1,9 +1,10 @@
 "use client";
 
 import { Bricolage_Grotesque, Geist_Mono } from "next/font/google";
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import VariantLayout from "../_shared/VariantLayout";
 import { useColorMode } from "@/components/ui/color-mode";
+import { useClaw } from "@/components/providers";
 
 const display = Bricolage_Grotesque({
 	weight: ["400", "500", "700", "800"],
@@ -61,6 +62,50 @@ const PrizePanel = () => (
 		</div>
 	</div>
 );
+
+const SquircleDefs = () => (
+	<svg width="0" height="0" aria-hidden style={{ position: "absolute", overflow: "hidden" }}>
+		<defs>
+			<clipPath id="lg-squircle" clipPathUnits="objectBoundingBox">
+				<path d="M 0,0.5 C 0,0.05 0.05,0 0.5,0 C 0.95,0 1,0.05 1,0.5 C 1,0.95 0.95,1 0.5,1 C 0.05,1 0,0.95 0,0.5 Z" />
+			</clipPath>
+		</defs>
+	</svg>
+);
+
+const LiveChip = () => {
+	const { clawSocketOn } = useClaw();
+	return (
+		<div className={`lg-live ${clawSocketOn ? "lg-live--on" : "lg-live--off"}`}>
+			<span className="lg-live__dot" aria-hidden />
+			<span>{clawSocketOn ? "LIVE" : "OFFLINE"}</span>
+		</div>
+	);
+};
+
+const VideoBezel = ({ children }: { children: ReactNode }) => {
+	const ref = useRef<HTMLDivElement>(null);
+	const handleMove = (e: React.PointerEvent<HTMLDivElement>) => {
+		const el = ref.current;
+		if (!el) return;
+		const r = el.getBoundingClientRect();
+		el.style.setProperty("--lg-mx", `${e.clientX - r.left}px`);
+		el.style.setProperty("--lg-my", `${e.clientY - r.top}px`);
+	};
+	return (
+		<div className="lg-video" ref={ref} onPointerMove={handleMove}>
+			<SquircleDefs />
+			<div className="lg-video__outer" aria-hidden />
+			<div className="lg-video__inner">
+				<div className="lg-video__cursor" aria-hidden />
+				<div className="lg-video__sweep" aria-hidden />
+				{/* <div className="lg-video__screen">{children}</div> */}
+				{children}
+				<LiveChip />
+			</div>
+		</div>
+	);
+};
 
 const RulesTrigger = () => {
 	const [open, setOpen] = useState(false);
@@ -265,6 +310,112 @@ const styles = (
 			font-size: 0.9rem !important;
 		}
 
+		/* ───── Video bezel: stacked glass + sweep + cursor + LIVE ───── */
+		.lg-video {
+			position: relative;
+			width: 100%; height: 100%;
+			display: flex; align-items: center; justify-content: center;
+		}
+		.lg-video__outer {
+			position: absolute;
+			inset: -1.4vh;
+			backdrop-filter: blur(36px) saturate(110%);
+			-webkit-backdrop-filter: blur(36px) saturate(110%);
+			background: linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06));
+			border: 1px solid rgba(255,255,255,0.30);
+			border-radius: 32px;
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.55),
+				inset 0 -1px 0 rgba(40,46,52,0.10),
+				0 28px 70px rgba(40,46,52,0.32),
+				0 6px 18px rgba(40,46,52,0.18);
+			pointer-events: none;
+			z-index: 0;
+		}
+		.lg-video__inner {
+			position: relative;
+			width: 100%; height: 100%;
+			padding: 1.4vh;
+			backdrop-filter: blur(20px) saturate(125%);
+			-webkit-backdrop-filter: blur(20px) saturate(125%);
+			background: linear-gradient(135deg, rgba(255,255,255,0.42), rgba(255,255,255,0.14));
+			border: 1px solid rgba(255,255,255,0.65);
+			border-radius: 24px;
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.85),
+				inset 0 -1px 0 rgba(40,46,52,0.08),
+				0 8px 24px rgba(40,46,52,0.18);
+			z-index: 1;
+			overflow: hidden;
+		}
+		.lg-video__cursor {
+			position: absolute; inset: 0;
+			pointer-events: none; z-index: 2;
+			background: radial-gradient(circle 240px at var(--lg-mx, 50%) var(--lg-my, 50%),
+				rgba(255,255,255,0.24) 0%, transparent 65%);
+			mix-blend-mode: overlay;
+			opacity: 0;
+			transition: opacity 280ms ease;
+		}
+		.lg-video:hover .lg-video__cursor { opacity: 1; }
+		.lg-video__sweep {
+			position: absolute; inset: 0;
+			pointer-events: none; z-index: 3;
+			background: linear-gradient(115deg,
+				transparent 35%,
+				rgba(255,255,255,0.22) 50%,
+				transparent 65%);
+			transform: translateX(-100%);
+			animation: lg-sweep 9s ease-in-out infinite;
+			mix-blend-mode: overlay;
+		}
+		@keyframes lg-sweep {
+			0%, 18%, 100% { transform: translateX(-110%); }
+			55% { transform: translateX(120%); }
+		}
+		.lg-video__screen {
+			position: relative;
+			width: 100%; height: 100%;
+			background: #000;
+			clip-path: url(#lg-squircle);
+			-webkit-clip-path: url(#lg-squircle);
+			z-index: 1;
+			display: flex;
+		}
+		.lg-video__screen > * { width: 100%; height: 100%; }
+		.lg-live {
+			position: absolute;
+			top: 2vh; right: 2vh;
+			z-index: 4;
+			display: inline-flex; align-items: center; gap: 0.45em;
+			padding: 0.4em 0.85em;
+			font-family: var(--lg-mono);
+			font-size: 0.62rem;
+			letter-spacing: 0.18em;
+			text-transform: uppercase;
+			border-radius: 999px;
+			backdrop-filter: blur(14px) saturate(140%);
+			-webkit-backdrop-filter: blur(14px) saturate(140%);
+			background: linear-gradient(135deg, rgba(255,255,255,0.55), rgba(255,255,255,0.22));
+			border: 1px solid rgba(255,255,255,0.7);
+			color: #1a1d22;
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.95),
+				0 4px 14px rgba(40,46,52,0.20);
+		}
+		.lg-live__dot {
+			width: 6px; height: 6px; border-radius: 50%;
+			background: #ff3b30;
+			box-shadow: 0 0 8px rgba(255,59,48,0.55);
+			animation: lg-live-pulse 1.6s ease-in-out infinite;
+		}
+		.lg-live--off .lg-live__dot {
+			background: #8b8e93;
+			box-shadow: none;
+			animation: none;
+		}
+		@keyframes lg-live-pulse { 50% { opacity: 0.4; } }
+
 		/* ───── Dark / Space Black Titanium ───── */
 		.dark .lg-root {
 			color: #d8dadd;
@@ -324,6 +475,42 @@ const styles = (
 		.dark .lg-modal { background: rgba(0,0,0,0.55); }
 		.dark .lg-modal__inner h2 { color: #f0f2f4; }
 		.dark .lg-modal__inner ol { color: #c8ccd0; }
+
+		.dark .lg-video__outer {
+			background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03));
+			border: 1px solid rgba(255,255,255,0.10);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.20),
+				inset 0 -1px 0 rgba(0,0,0,0.45),
+				0 28px 70px rgba(0,0,0,0.60),
+				0 6px 18px rgba(0,0,0,0.40);
+		}
+		.dark .lg-video__inner {
+			background: linear-gradient(135deg, rgba(255,255,255,0.13), rgba(255,255,255,0.04));
+			border: 1px solid rgba(255,255,255,0.14);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.22),
+				inset 0 -1px 0 rgba(0,0,0,0.35),
+				0 8px 24px rgba(0,0,0,0.55);
+		}
+		.dark .lg-video__cursor {
+			background: radial-gradient(circle 240px at var(--lg-mx, 50%) var(--lg-my, 50%),
+				rgba(255,255,255,0.15) 0%, transparent 65%);
+		}
+		.dark .lg-video__sweep {
+			background: linear-gradient(115deg,
+				transparent 35%,
+				rgba(255,255,255,0.14) 50%,
+				transparent 65%);
+		}
+		.dark .lg-live {
+			background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05));
+			border: 1px solid rgba(255,255,255,0.18);
+			color: #e2e4e7;
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.24),
+				0 4px 14px rgba(0,0,0,0.45);
+		}
 	`}</style>
 );
 
@@ -337,6 +524,7 @@ export default function LiquidGlassVariant() {
 			wallet={<Wallet />}
 			prizePanel={() => <PrizePanel />}
 			rulesTrigger={() => <RulesTrigger />}
+			renderVideoFrame={(player) => <VideoBezel>{player}</VideoBezel>}
 		/>
 	);
 }

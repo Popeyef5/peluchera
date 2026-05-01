@@ -15,6 +15,7 @@ interface Slots {
 	wallet?: ReactNode;
 	prizePanel: (columnRef: ColumnRef) => ReactNode;
 	rulesTrigger: (columnRef: ColumnRef) => ReactNode;
+	renderVideoFrame?: (player: ReactNode) => ReactNode;
 }
 
 interface VariantLayoutProps extends Slots {
@@ -22,8 +23,9 @@ interface VariantLayoutProps extends Slots {
 	globalStyles?: ReactNode;
 }
 
-const HUD = ({ themeToggle, wordmark, wallet, prizePanel, rulesTrigger }: Slots) => {
+const HUD = ({ themeToggle, wordmark, wallet, prizePanel, rulesTrigger, renderVideoFrame }: Slots) => {
 	const columnRef = useRef<HTMLDivElement>(null);
+	const player = <WebRTCPlayer />;
 
 	return (
 		<HStack w={"100vw"} h={"100vh"} p={"3.2vh"} gap={"3.2vh"} containerType={"size"}>
@@ -53,14 +55,15 @@ const HUD = ({ themeToggle, wordmark, wallet, prizePanel, rulesTrigger }: Slots)
 				{rulesTrigger(columnRef)}
 			</VStack>
 			<Flex h={"full"} maxW={"133cqh"} flex={"1000 1 auto"} align={"center"}>
-				<WebRTCPlayer />
+				{renderVideoFrame ? renderVideoFrame(player) : player}
 			</Flex>
 		</HStack>
 	);
 };
 
-const Mobile = ({ themeToggle, wordmark, wallet, prizePanel, rulesTrigger }: Slots) => {
+const Mobile = ({ themeToggle, wordmark, wallet, prizePanel, rulesTrigger, renderVideoFrame }: Slots) => {
 	const columnRef = useRef<HTMLDivElement>(null);
+	const player = <WebRTCPlayer />;
 
 	return (
 		<VStack w={"full"} p={8} gap={8} ref={columnRef}>
@@ -70,7 +73,7 @@ const Mobile = ({ themeToggle, wordmark, wallet, prizePanel, rulesTrigger }: Slo
 				<Box>{wallet}</Box>
 			</HStack>
 			<Flex aspectRatio={4 / 3} w="full" justifyItems={"center"}>
-				<WebRTCPlayer />
+				{renderVideoFrame ? renderVideoFrame(player) : player}
 			</Flex>
 			<Flex w="full" minH="140px" justify={"center"} align={"center"}>
 				<ActionButton userTextSize={"xl"} buttonWidth={"full"} w={"full"} />

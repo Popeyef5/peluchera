@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Flex, IconButton, Box } from "@chakra-ui/react"
 import { BsFullscreen, BsFullscreenExit } from "react-icons/bs";
-import { useColorMode } from './ui/color-mode';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useClaw } from './providers';
 
@@ -18,7 +17,6 @@ declare global {
 
 export default function WebRTCPlayer() {
   const isMobile = useIsMobile();
-  const { colorMode } = useColorMode();
   const { clawSocketOn } = useClaw();
   const [videoMsg, setVideoMsg] = useState("");
 
@@ -79,7 +77,7 @@ export default function WebRTCPlayer() {
       ref={wrapRef}
       p={isFS ? "24px" : 0}
       justify={"center"}
-      background={colorMode === "dark" ? "black" : "white"}
+      background={{ base: "white", _dark: "black" }}
       borderRadius={"2rem"}
     >
       <video
@@ -123,9 +121,9 @@ export default function WebRTCPlayer() {
           size={"2xl"}
           variant={"ghost"}
           rounded={"full"}
-          color={isFS ? colorMode === "dark" ? "white" : "black" : "white"}
+          color={isFS ? { base: "black", _dark: "white" } : "white"}
           onClick={toggleFullscreen}
-          _hover={{ color: colorMode === "light" ? "black" : "white" }}
+          _hover={{ color: { base: "black", _dark: "white" } }}
         >
           {isFS ? <BsFullscreenExit /> : <BsFullscreen />}
         </IconButton>
