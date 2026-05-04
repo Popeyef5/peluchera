@@ -140,10 +140,11 @@ import { parseTimestamp } from "@/lib/utils";
 
 interface AccountManagerProps {
 	containerRef?: React.RefObject<HTMLElement | null>
+	triggerClassName?: string
 }
 
 export const AccountManager = (
-	{ containerRef }: AccountManagerProps
+	{ containerRef, triggerClassName }: AccountManagerProps
 ) => {
 	const { address, isConnected } = useAppKitAccount();
 	const { open } = useAppKit();
@@ -160,9 +161,15 @@ export const AccountManager = (
 			onOpenChange={(e) => { setDrawerOpen(e.open) }}
 		>
 			<Drawer.Trigger asChild>
-				<IconButton borderRadius={"full"}>
-					<FaWallet />
-				</IconButton>
+				{triggerClassName ? (
+					<button className={triggerClassName} aria-label="Account">
+						<FaWallet />
+					</button>
+				) : (
+					<IconButton borderRadius={"full"}>
+						<FaWallet />
+					</IconButton>
+				)}
 			</Drawer.Trigger>
 			<Portal container={containerRef}>
 				<Drawer.Backdrop />
