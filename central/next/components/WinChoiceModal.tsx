@@ -5,8 +5,10 @@ import { Box, Dialog, HStack, Portal, VStack } from "@chakra-ui/react";
 import { Canvas } from "@react-three/fiber";
 import { Environment, Float, PresentationControls } from "@react-three/drei";
 import { useClaw } from "@/components/providers";
+import { useIsMobile } from "@/components/hooks/useIsMobile";
 import Booster from "@/components/Booster";
 import CardStack from "@/components/CardStack";
+import TiltDebug from "@/components/TiltDebug";
 
 type Phase = "pack" | "tearing" | "revealing" | "shuffling" | "flipping" | "swiping";
 
@@ -20,6 +22,7 @@ const AUTO_SHUFFLE_COUNT = 3; // N face-down lift-and-back animations before the
 
 const WinChoiceModal = () => {
 	const { roundWon } = useClaw();
+	const isMobile = useIsMobile();
 	const lastSeen = useRef(roundWon);
 	const [open, setOpen] = useState(false);
 	const [phase, setPhase] = useState<Phase>("pack");
@@ -46,6 +49,17 @@ const WinChoiceModal = () => {
 		}
 	}, [roundWon]);
 
+	// Test hook — /test-win route dispatches this event 3s after mount so we can
+	// preview the win flow on mobile without going through the full claw cycle.
+	useEffect(() => {
+		const onTestWin = () => {
+			setPhase("pack");
+			setOpen(true);
+		};
+		window.addEventListener("garra:test-win", onTestWin);
+		return () => window.removeEventListener("garra:test-win", onTestWin);
+	}, []);
+
 	useEffect(() => {
 		if (!open) {
 			setEntered(false);
@@ -65,6 +79,33 @@ const WinChoiceModal = () => {
 	const close = () => setOpen(false);
 
 	const openPack = () => {
+		// iOS DeviceOrientationEvent.requestPermission() must run inside a user
+		// gesture. We fire-and-forget here; HoloCard listens for the resulting
+		// 'garra:tilt-granted' event to start its orientation handler.
+		(async () => {
+			type DOEWithPermission = typeof DeviceOrientationEvent & {
+				requestPermission?: () => Promise<"granted" | "denied" | "default">;
+			};
+			const DOE = (typeof DeviceOrientationEvent !== "undefined"
+				? (DeviceOrientationEvent as unknown as DOEWithPermission)
+				: null);
+			const grant = () => {
+				try { sessionStorage.setItem("garra:tilt-granted", "1"); } catch {}
+				window.dispatchEvent(new CustomEvent("garra:tilt-granted"));
+			};
+			if (DOE?.requestPermission) {
+				try {
+					const result = await DOE.requestPermission();
+					if (result === "granted") grant();
+				} catch {
+					/* user denied or unavailable */
+				}
+			} else {
+				// No permission gate (Android / desktop) — just signal availability.
+				grant();
+			}
+		})();
+
 		setPhase("tearing");
 		setTimeout(() => setPhase("revealing"), TIMINGS.tearing);
 		setTimeout(() => setPhase("shuffling"), TIMINGS.tearing + TIMINGS.revealing);
@@ -95,19 +136,23 @@ const WinChoiceModal = () => {
 	const stackPointer  = phase === "swiping";
 
 	return (
+		<>
+		{isMobile && open && <TiltDebug />}
 		<Dialog.Root open={open} onOpenChange={(e) => setOpen(e.open)} placement="center">
 			<Portal>
 				<Dialog.Backdrop className="lg-drawer-backdrop" />
 				<Dialog.Positioner overflow="hidden">
 					<Dialog.Content
-						className="glass holo-rim"
+						className={isMobile ? undefined : "glass holo-rim"}
 						w="min(92vw, 660px)"
-						borderRadius="1.75rem"
+						borderRadius={isMobile ? 0 : "1.75rem"}
 						p={0}
 						overflow="visible"
 						bg="transparent"
+						boxShadow={isMobile ? "none" : undefined}
+						style={isMobile ? { background: "transparent", backdropFilter: "none", WebkitBackdropFilter: "none" } : undefined}
 					>
-						<VStack gap={5} p={6}>
+						<VStack gap={5} p={6} bg="transparent">
 							<Box
 								position="relative"
 								w="full"
@@ -145,6 +190,7 @@ const WinChoiceModal = () => {
 								    Box extends past the inner area on top/left/right so rotation
 								    tips don't clip at the canvas edge. Bottom stays at 0 to avoid
 								    overlapping the button row below. */}
+								{(phase === "pack" || phase === "tearing") && (
 								<Box
 									position="absolute"
 									top="-15%"
@@ -168,7 +214,11 @@ const WinChoiceModal = () => {
 										<Canvas
 											camera={{ position: [0, 0, 3.2], fov: 35 }}
 											dpr={[1, 2]}
-											gl={{ antialias: true, alpha: true }}
+											gl={{ antialias: true, alpha: true, premultipliedAlpha: false }}
+											onCreated={({ gl }) => {
+												gl.setClearColor(0x000000, 0);
+											}}
+											style={{ background: "transparent" }}
 										>
 											<ambientLight intensity={0.45} />
 											<directionalLight position={[2, 3, 4]} intensity={1.2} />
@@ -193,6 +243,7 @@ const WinChoiceModal = () => {
 										</Canvas>
 									)}
 								</Box>
+								)}
 							</Box>
 
 							{/* Fixed-height button slot. Both button rows are always mounted
@@ -240,6 +291,7 @@ const WinChoiceModal = () => {
 				</Dialog.Positioner>
 			</Portal>
 		</Dialog.Root>
+		</>
 	);
 };
 

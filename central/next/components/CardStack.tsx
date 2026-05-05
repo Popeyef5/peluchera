@@ -66,9 +66,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 				const [h, ...rest] = d;
 				return [...rest, h];
 			});
-			setTimeout(() => {
-				setDeparting((d) => (d && d.id === id ? { ...d, phase: "recede" } : d));
-			}, LIFT_MS);
+			// Phase transition driven by onAnimationComplete (no setTimeout race).
 		};
 
 		const tick = () => {
@@ -111,10 +109,8 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 		});
 		x.set(0);
 		y.set(0);
-		// Promote to phase 2 once the lift completes — discrete zIndex switch.
-		setTimeout(() => {
-			setDeparting((d) => (d && d.id === id ? { ...d, phase: "recede" } : d));
-		}, LIFT_MS);
+		// Phase transition (lift → recede → unmount) is driven by the motion.div's
+		// onAnimationComplete to avoid racing with setTimeout — see below.
 	};
 
 	const top = deck[0];
@@ -189,14 +185,17 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						initial={{
 							x: departing.startX,
 							y: departing.startY,
-							z: 0,
-							rotateX: 0,
+							scale: 1,
 							opacity: 1,
 						}}
 						animate={
 							departing.phase === "lift"
-								? { x: 0, y: -420, z: 0, rotateX: -8, opacity: 1 }
-								: { x: 0, y: 0, z: -50, rotateX: 0, opacity: 1 }
+								// 2D-only transforms — iOS Safari's compositor splits
+								// background-image and CSS layers across separate
+								// rendering passes when 3D transforms are involved,
+								// leaving "ghost" frames mid-flight.
+								? { x: 0, y: -420, scale: 1, opacity: 1 }
+								: { x: 0, y: 0, scale: 0.86, opacity: 1 }
 						}
 						transition={{
 							duration: (departing.phase === "lift" ? LIFT_MS : RECEDE_MS) / 1000,
@@ -204,7 +203,15 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						}}
 						style={{ zIndex: departing.phase === "lift" ? 4 : 0 }}
 						onAnimationComplete={() => {
-							if (departing.phase === "recede") setDeparting(null);
+							// Drive phase transitions from animation completion. The
+							// functional setState ensures we always read the latest
+							// phase, never a stale closure.
+							setDeparting((d) => {
+								if (!d) return null;
+								if (d.phase === "lift") return { ...d, phase: "recede" };
+								if (d.phase === "recede") return null;
+								return d;
+							});
 						}}
 					>
 						<HoloCard

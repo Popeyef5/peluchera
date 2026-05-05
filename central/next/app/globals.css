@@ -209,7 +209,9 @@
     0 0 30px rgba(255, 255, 255, 0.18);
 }
 
-/* Shine + glare layers (front-face only) */
+/* Shine + glare layers (front-face only). On iOS Safari, backface-visibility
+   doesn't reliably propagate through elements with mix-blend-mode, so we hide
+   them via display:none when the card is face-down (data-face="down"). */
 .holo-card__shine,
 .holo-card__glare {
   position: absolute;
@@ -218,19 +220,36 @@
   pointer-events: none;
   opacity: var(--card-opacity);
   transition: opacity 200ms ease;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.holo-card[data-face="down"] .holo-card__shine,
+.holo-card[data-face="down"] .holo-card__glare {
+  display: none;
+}
+
+/* iOS Safari quirk: mix-blend-mode + 3D transforms (the departing card's
+   recede arc uses translate3d + perspective) split the foil layer onto a
+   separate compositing context that doesn't follow the parent's 3D motion,
+   leaving a "ghost foil" floating where the card was. Suppress shine/glare
+   on the in-flight card entirely — it's transient anyway. */
+.card-stack__departing .holo-card__shine,
+.card-stack__departing .holo-card__glare {
+  display: none;
 }
 .holo-card__shine {
   z-index: 2;
-  mix-blend-mode: color-dodge;
+  /* mix-blend-mode removed: iOS Safari promotes blend-mode layers to a
+     separate GPU compositing layer that can desync from the parent during
+     transforms (causing the "ghost foil" mid-recede). */
 }
 .holo-card__glare {
   z-index: 3;
-  mix-blend-mode: overlay;
   background-image: radial-gradient(
     farthest-corner circle at var(--pointer-x) var(--pointer-y),
-    hsla(0, 0%, 100%, 0.85) 8%,
-    hsla(0, 0%, 100%, 0.60) 22%,
-    hsla(0, 0%, 0%, 0.55) 90%
+    hsla(0, 0%, 100%, 0.55) 8%,
+    hsla(0, 0%, 100%, 0.30) 22%,
+    hsla(0, 0%, 0%, 0.00) 90%
   );
 }
 
@@ -282,10 +301,10 @@
   inset: 0;
   background: radial-gradient(
     closest-side circle at var(--pointer-x) var(--pointer-y),
-    rgba(255, 255, 255, 0.45),
+    rgba(255, 255, 255, 0.30),
     transparent 55%
   );
-  mix-blend-mode: color-dodge;
+  /* mix-blend-mode removed for iOS compositing safety */
 }
 
 /* Optional masked foil (e.g. classic holos where only the artwork shines) */
@@ -309,10 +328,14 @@
 }
 .card-stack__deck {
   position: relative;
-  width: 60%;
+  width: var(--deck-width, 60%);
   aspect-ratio: 0.7;
   perspective: 1200px;
 }
+@media (max-width: 768px) {
+  .card-stack__deck { --deck-width: 69%; } /* 60% × 1.15 — bigger on mobile */
+}
+
 .card-stack__slot {
   position: absolute;
   inset: 0;
