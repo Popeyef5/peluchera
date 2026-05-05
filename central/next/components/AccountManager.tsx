@@ -1,5 +1,5 @@
 "use client";
-import { Box, Drawer, VStack, HStack, Text, Tabs, Button, IconButton, Portal, Skeleton, Flex, Icon } from "@chakra-ui/react"
+import { Box, Drawer, VStack, HStack, Text, Tabs, IconButton, Portal, Skeleton, Flex, Icon } from "@chakra-ui/react"
 import { useState } from "react";
 import { useClaw } from "./providers";
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -172,48 +172,49 @@ export const AccountManager = (
 				)}
 			</Drawer.Trigger>
 			<Portal container={containerRef}>
-				<Drawer.Backdrop />
+				<Drawer.Backdrop className="lg-drawer-backdrop" />
 				<Drawer.Positioner pos={containerRef ? "absolute" : "fixed"} boxSize={"full"}>
 					<Drawer.Content
+						className="glass holo-rim"
 						borderBottomRadius={"1.5rem"}
 						borderTopRadius={isMobile ? "0" : "1.5rem"}
-						color={{ base: "white", _dark: "black" }}
-						backgroundColor={{ base: "black", _dark: "white" }}
 					>
-						<Drawer.Header>
-							{/* <Drawer.Title>Drawer Title</Drawer.Title> */}
-						</Drawer.Header>
-						<Drawer.Body >
-							<VStack gap={8}>
-								<HStack>
-									<Text mr={"5rem"} fontSize={'x-large'} >{address?.slice(0, 6)}...{address?.slice(address.length - 4)}</Text>
-									<IconButton
+						<button className="lg-drawer__close" onClick={() => setDrawerOpen(false)} aria-label="Close">✕</button>
+						<Drawer.Body>
+							<VStack gap={6} pt={2} pb={4}>
+								<HStack justify="space-between" w="full" px={2}>
+									<Text
+										fontFamily="var(--lg-mono)"
+										fontSize="sm"
+										letterSpacing="0.05em"
+										color="var(--ink-soft)"
+									>
+										{address?.slice(0, 6)}...{address?.slice(address.length - 4)}
+									</Text>
+									<button
+										className="chip chip--circle holo-rim spec"
 										onClick={(event) => { event.stopPropagation(); setDrawerOpen(false); open() }}
-										size={"md"}
-										rounded={"full"}
-										variant={"ghost"}
-										color={{ base: "white", _dark: "black" }}
-										_hover={{ color: { base: "black", _dark: "white" } }}
+										aria-label="Settings"
 									>
 										<FiSettings />
-									</IconButton>
+									</button>
 								</HStack>
-								{/* <VStack gap={6}> */}
-								<Box fontSize={'xx-large'}>${accountBalance}</Box>
-								<Button
-									bg={{ base: "white", _dark: "black" }}
-									color={{ base: "black", _dark: "white" }}
-									onClick={withdraw}
-									h={12}
-									w={40}
-									fontWeight={"500"}
-									fontSize={"md"}
-									borderRadius={"1rem"}
-									loading={withdrawing}
-									disabled={accountBalance === 0}
+								<Box
+									fontSize="3xl"
+									fontWeight="700"
+									letterSpacing="-0.025em"
+									color="var(--ink)"
+									fontFamily="var(--lg-display)"
 								>
-									WITHDRAW
-								</Button>
+									${accountBalance}
+								</Box>
+								<button
+									className="lg-btn holo-rim spec"
+									onClick={withdraw}
+									disabled={accountBalance === 0 || withdrawing}
+								>
+									{withdrawing ? "Withdrawing…" : "WITHDRAW"}
+								</button>
 								<Tabs.Root
 									lazyMount
 									unmountOnExit
@@ -231,12 +232,16 @@ export const AccountManager = (
 											<Tabs.Trigger
 												key={label}
 												value={label}
-												color="gray.400"
-												borderBottom={{ base: '4px solid black', _dark: '4px solid white' }}
-												fontSize={"md"}
+												color="var(--ink-soft)"
+												borderBottomWidth="2px"
+												borderBottomStyle="solid"
+												borderBottomColor="transparent"
+												fontSize="md"
+												fontWeight="500"
+												fontFamily="var(--lg-display)"
 												_selected={{
-													borderBottom: { base: '4px solid white', _dark: '4px solid black' },
-													color: { base: 'white', _dark: 'black' },
+													color: "var(--ink)",
+													borderBottomColor: "var(--ink)",
 												}}
 											>
 												{label}
@@ -300,9 +305,6 @@ export const AccountManager = (
 								{/* </VStack> */}
 							</VStack>
 						</Drawer.Body>
-						<Drawer.Footer>
-							{/* <Drawer.Title>Drawer Title</Drawer.Title> */}
-						</Drawer.Footer>
 					</Drawer.Content>
 				</Drawer.Positioner>
 			</Portal>

@@ -196,6 +196,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		// 	setIsPlaying(true);
 		// };
 		const onTurnStart = () => {
+			console.log('[claw] turn_start', { position: positionRef.current });
 			setIsPlaying(positionRef.current === 0);
 			if (toastId.current) {
 				toaster.update(toastId.current, {
@@ -208,6 +209,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			}
 		}
 		const onTurnEnd = () => {
+			console.log('[claw] turn_end', { isPlaying: isPlayingRef.current });
 			if (isPlayingRef.current) {
 				setRoundPlayed((p) => p + 1);
 
@@ -230,6 +232,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 				/** listen ONCE for the outcome, then morph the same toast */
 				socket.once("player_win", () => {
+					console.log('[claw] player_win (scoped, inside turn_end)');
 					if (timerId.current) clearTimeout(timerId.current);       // cancel fallback
 					if (!toastId.current) return;
 
@@ -287,6 +290,9 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setAccountWithdrawals(data.withdrawals);
 		}
 
+		const onPlayerWinDebug = () => console.log('[claw] player_win (always-on listener)');
+		socket.on('player_win', onPlayerWinDebug);
+
 		socket.on('player_queued', onPlayerQueued);
 		socket.on('turn_start', onTurnStart);
 		socket.on('claw_connection_change', onClawSocketConnectionChange);
@@ -297,6 +303,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		socket.on('round_start', onRoundStart);
 
 		return () => {
+			socket.off('player_win', onPlayerWinDebug);
 			socket.off('player_queued', onPlayerQueued);
 			socket.off('turn_start', onTurnStart);
 			socket.off('claw_connection_change', onClawSocketConnectionChange);

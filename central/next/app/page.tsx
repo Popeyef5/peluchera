@@ -4,6 +4,7 @@ import { Bricolage_Grotesque, Geist_Mono } from "next/font/google";
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Drawer, Flex, HStack, Portal, VStack } from "@chakra-ui/react";
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 import { ClawProvider, SocketProvider, useClaw } from "@/components/providers";
 import WebRTCPlayer from "@/components/WebRTCPlayer";
@@ -11,6 +12,8 @@ import GameController from "@/components/GameController";
 import AccountManager from "@/components/AccountManager";
 import { useColorMode } from "@/components/ui/color-mode";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
+
+const WinChoiceModal = dynamic(() => import("@/components/WinChoiceModal"), { ssr: false });
 
 const display = Bricolage_Grotesque({
 	weight: ["400", "500", "700", "800"],
@@ -208,14 +211,14 @@ const Rules = ({ containerRef }: { containerRef?: React.RefObject<HTMLElement | 
 				<button className="rules holo-rim spec">How to play</button>
 			</Drawer.Trigger>
 			<Portal container={containerRef}>
-				<Drawer.Backdrop className="rules-backdrop" />
+				<Drawer.Backdrop className="lg-drawer-backdrop" />
 				<Drawer.Positioner pos={containerRef ? "absolute" : "fixed"} boxSize="full">
 					<Drawer.Content
 						className="glass holo-rim rules-drawer"
 						borderTopRadius="1.5rem"
 						borderBottomRadius={isMobile ? "0" : "1.5rem"}
 					>
-						<button className="rules-drawer__close" onClick={() => setOpen(false)} aria-label="Close">✕</button>
+						<button className="lg-drawer__close" onClick={() => setOpen(false)} aria-label="Close">✕</button>
 						<div className="rates__tag">Quick start</div>
 						<h2>How to play</h2>
 						<ol>
@@ -339,7 +342,7 @@ const Styles = ({ accent }: { accent: string }) => (
 			        mask: linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
 			-webkit-mask-composite: xor;
 			        mask-composite: exclude;
-			padding: 1.4px;
+			padding: 1.8px;
 			opacity: var(--rim-opacity);
 			pointer-events: none;
 			z-index: 2;
@@ -363,7 +366,7 @@ const Styles = ({ accent }: { accent: string }) => (
 			        mask: linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
 			-webkit-mask-composite: xor;
 			        mask-composite: exclude;
-			padding: 1.6px;
+			padding: 1.8px;
 			pointer-events: none;
 			z-index: 3;
 		}
@@ -592,7 +595,7 @@ const Styles = ({ accent }: { accent: string }) => (
 			-webkit-mask: linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
 			        mask: linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
 			-webkit-mask-composite: xor; mask-composite: exclude;
-			padding: 1.4px;
+			padding: 1.8px;
 			opacity: 0.5;
 			pointer-events: none;
 			z-index: 5;
@@ -626,13 +629,13 @@ const Styles = ({ accent }: { accent: string }) => (
 		}
 		@keyframes lgh-live { 50% { opacity: 0.4; } }
 
-		/* Rules drawer (slides up from bottom) */
-		.rules-backdrop {
+		/* Drawer backdrop (shared between Rules + AccountManager) */
+		.lg-drawer-backdrop {
 			background: rgba(120,116,108,0.30);
 			backdrop-filter: blur(calc(8px * var(--frost, 1)));
 			-webkit-backdrop-filter: blur(calc(8px * var(--frost, 1)));
 		}
-		.dark .rules-backdrop { background: rgba(0,0,0,0.55); }
+		.dark .lg-drawer-backdrop { background: rgba(0,0,0,0.55); }
 		.rules-drawer {
 			padding: 4vh 5vw 5vh;
 			color: var(--ink);
@@ -645,7 +648,9 @@ const Styles = ({ accent }: { accent: string }) => (
 		}
 		.rules-drawer ol { padding-left: 1.4em; line-height: 1.65; font-size: 1rem; color: var(--ink); }
 		.rules-drawer ol li { margin: 0.5em 0; }
-		.rules-drawer__close {
+
+		/* Close button shared by drawers */
+		.lg-drawer__close {
 			position: absolute; top: 1.5vh; right: 1.5vh;
 			width: 2.2em; height: 2.2em;
 			display: flex; align-items: center; justify-content: center;
@@ -653,14 +658,49 @@ const Styles = ({ accent }: { accent: string }) => (
 			background: rgba(255,255,255,0.6);
 			border: 1px solid rgba(255,255,255,0.7);
 			cursor: pointer;
-			color: var(--ink);
+			color: var(--ink, #1f1d1a);
 			z-index: 4;
+			font-family: var(--lg-display);
 		}
-		.dark .rules-drawer { color: var(--ink); }
-		.dark .rules-drawer__close {
+		.dark .lg-drawer__close {
 			background: rgba(255,255,255,0.10);
 			border: 1px solid rgba(255,255,255,0.16);
-			color: var(--ink);
+			color: var(--ink, #ece6d8);
+		}
+		.dark .rules-drawer { color: var(--ink); }
+
+		/* Generic small glass button */
+		.lg-btn {
+			padding: 0.7em 1.6em;
+			font-family: var(--lg-display);
+			font-weight: 600;
+			font-size: 0.92rem;
+			letter-spacing: 0.02em;
+			color: var(--ink, #1f1d1a);
+			border-radius: 14px;
+			cursor: pointer;
+			background: linear-gradient(180deg, rgba(255,255,255,0.65) 0%, rgba(220,216,206,0.40) 100%);
+			backdrop-filter: blur(calc(20px * var(--frost, 1))) saturate(125%);
+			-webkit-backdrop-filter: blur(calc(20px * var(--frost, 1))) saturate(125%);
+			border: 1px solid rgba(255,255,255,0.7);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.95),
+				inset 0 -1px 0 rgba(31,29,26,0.06),
+				0 4px 14px rgba(31,29,26,0.12);
+			transition: transform 200ms ease, box-shadow 200ms ease;
+			position: relative;
+			min-width: 12rem;
+		}
+		.lg-btn:hover { transform: translateY(-1px); }
+		.lg-btn:active { transform: translateY(0); }
+		.lg-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+		.dark .lg-btn {
+			color: var(--ink, #ece6d8);
+			background: linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 100%);
+			border: 1px solid rgba(255,255,255,0.13);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.18),
+				0 4px 14px rgba(0,0,0,0.4);
 		}
 
 		/* ── Dark — Space Black Titanium ─────────────────────────── */
@@ -760,7 +800,7 @@ const HUD = ({ logoSrc }: { logoSrc: string }) => {
 	);
 };
 
-const Mobile = ({ logoSrc }: { logoSrc: string }) => {
+const Mobile = ({ logoSrc, rootRef }: { logoSrc: string; rootRef: React.RefObject<HTMLDivElement | null> }) => {
 	return (
 		<VStack w="full" p={8} gap={8} align="stretch">
 			<HStack w="full" justify="space-between">
@@ -768,7 +808,7 @@ const Mobile = ({ logoSrc }: { logoSrc: string }) => {
 				<Box maxW="50%">
 					<Image className="logo" width={200} height={360} src={logoSrc} alt="Garra" priority />
 				</Box>
-				<AccountManager triggerClassName="chip chip--circle holo-rim spec" />
+				<AccountManager containerRef={rootRef} triggerClassName="chip chip--circle holo-rim spec" />
 			</HStack>
 			<Flex aspectRatio={4 / 3} w="full" justifyItems="center">
 				<Video />
@@ -777,7 +817,7 @@ const Mobile = ({ logoSrc }: { logoSrc: string }) => {
 				<Play glossMode={DEFAULTS.glossMode} mobile />
 			</Flex>
 			<Rates />
-			<Rules />
+			<Rules containerRef={rootRef} />
 		</VStack>
 	);
 };
@@ -804,15 +844,18 @@ function Shell() {
 	};
 
 	const isMobile = useIsMobile();
+	const rootRef = useRef<HTMLDivElement>(null);
 
 	return (
 		<Box
+			ref={rootRef}
 			className={`lg-root ${display.variable} ${mono.variable}`}
 			style={cssVars as React.CSSProperties}
 			minH="100vh"
 		>
 			<Styles accent={accent} />
-			{!isMobile ? <HUD logoSrc={logoSrc} /> : <Mobile logoSrc={logoSrc} />}
+			{!isMobile ? <HUD logoSrc={logoSrc} /> : <Mobile logoSrc={logoSrc} rootRef={rootRef} />}
+			<WinChoiceModal />
 		</Box>
 	);
 }

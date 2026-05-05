@@ -30,7 +30,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("mock-rpi")
 
-DEFAULT_WIN_RATE = float(os.getenv("MOCK_WIN_RATE", "0.3"))
+DEFAULT_WIN_RATE = float(os.getenv("MOCK_WIN_RATE", "1.0"))
 TURN_DURATION_MIN = float(os.getenv("MOCK_TURN_MIN_SEC", "2.0"))
 TURN_DURATION_MAX = float(os.getenv("MOCK_TURN_MAX_SEC", "4.0"))
 PRIZE_DELAY_SEC = float(os.getenv("MOCK_PRIZE_DELAY_SEC", "0.5"))
@@ -52,7 +52,9 @@ class State:
             return True
         if self.mode == Scenario.ALWAYS_LOSE:
             return False
-        return random.random() < self.win_rate
+        roll = random.random()
+        log.info(f"is_win roll={roll:.4f} threshold={self.win_rate} -> {roll < self.win_rate}")
+        return roll < self.win_rate
 
 
 state = State()

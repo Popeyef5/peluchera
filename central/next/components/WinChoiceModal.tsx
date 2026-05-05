@@ -1,86 +1,70 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button, Dialog, HStack, Portal, Text, VStack } from "@chakra-ui/react";
+import { Box, Dialog, HStack, Portal, VStack } from "@chakra-ui/react";
+import { Canvas } from "@react-three/fiber";
+import { Environment, Float, PresentationControls } from "@react-three/drei";
 import { useClaw } from "@/components/providers";
-import { toaster } from "@/components/ui/toaster";
-
-type Pack = {
-	name: string;
-	tier: "common" | "rare" | "chase";
-	cashOutValue: string;
-};
-
-const SAMPLE_PACKS: Pack[] = [
-	{ name: "Scarlet & Violet — Surging Sparks", tier: "common", cashOutValue: "$4.00" },
-	{ name: "Twilight Masquerade", tier: "rare", cashOutValue: "$12.00" },
-	{ name: "151 Booster Bundle", tier: "chase", cashOutValue: "$60.00" },
-];
-
-const pickRandomPack = (): Pack => SAMPLE_PACKS[Math.floor(Math.random() * SAMPLE_PACKS.length)];
+import Booster from "@/components/Booster";
 
 const WinChoiceModal = () => {
 	const { roundWon } = useClaw();
 	const lastSeen = useRef(roundWon);
 	const [open, setOpen] = useState(false);
-	const [pack, setPack] = useState<Pack | null>(null);
 
 	useEffect(() => {
 		if (roundWon > lastSeen.current) {
 			lastSeen.current = roundWon;
-			setPack(pickRandomPack());
 			setOpen(true);
 		}
 	}, [roundWon]);
 
-	const handleCashOut = () => {
-		if (!pack) return;
-		toaster.create({
-			description: `Cashed out for ${pack.cashOutValue}`,
-			type: "success",
-			duration: 2500,
-		});
-		setOpen(false);
-	};
-
-	const handleVault = () => {
-		if (!pack) return;
-		toaster.create({
-			description: `${pack.name} stored in your vault`,
-			type: "success",
-			duration: 2500,
-		});
-		setOpen(false);
-	};
+	const close = () => setOpen(false);
 
 	return (
 		<Dialog.Root open={open} onOpenChange={(e) => setOpen(e.open)} placement="center">
 			<Portal>
-				<Dialog.Backdrop />
+				<Dialog.Backdrop className="lg-drawer-backdrop" />
 				<Dialog.Positioner>
-					<Dialog.Content borderRadius="1.5rem" p={4}>
-						<Dialog.Header>
-							<Dialog.Title>You won a pack!</Dialog.Title>
-						</Dialog.Header>
-						<Dialog.Body>
-							<VStack gap={4} align="stretch">
-								<Text fontSize="lg" fontWeight={600}>
-									{pack?.name}
-								</Text>
-								<Text>
-									Cash out instantly, or hold it in your vault and ship it out later
-									with the rest of your loot (up to 30 days).
-								</Text>
-							</VStack>
-						</Dialog.Body>
-						<Dialog.Footer>
-							<HStack w="full" justify="space-between">
-								<Button variant="outline" onClick={handleCashOut}>
-									Cash out {pack?.cashOutValue}
-								</Button>
-								<Button onClick={handleVault}>Hold in vault</Button>
+					<Dialog.Content
+						className="glass holo-rim"
+						w="min(90vw, 540px)"
+						borderRadius="1.75rem"
+						p={0}
+						overflow="hidden"
+						bg="transparent"
+					>
+						<VStack gap={5} p={6}>
+							<Box w="full" aspectRatio={1} borderRadius="1.25rem" overflow="hidden">
+								{open && (
+									<Canvas
+										camera={{ position: [0, 0, 3.2], fov: 35 }}
+										dpr={[1, 2]}
+										gl={{ antialias: true, alpha: true }}
+									>
+										<ambientLight intensity={0.45} />
+										<directionalLight position={[2, 3, 4]} intensity={1.2} />
+										<Environment preset="studio" />
+										<PresentationControls
+											global
+											snap
+											polar={[-Math.PI / 4, Math.PI / 4]}
+											azimuth={[-Math.PI, Math.PI]}
+											config={{ mass: 1, tension: 170, friction: 26 }}
+										>
+											<Float speed={1.2} rotationIntensity={0.35} floatIntensity={0.5}>
+												<Booster />
+											</Float>
+										</PresentationControls>
+									</Canvas>
+								)}
+							</Box>
+							<HStack gap={3} w="full" justify="center" wrap="wrap">
+								<button className="lg-btn" onClick={close}>Resell</button>
+								<button className="lg-btn" onClick={close}>Store</button>
+								<button className="lg-btn" onClick={close}>Open now</button>
 							</HStack>
-						</Dialog.Footer>
+						</VStack>
 					</Dialog.Content>
 				</Dialog.Positioner>
 			</Portal>
