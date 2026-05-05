@@ -30,7 +30,7 @@ const WinChoiceModal = () => {
 	const [boosterReady, setBoosterReady] = useState(false);
 
 	const ENTRY_DELAY_MS = 380;
-	const ENTRY_DURATION_MS = 1800;
+	const ENTRY_DURATION_MS = 1500;
 
 	useEffect(() => {
 		console.log('[WinChoiceModal] phase ->', phase);
@@ -85,16 +85,19 @@ const WinChoiceModal = () => {
 	// Cards live BEHIND the pack (see JSX order). They fade in as soon as the
 	// pack starts dropping so the receding pack reveals them.
 	const stackOpacity  = phase === "pack" ? 0 : 1;
+	// Cards start far back in z while the pack is still in view, then come
+	// forward to z=0 once the pack is gone.
+	const stackZ        = phase === "pack" || phase === "tearing" ? -400 : 0;
 	const stackPointer  = phase === "swiping";
 
 	return (
 		<Dialog.Root open={open} onOpenChange={(e) => setOpen(e.open)} placement="center">
 			<Portal>
 				<Dialog.Backdrop className="lg-drawer-backdrop" />
-				<Dialog.Positioner>
+				<Dialog.Positioner overflow="hidden">
 					<Dialog.Content
 						className="glass holo-rim"
-						w="min(90vw, 540px)"
+						w="min(92vw, 660px)"
 						borderRadius="1.75rem"
 						p={0}
 						overflow="visible"
@@ -104,7 +107,7 @@ const WinChoiceModal = () => {
 							<Box
 								position="relative"
 								w="full"
-								aspectRatio={1}
+								aspectRatio="10 / 11"
 								borderRadius="1.25rem"
 								overflow="visible"
 							>
@@ -112,9 +115,11 @@ const WinChoiceModal = () => {
 								<Box
 									position="absolute"
 									inset={0}
-									transition="opacity 700ms ease"
+									transition="opacity 700ms ease, transform 900ms cubic-bezier(0.16, 1, 0.3, 1)"
 									style={{
 										opacity: stackOpacity,
+										transform: `perspective(1200px) translateZ(${stackZ}px)`,
+										transformStyle: "flat",
 										pointerEvents: stackPointer ? "auto" : "none",
 									}}
 								>
@@ -128,14 +133,20 @@ const WinChoiceModal = () => {
 								    the bottom on tearing (0 → 100vh with ease-in). The canvas tree
 								    shape is kept stable across phases — Float speeds + Presentation
 								    Controls clamps just go to zero when not in 'pack' so Booster
-								    doesn't unmount/remount and the GLTF scene isn't double-attached. */}
+								    doesn't unmount/remount and the GLTF scene isn't double-attached.
+								    Box extends past the inner area on top/left/right so rotation
+								    tips don't clip at the canvas edge. Bottom stays at 0 to avoid
+								    overlapping the button row below. */}
 								<Box
 									position="absolute"
-									inset={0}
+									top="-15%"
+									left="-15%"
+									right="-15%"
+									bottom={0}
 									transition={
 										phase === "pack"
-											? "transform 800ms cubic-bezier(0.16, 1, 0.3, 1)"
-											: "transform 1100ms cubic-bezier(0.55, 0, 0.85, 0.5)"
+											? "transform 1800ms cubic-bezier(0.16, 1, 0.3, 1)"
+											: "transform 1300ms cubic-bezier(0.55, 0, 0.85, 0.5)"
 									}
 									style={{
 										opacity: canvasOpacity,

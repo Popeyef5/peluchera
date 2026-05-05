@@ -8,7 +8,7 @@ const GLB_URL = "/booster.glb";
 // Tweak if the model imports with a different "up" axis. The defaults below
 // stand a horizontally-modeled pack upright facing the camera.
 const GLB_ROTATION: [number, number, number] = [-Math.PI / 2, Math.PI / 2, Math.PI];
-const GLB_SCALE = 0.85;
+const GLB_SCALE = 0.7;
 
 function GLTFBooster() {
 	const { scene } = useGLTF(GLB_URL);
