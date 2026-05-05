@@ -8,13 +8,15 @@ import { useClaw } from "@/components/providers";
 import Booster from "@/components/Booster";
 import CardStack from "@/components/CardStack";
 
-type Phase = "pack" | "tearing" | "revealing" | "flipping" | "swiping";
+type Phase = "pack" | "tearing" | "revealing" | "shuffling" | "flipping" | "swiping";
 
 const TIMINGS = {
 	tearing: 2100,   // pack slides down through the bottom of the canvas
 	revealing: 200,  // brief beat to let the canvas fade out cleanly
 	flipping: 700,   // top card flips face-up
 };
+
+const AUTO_SHUFFLE_COUNT = 3; // N face-down lift-and-back animations before the flip
 
 const WinChoiceModal = () => {
 	const { roundWon } = useClaw();
@@ -65,11 +67,13 @@ const WinChoiceModal = () => {
 	const openPack = () => {
 		setPhase("tearing");
 		setTimeout(() => setPhase("revealing"), TIMINGS.tearing);
-		setTimeout(() => setPhase("flipping"), TIMINGS.tearing + TIMINGS.revealing);
-		setTimeout(
-			() => setPhase("swiping"),
-			TIMINGS.tearing + TIMINGS.revealing + TIMINGS.flipping,
-		);
+		setTimeout(() => setPhase("shuffling"), TIMINGS.tearing + TIMINGS.revealing);
+		// shuffling → flipping is triggered by CardStack's onAutoShuffleComplete
+	};
+
+	const onAutoShuffleComplete = () => {
+		setPhase("flipping");
+		setTimeout(() => setPhase("swiping"), TIMINGS.flipping);
 	};
 
 	// Reset phase when modal closes so next win starts fresh.
@@ -124,7 +128,11 @@ const WinChoiceModal = () => {
 									}}
 								>
 									{phase !== "pack" && (
-										<CardStack flipFirst={phase === "flipping" || phase === "swiping"} />
+										<CardStack
+											flipFirst={phase === "flipping" || phase === "swiping"}
+											autoShuffles={phase === "shuffling" ? AUTO_SHUFFLE_COUNT : 0}
+											onAutoShuffleComplete={onAutoShuffleComplete}
+										/>
 									)}
 								</Box>
 
@@ -187,30 +195,46 @@ const WinChoiceModal = () => {
 								</Box>
 							</Box>
 
-							{phase === "pack" && (
+							{/* Fixed-height button slot. Both button rows are always mounted
+							    inside, absolutely-positioned, and fade between phases — keeps
+							    the canvas above from reflowing when buttons swap in/out. */}
+							<Box position="relative" w="full" minH="2.75rem">
 								<HStack
 									gap={3}
 									w="full"
 									justify="center"
 									wrap="wrap"
+									position="absolute"
+									inset={0}
 									transition="opacity 350ms ease, transform 350ms ease"
 									style={{
-										opacity: boosterReady ? 1 : 0,
-										transform: boosterReady ? "translateY(0)" : "translateY(8px)",
-										pointerEvents: boosterReady ? "auto" : "none",
+										opacity: phase === "pack" && boosterReady ? 1 : 0,
+										transform: phase === "pack" && boosterReady
+											? "translateY(0)"
+											: "translateY(8px)",
+										pointerEvents: phase === "pack" && boosterReady ? "auto" : "none",
 									}}
 								>
 									<button className="lg-btn" onClick={close}>Resell</button>
 									<button className="lg-btn" onClick={close}>Store</button>
 									<button className="lg-btn" onClick={openPack}>Open now</button>
 								</HStack>
-							)}
 
-							{phase === "swiping" && (
-								<HStack gap={3} w="full" justify="center">
+								<HStack
+									gap={3}
+									w="full"
+									justify="center"
+									position="absolute"
+									inset={0}
+									transition="opacity 350ms ease"
+									style={{
+										opacity: phase === "swiping" ? 1 : 0,
+										pointerEvents: phase === "swiping" ? "auto" : "none",
+									}}
+								>
 									<button className="lg-btn" onClick={close}>Done</button>
 								</HStack>
-							)}
+							</Box>
 						</VStack>
 					</Dialog.Content>
 				</Dialog.Positioner>

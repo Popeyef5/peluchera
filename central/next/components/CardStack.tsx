@@ -7,6 +7,8 @@ import { MOCK_DECK } from "@/lib/cards";
 
 type Props = {
 	flipFirst: boolean; // when true, the cards in the open pack are face-up
+	autoShuffles?: number; // when set > 0, run that many face-down lift-and-back animations
+	onAutoShuffleComplete?: () => void;
 };
 
 const SWIPE_COMMIT_PX = 140; // any direction past this commits
@@ -29,15 +31,60 @@ type Departing = {
  * the stack. The deck rotates immediately so the next card snaps into the
  * top slot, while the overlay plays out its animation independently.
  */
-export default function CardStack({ flipFirst }: Props) {
+export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComplete }: Props) {
 	const [deck, setDeck] = useState(MOCK_DECK);
 	const [departing, setDeparting] = useState<Departing | null>(null);
 	const x = useMotionValue(0);
 	const y = useMotionValue(0);
 
+	// Refs to access current state from inside long-lived effects
+	const deckRef = React.useRef(deck);
+	React.useEffect(() => { deckRef.current = deck; }, [deck]);
+
 	React.useEffect(() => {
 		console.log('[CardStack] flipFirst prop ->', flipFirst);
 	}, [flipFirst]);
+
+	// Run N programmatic face-down shuffles (parent triggers via prop change).
+	React.useEffect(() => {
+		if (!autoShuffles || autoShuffles <= 0) return;
+		let cancelled = false;
+		let i = 0;
+
+		const doOne = () => {
+			const head = deckRef.current[0];
+			const id = `auto-${head.id}-${Date.now()}`;
+			setDeparting({
+				id,
+				card: head,
+				faceUp: false,
+				startX: 0,
+				startY: 0,
+				phase: "lift",
+			});
+			setDeck((d) => {
+				const [h, ...rest] = d;
+				return [...rest, h];
+			});
+			setTimeout(() => {
+				setDeparting((d) => (d && d.id === id ? { ...d, phase: "recede" } : d));
+			}, LIFT_MS);
+		};
+
+		const tick = () => {
+			if (cancelled) return;
+			if (i >= autoShuffles) {
+				onAutoShuffleComplete?.();
+				return;
+			}
+			doOne();
+			i += 1;
+			setTimeout(tick, LIFT_MS + RECEDE_MS);
+		};
+
+		tick();
+		return () => { cancelled = true; };
+	}, [autoShuffles]);
 
 	// As the top card moves, the next card peeks (rises and grows slightly)
 	const peekProgress = useTransform([x, y], (v: number[]) => {
