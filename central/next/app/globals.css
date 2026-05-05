@@ -218,6 +218,7 @@
   position: relative;
   width: 60%;
   aspect-ratio: 0.7;
+  perspective: 1200px;
 }
 .card-stack__slot {
   position: absolute;
