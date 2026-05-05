@@ -121,202 +121,787 @@
   }
 }
 
-/* ─────────────────────── HoloCard ───────────────────────
-   Layered architecture (inspired by, but re-implemented from,
-   simeydotme/pokemon-cards-css — original is GPL-3.0):
-     .holo-card           → outer; perspective + sets data-rarity dispatch
-     .holo-card__translater → reserved for parent transforms (drag, exit)
-     .holo-card__rotator  → CSS-var driven rotation (pointer tilt + flip)
-     .holo-card__face     → flat front/back; backface-visibility hides the off side
-     .holo-card__shine    → rarity-specific holographic foil
-     .holo-card__glare    → cursor-tracked glossy highlight
-*/
+/* ── HoloCard (simey/pokemon-cards-css port — GPL-3.0, see github.com/simeydotme) ── */
+
+/* Sane defaults for the simey CSS vars so transforms compute even before the
+   JS pointer/orientation handler has set them. */
 .holo-card {
+  --card-scale: 1;
+  --translate-x: 0px;
+  --translate-y: 0px;
   --rotate-x: 0deg;
   --rotate-y: 0deg;
   --pointer-x: 50%;
   --pointer-y: 50%;
-  --card-opacity: 0;
   --background-x: 50%;
   --background-y: 50%;
-  --card-radius: 18px;
-  position: relative;
-  width: 100%;
-  height: 100%;
-  perspective: 1200px;
+  --card-opacity: 0;
+  --pointer-from-center: 0;
+  --pointer-from-top: 0.5;
+  --pointer-from-left: 0.5;
 }
-.holo-card__translater {
-  position: absolute;
-  inset: 0;
-  transform-style: preserve-3d;
-  -webkit-transform-style: preserve-3d;
-}
-.holo-card__rotator {
-  position: absolute;
-  inset: 0;
-  transform-style: preserve-3d;
-  -webkit-transform-style: preserve-3d;
-  transition: transform 320ms cubic-bezier(0.2, 0.85, 0.2, 1);
-  will-change: transform;
-}
-.holo-card__face {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--card-radius);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  overflow: hidden;
-  background-size: cover;
-  background-position: center;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 16px 40px rgba(20, 18, 14, 0.40),
-    0 4px 12px rgba(20, 18, 14, 0.25);
-}
-.holo-card__back {
-  transform: rotateY(180deg);
-}
-.holo-card__front:not([style*="background-image"]) {
-  background:
-    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.55) 0%, transparent 45%),
-    linear-gradient(135deg, #2a2520, #1a1814);
-}
-.holo-card__back:not([style*="background-image"]) {
-  background:
-    radial-gradient(circle at 50% 50%,
-      oklch(72% 0.16 30 / 0.95) 0%,
-      oklch(58% 0.18 290 / 0.85) 18%,
-      oklch(28% 0.05 280) 36%,
-      #1a1814 70%);
-}
-.holo-card__back:not([style*="background-image"])::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 38%;
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: conic-gradient(from 200deg,
-    oklch(78% 0.14 30),
-    oklch(82% 0.12 80),
-    oklch(80% 0.14 200),
-    oklch(74% 0.16 290),
-    oklch(78% 0.14 30));
-  box-shadow:
-    inset 0 0 0 4px rgba(20, 18, 14, 0.55),
-    0 0 30px rgba(255, 255, 255, 0.18);
-}
-
-/* Shine + glare layers (front-face only). On iOS Safari, backface-visibility
-   doesn't reliably propagate through elements with mix-blend-mode, so we hide
-   them via display:none when the card is face-down (data-face="down"). */
-.holo-card__shine,
-.holo-card__glare {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--card-radius);
-  pointer-events: none;
-  opacity: var(--card-opacity);
-  transition: opacity 200ms ease;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
+/* Hide the front-side foil layers when the card is rotated face-down. */
 .holo-card[data-face="down"] .holo-card__shine,
 .holo-card[data-face="down"] .holo-card__glare {
   display: none;
 }
 
-/* iOS Safari quirk: mix-blend-mode + 3D transforms (the departing card's
-   recede arc uses translate3d + perspective) split the foil layer onto a
-   separate compositing context that doesn't follow the parent's 3D motion,
-   leaving a "ghost foil" floating where the card was. Suppress shine/glare
-   on the in-flight card entirely — it's transient anyway. */
-.card-stack__departing .holo-card__shine,
-.card-stack__departing .holo-card__glare {
-  display: none;
+.holo-card {
+
+  --grain: url("/img/grain.webp");
+  --glitter: url("/img/glitter.png");
+  --glittersize: 25%;
+
+  --space: 5%;
+  --angle: 133deg;
+  --imgsize: cover;
+
+  --red: #f80e35;
+  --yellow: #eedf10;
+  --green: #21e985;
+  --blue: #0dbde9;
+  --violet: #c929f1;
+
+  --clip: inset( 9.85% 8% 52.85% 8% );
+  --clip-invert: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0 47.15%, 91.5% 47.15%, 91.5% 9.85%, 8% 9.85%, 8% 47.15%, 0 50%);
+
+  --clip-stage: polygon(91.5% 9.85%, 57% 9.85%, 54% 12%, 17% 12%, 16% 14%, 12% 16%, 8% 16%, 8% 47.15%, 92% 47.15%);
+  --clip-stage-invert: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0 47.15%, 91.5% 47.15%, 91.5% 9.85%, 57% 9.85%, 54% 12%, 17% 12%, 16% 14%, 12% 16%, 8% 16%, 8% 47.15%, 0 50%);
+
+  --clip-trainer: inset(14.5% 8.5% 48.2% 8.5%);
+  --clip-borders: inset(2.8% 4% round 2.55% / 1.5%);
+
 }
-.holo-card__shine {
-  z-index: 2;
-  /* mix-blend-mode removed: iOS Safari promotes blend-mode layers to a
-     separate GPU compositing layer that can desync from the parent during
-     transforms (causing the "ghost foil" mid-recede). */
-}
+
+.holo-card__shine,
 .holo-card__glare {
+  
+  will-change: transform, opacity, background-image, background-size,
+    background-position, background-blend-mode, filter;
+ 
+}/*
+
+  BASE STYLES / VARIABLES
+*/
+
+
+
+
+
+
+
+/*
+
+  SHINE LAYERS
+
+*/
+
+
+:root {
+  
+  --card-aspect: 0.718;
+  --card-radius: 4.55% / 3.5%;
+  --card-edge: hsl(47, 100%, 78%);
+  --card-back: hsl(205, 100%, 25%);
+  --card-glow: hsl(175, 100%, 90%);
+
+  --sunpillar-1: hsl(2, 100%, 73%);
+  --sunpillar-2: hsl(53, 100%, 69%);
+  --sunpillar-3: hsl(93, 100%, 69%);
+  --sunpillar-4: hsl(176, 100%, 76%);
+  --sunpillar-5: hsl(228, 100%, 74%);
+  --sunpillar-6: hsl(283, 100%, 73%);
+
+  --sunpillar-clr-1: var(--sunpillar-1);
+  --sunpillar-clr-2: var(--sunpillar-2);
+  --sunpillar-clr-3: var(--sunpillar-3);
+  --sunpillar-clr-4: var(--sunpillar-4);
+  --sunpillar-clr-5: var(--sunpillar-5);
+  --sunpillar-clr-6: var(--sunpillar-6);
+
+}
+
+.holo-card {
+
+  /* place the card on a new transform layer and
+  make sure it has hardward acceleration... we gun'need that! */
+  -webkit-transform: translate3d(0px, 0px, 0.01px);
+  transform: translate3d(0px, 0px, 0.01px);
+  pointer-events: none;
+  
+  /* make sure the card is above others if it's scaled up */
+  z-index: calc(var(--card-scale) * 2);
+  
+  /* every little helps! */
+  will-change: transform, visibility, z-index;
+
+  /* this prevents major problems in firefox, but also causes a bit of
+  clipping as the card animates to/from active state. worth it. */
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
+}
+
+.holo-card,
+.holo-card * {
+  /* outline is a little trick to anti-alias */
+  outline: 1px solid transparent;
+}
+
+.holo-card:not( .interactive ) .holo-card__translater,
+.holo-card:not( .interactive ) .holo-card__rotator,
+.holo-card:not( .interactive ) .holo-card__shine,
+.holo-card:not( .interactive ) .holo-card__glare {
+
+  /* if this card is not in a framework, we can add simply
+    hover effects when it's not "interactive" */
+  transition: all 0.3s ease;
+
+}
+.holo-card:not( .interactive ):hover {
+  
+  --pointer-x: 25% !important;
+  --pointer-y: 10% !important;
+  --card-scale: 1.1 !important;
+  --card-opacity: 1 !important;
+  --translate-x: 0px !important;
+  --translate-y: -10px !important;
+  --rotate-x: 7deg !important;
+  --rotate-y: -19deg !important;
+  --background-x: 44% !important;
+  --background-y: 36% !important;
+  --pointer-from-center: .9 !important;
+  --pointer-from-top: .11 !important;
+  --pointer-from-left: .25 !important;
+  
+}
+
+.holo-card.water       { --card-glow: hsl(192, 97%,  60%); }
+.holo-card.fire        { --card-glow: hsl(9,   81%,  59%); }
+.holo-card.grass       { --card-glow: hsl(96,  81%,  65%); }
+.holo-card.lightning   { --card-glow: hsl(54,  87%,  63%); }
+.holo-card.psychic     { --card-glow: hsl(281, 62%,  58%); }
+.holo-card.fighting    { --card-glow: rgb(145, 90, 39); }
+.holo-card.darkness    { --card-glow: hsl(189, 77%,  27%); }
+.holo-card.metal       { --card-glow: hsl(184, 20%,  70%); }
+.holo-card.dragon      { --card-glow: hsl(51, 60%, 35%); }
+.holo-card.fairy       { --card-glow: hsl(323, 100%, 89%); }
+
+.holo-card,
+.holo-card__rotator {
+  aspect-ratio: var(--card-aspect);
+  border-radius: var(--card-radius);
+}
+
+.holo-card.interacting {
+  z-index: calc(var(--card-scale) * 120);
+}
+
+
+.holo-card.active .holo-card__translater,
+.holo-card.active .holo-card__rotator {
+  /* prevent pinch/double-tap zooms on card */
+  touch-action: none;
+}
+
+.holo-card__translater,
+.holo-card__rotator {
+  display: grid;
+  perspective: 600px;
+  will-change: transform, box-shadow;
+  transform-origin: center;
+  -webkit-transform-origin: center;
+  transform-style: preserve-3d;
+}
+
+.holo-card__translater {
+  width: auto;
+  position: relative;
+
+  --translate-z: calc(var(--card-scale) * 150px + 0.01px); /* add 150px to the z-axis to ensure the card is always in front of the others */
+  -webkit-transform: translate3d(var(--translate-x), var(--translate-y), var(--translate-z)) scale(var(--card-scale));
+  transform: translate3d(var(--translate-x), var(--translate-y), var(--translate-z)) scale(var(--card-scale));
+}
+
+.holo-card__rotator {
+  -webkit-transform: rotateY(var(--rotate-x)) rotateX(var(--rotate-y));
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
+  transform: rotateY(var(--rotate-x)) rotateX(var(--rotate-y));
+  
+  /* performance */
+  pointer-events: auto;
+  /* overflow: hidden; <-- this improves perf on mobile, but breaks backface visibility. */
+  /* isolation: isolate; <-- this improves perf, but breaks backface visibility on Chrome. */
+}
+
+button.holo-card__rotator {
+  /* because the card is a button, there's some default
+    browser styles which need to be subdued */
+  border: none;
+  background: transparent;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.holo-card__rotator,
+.holo-card.active .holo-card__rotator:focus {
+  transition: box-shadow 0.4s ease, opacity .33s ease-out;
+  box-shadow: 
+    0 0 3px -1px transparent, 
+    0 0 2px 1px transparent, 
+    0 0 5px 0px transparent,
+    0px 10px 20px -5px black, 
+    0 2px 15px -5px black,
+    0 0 20px 0px transparent;
+}
+
+.holo-card.active .holo-card__rotator,
+.holo-card__rotator:focus {
+  box-shadow: 
+    0 0 3px -1px white, 
+    0 0 3px 1px var(--card-edge), 
+    0 0 12px 2px var(--card-glow), 
+    0px 10px 20px -5px black, 
+    0 0 40px -30px var(--card-glow), 
+    0 0 50px -20px var(--card-glow)
+}
+
+.holo-card__rotator * {
+  width: 100%;
+  display: grid;
+  grid-area: 1/1;
+  aspect-ratio: var(--card-aspect);
+  border-radius: var(--card-radius);
+  image-rendering: optimizeQuality;
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.holo-card__rotator img {
+  height: auto;
+}
+.holo-card__rotator img:not(.holo-card__back) {
+  -webkit-transform: translate3d(0px, 0px, 0.01px);
+  transform: translate3d(0px, 0px, 0.01px);
+}
+
+.holo-card__back {
+  background-color: var(--card-back);
+  -webkit-transform: rotateY(180deg) translateZ(1px);
+  transform: rotateY(180deg) translateZ(1px);
+  backface-visibility: visible;
+}
+
+.holo-card__front,
+.holo-card__front * {
+  backface-visibility: hidden;
+}
+
+.holo-card__front {
+  opacity: 1;
+  transition: opacity 0.33s ease-out;
+  -webkit-transform: translate3d(0px, 0px, 0.01px);
+  transform: translate3d(0px, 0px, 0.01px);
+}
+
+.loading .holo-card__front {
+  opacity: 0;
+}
+
+.loading .holo-card__back {
+  -webkit-transform: rotateY(0deg);
+  transform: rotateY(0deg);
+}
+
+
+/**
+  
+Shine & Glare Effects
+
+**/
+
+.holo-card__shine {
+
+  display: grid;
+  transform: translateZ(1px);
+  overflow: hidden;
   z-index: 3;
+
+  background: transparent;
+  background-size: cover;
+  background-position: center;
+
+  filter: brightness(.85) contrast(2.75) saturate(.65);
+  mix-blend-mode: color-dodge;
+
+  opacity: var(--card-opacity);
+
+}
+
+.holo-card__shine:before,
+.holo-card__shine:after {
+
+  --sunpillar-clr-1: var(--sunpillar-5);
+  --sunpillar-clr-2: var(--sunpillar-6);
+  --sunpillar-clr-3: var(--sunpillar-1);
+  --sunpillar-clr-4: var(--sunpillar-2);
+  --sunpillar-clr-5: var(--sunpillar-3);
+  --sunpillar-clr-6: var(--sunpillar-4);
+
+  grid-area: 1/1;
+  transform: translateZ(1px);
+  border-radius: var(--card-radius);
+
+}
+
+.holo-card__shine:after {
+
+  --sunpillar-clr-1: var( --sunpillar-6 );
+  --sunpillar-clr-2: var( --sunpillar-1 ); 
+  --sunpillar-clr-3: var( --sunpillar-2 );
+  --sunpillar-clr-4: var( --sunpillar-3 );
+  --sunpillar-clr-5: var( --sunpillar-4 );
+  --sunpillar-clr-6: var( --sunpillar-5 );
+
+  transform: translateZ(1.2px);
+  
+}
+
+.holo-card__glare {
+
+  /* make sure the glare doesn't clip */
+  transform: translateZ(1.41px);
+  overflow: hidden;
+
   background-image: radial-gradient(
     farthest-corner circle at var(--pointer-x) var(--pointer-y),
-    hsla(0, 0%, 100%, 0.55) 8%,
-    hsla(0, 0%, 100%, 0.30) 22%,
-    hsla(0, 0%, 0%, 0.00) 90%
+    hsla(0, 0%, 100%, 0.8) 10%,
+    hsla(0, 0%, 100%, 0.65) 20%,
+    hsla(0, 0%, 0%, 0.5) 90%
   );
+
+  opacity: var(--card-opacity);
+  mix-blend-mode: overlay;
+  
 }
 
-/* Rarity-specific shine — fresh expressions, same architectural pattern */
 
-/* common: no shine */
-.holo-card[data-rarity="common"] .holo-card__shine { background: none; }
 
-/* rare-holo: cosmic spectrum + faint scanlines, only applied where the foil is */
-.holo-card[data-rarity="rare-holo"] .holo-card__shine {
-  background-image:
-    repeating-linear-gradient(115deg,
-      oklch(72% 0.18 350) 0%,
-      oklch(76% 0.16 220) 16%,
-      oklch(80% 0.16 130) 32%,
-      oklch(82% 0.18 80)  48%,
-      oklch(74% 0.20 25)  64%,
-      oklch(72% 0.18 350) 80%),
-    repeating-linear-gradient(90deg,
-      rgba(0, 0, 0, 0.55) 0px, rgba(0, 0, 0, 0.55) 1px,
-      rgba(255, 255, 255, 0.10) 1px, rgba(255, 255, 255, 0.10) 2px);
-  background-size: 360% 360%, 100% 100%;
-  background-position:
-    calc(((50% - var(--background-x)) * 2.6) + 50%) calc(((50% - var(--background-y)) * 3.5) + 50%),
-    center center;
-  background-blend-mode: overlay;
-  filter: brightness(1.1) contrast(1.15) saturate(1.25);
-}
 
-/* full-art: rainbow sweep across the whole card, no clip */
-.holo-card[data-rarity="full-art"] .holo-card__shine {
-  background-image:
-    repeating-linear-gradient(125deg,
-      oklch(74% 0.22 25)  0%,
-      oklch(80% 0.18 80)  14%,
-      oklch(80% 0.18 140) 28%,
-      oklch(76% 0.18 200) 42%,
-      oklch(70% 0.22 290) 56%,
-      oklch(74% 0.22 350) 70%,
-      oklch(74% 0.22 25)  84%);
-  background-size: 220% 220%;
-  background-position:
-    calc(((50% - var(--background-x)) * 1.8) + 50%) calc(((50% - var(--background-y)) * 1.8) + 50%);
-  filter: brightness(1.18) contrast(1.10) saturate(1.35);
-}
-.holo-card[data-rarity="full-art"] .holo-card__shine::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    closest-side circle at var(--pointer-x) var(--pointer-y),
-    rgba(255, 255, 255, 0.30),
-    transparent 55%
-  );
-  /* mix-blend-mode removed for iOS compositing safety */
-}
 
-/* Optional masked foil (e.g. classic holos where only the artwork shines) */
-.holo-card[style*="--mask"] .holo-card__shine {
+
+/**
+
+  Masking Effects
+
+**/
+
+.holo-card.masked .holo-card__shine,
+.holo-card.masked .holo-card__shine:before,
+.holo-card.masked .holo-card__shine:after {
+
+  /** masking image for cards which are masked **/
   -webkit-mask-image: var(--mask);
   mask-image: var(--mask);
-  -webkit-mask-size: cover;
+	-webkit-mask-size: cover;
   mask-size: cover;
   -webkit-mask-position: center center;
   mask-position: center center;
+
 }
 
+.holo-card[data-rarity="rare holo"] .holo-card__glare:after,
+.holo-card[data-rarity="rare holo cosmos"] .holo-card__glare:after,
+.holo-card[data-rarity$="reverse holo"] .holo-card__glare:after {
+  clip-path: var(--clip);
+}
+
+.holo-card[data-rarity="rare holo"][data-subtypes^="stage"] .holo-card__glare:after,
+.holo-card[data-rarity="rare holo cosmos"][data-subtypes^="stage"] .holo-card__glare:after,
+.holo-card[data-rarity$="reverse holo"][data-subtypes^="stage"] .holo-card__glare:after {
+  clip-path: var(--clip-stage);
+}
+
+.holo-card[data-rarity="rare holo"][data-supertype="trainer"] .holo-card__glare:after,
+.holo-card[data-rarity="rare holo cosmos"][data-supertype="trainer"] .holo-card__glare:after,
+.holo-card[data-rarity$="reverse holo"][data-supertype="trainer"] .holo-card__glare:after {
+  clip-path: var(--clip-trainer);
+}
+/*
+
+  REGULAR HOLO
+
+*/
+
+.holo-card[data-rarity="rare holo"][data-subtypes^="stage"] .holo-card__shine,
+.holo-card[data-rarity="rare holo"][data-subtypes^="stage"] .holo-card__glare:after {
+  clip-path: var(--clip-stage);
+}
+.holo-card[data-rarity="rare holo"][data-subtypes^="supporter"] .holo-card__shine,
+.holo-card[data-rarity="rare holo"][data-subtypes^="supporter"] .holo-card__glare:after,
+.holo-card[data-rarity="rare holo"][data-subtypes^="item"] .holo-card__shine,
+.holo-card[data-rarity="rare holo"][data-subtypes^="item"] .holo-card__glare:after {
+  clip-path: var(--clip-trainer);
+}
+
+
+
+
+
+
+/*
+
+  SHINE LAYERS
+
+*/
+
+.holo-card[data-rarity="rare holo"] .holo-card__shine {
+
+  --scanlines-space: 1px;
+  --scanlines-light: #666;
+  --scanlines-dark: black;
+
+  --bars: 3%;
+  --bar-color: hsla(0, 0%, 70%, 1);
+  --bar-bg: hsla(0, 0%, 0%, 1);
+
+  clip-path: var(--clip);
+
+  background-image: 
+    repeating-linear-gradient( 110deg, 
+      var(--violet), var(--blue), var(--green), var(--yellow), var(--red), 
+      var(--violet), var(--blue), var(--green), var(--yellow), var(--red),
+      var(--violet), var(--blue), var(--green), var(--yellow), var(--red)
+    ),
+    repeating-linear-gradient( 90deg, 
+      var(--scanlines-dark) calc(var(--scanlines-space) * 0), var(--scanlines-dark) calc(var(--scanlines-space) * 2),
+      var(--scanlines-light) calc(var(--scanlines-space) * 2), var(--scanlines-light) calc(var(--scanlines-space) * 4)
+    );
+
+  background-position: 
+    calc(((50% - var(--background-x)) * 2.6) + 50%) calc(((50% - var(--background-y)) * 3.5) + 50%),
+    center center;
+
+  background-size: 
+    400% 400%, 
+    cover;
+
+  background-blend-mode: overlay;
+  filter: brightness(1.1) contrast(1.1) saturate(1.2);
+  mix-blend-mode: color-dodge;
+
+}
+
+.holo-card[data-rarity="rare holo"] .holo-card__shine:before {
+  
+  content: "";
+
+  background-image:
+    repeating-linear-gradient( 90deg, 
+      var(--bar-bg) calc(var(--bars)*2), 
+      var(--bar-color) calc(var(--bars)*3), 
+      var(--bar-bg) calc(var(--bars)*3.5), 
+      var(--bar-color) calc(var(--bars)*4), 
+      var(--bar-bg) calc(var(--bars)*5), 
+      var(--bar-bg) calc(var(--bars)*14)
+    ),
+    repeating-linear-gradient( 90deg, 
+      var(--bar-bg) calc(var(--bars)*2), 
+      var(--bar-color) calc(var(--bars)*3), 
+      var(--bar-bg) calc(var(--bars)*3.5), 
+      var(--bar-color) calc(var(--bars)*4), 
+      var(--bar-bg) calc(var(--bars)*5), 
+      var(--bar-bg) calc(var(--bars)*10)
+    );
+
+  background-position: 
+    calc((((50% - var(--background-x)) * 1.65) + 50% ) + (var(--background-y) * 0.5)) var(--background-x), 
+    calc((((50% - var(--background-x)) * -0.9) + 50%) - (var(--background-y) * 0.75) ) var(--background-y);
+
+  background-size: 
+    200% 200%,
+    200% 200%;
+
+  background-blend-mode: screen;
+  filter: brightness( 1.15 ) contrast( 1.1 );
+  mix-blend-mode: hard-light;
+
+}
+
+.holo-card[data-rarity="rare holo"] .holo-card__shine:after {
+
+  content: "";
+    
+  background-image: 
+    radial-gradient( 
+      farthest-corner circle 
+        at var(--pointer-x) var(--pointer-y), 
+        hsla(0, 0%, 90%, 0.8) 0%, 
+        hsla(0, 0%, 78%, 0.1) 25%, 
+        hsl(0, 0%, 0%) 90% 
+    );
+    
+  background-position: 
+    center center;
+
+  background-size:
+    cover;
+
+  mix-blend-mode: luminosity; 
+  filter: brightness(0.6) contrast(4);
+
+}
+
+@media screen and (max-width: 900px) {
+  .holo-card[data-rarity="rare holo"] .holo-card__shine {
+    --scanlines-space: .5px;
+  }
+}
+
+
+
+
+
+
+/*
+
+  GLARE LAYERS
+
+*/
+
+.holo-card[data-rarity="rare holo"] .holo-card__glare {
+
+  opacity: calc( var(--card-opacity) * .8 );
+  filter: brightness(0.8) contrast(1.5);
+  mix-blend-mode: overlay;
+
+}
+
+.holo-card[data-rarity="rare holo"] .holo-card__glare:after {
+
+  content: "";
+
+  background-image: 
+    radial-gradient( 
+      farthest-corner circle at var(--pointer-x) var(--pointer-y), 
+      hsl(180, 100%, 95%) 5%, 
+      hsla(0, 0%, 39%, 0.25) 55%, 
+      hsla(0, 0%, 0%, 0.36) 110% 
+    );
+
+  mix-blend-mode: overlay;
+  filter: brightness(.6) contrast(3);
+
+}
+
+
+
+
+
+
+
+
+
+
+/*
+
+  NO MASK
+
+*/
+
+
+/*
+
+  V FULL ART (ULTRA RARE)
+
+*/
+
+
+
+
+
+
+
+/*
+
+  SHINE LAYERS
+
+*/
+
+.holo-card[data-rarity="rare ultra"][data-supertype="pokémon"] .holo-card__shine,
+.holo-card[data-rarity="rare ultra"][data-supertype="pokémon"] .holo-card__shine:after,
+.holo-card[data-rarity="rare ultra"][data-subtypes*="supporter"] .holo-card__shine,
+.holo-card[data-rarity="rare ultra"][data-subtypes*="supporter"] .holo-card__shine:after,
+.holo-card[data-rarity="rare holo v"][data-trainer-gallery="true"] .holo-card__shine,
+.holo-card[data-rarity="rare holo v"][data-trainer-gallery="true"] .holo-card__shine:after {
+
+  --space: 5%;
+  --angle: 133deg;
+  --imgsize: cover;
+
+  background-image:
+    var(--foil),
+    repeating-linear-gradient( 0deg, 
+      var(--sunpillar-clr-1) calc(var(--space)*1), 
+      var(--sunpillar-clr-2) calc(var(--space)*2), 
+      var(--sunpillar-clr-3) calc(var(--space)*3), 
+      var(--sunpillar-clr-4) calc(var(--space)*4), 
+      var(--sunpillar-clr-5) calc(var(--space)*5), 
+      var(--sunpillar-clr-6) calc(var(--space)*6), 
+      var(--sunpillar-clr-1) calc(var(--space)*7)
+    ),
+    repeating-linear-gradient( 
+      var(--angle), 
+      #0e152e 0%, 
+      hsl(180, 10%, 60%) 3.8%, 
+      hsl(180, 29%, 66%) 4.5%, 
+      hsl(180, 10%, 60%) 5.2%, 
+      #0e152e 10% , 
+      #0e152e 12% 
+      ),
+    radial-gradient(
+      farthest-corner circle 
+      at var(--pointer-x) var(--pointer-y),
+      hsla(0, 0%, 0%, 0.1) 12%, 
+      hsla(0, 0%, 0%, 0.15) 20%, 
+      hsla(0, 0%, 0%, 0.25) 120%
+    );
+
+  background-position: 
+    center center, 
+    0% var(--background-y), 
+    calc( var(--background-x) + (var(--background-y)*0.2) ) var(--background-y), 
+    var(--background-x) var(--background-y);
+
+  background-blend-mode: soft-light, hue, hard-light;
+  background-size: var(--imgsize), 200% 700%, 300% 100%, 200% 100%;
+
+  filter: brightness(calc((var(--pointer-from-center)*0.4) + .4)) contrast(1.4) saturate(2.25);
+
+}
+
+.holo-card[data-supertype="pokémon"][data-rarity="rare ultra"] .holo-card__shine:after,
+.holo-card[data-subtypes*="supporter"][data-rarity="rare ultra"] .holo-card__shine:after,
+.holo-card[data-trainer-gallery="true"][data-rarity="rare holo v"] .holo-card__shine:after {
+
+  content: "";
+
+  background-position: 
+    center center, 
+    0% var(--background-y), 
+    calc( (var(--background-x) + (var(--background-y)*0.2)) * -1) calc( var(--background-y) * -1), 
+    var(--background-x) var(--background-y);
+
+  background-size: var(--imgsize), 200% 400%, 195% 100%, 200% 100%;
+
+  filter: brightness(calc((var(--pointer-from-center)*.4) + .8)) contrast(1.5) saturate(1.25);
+  mix-blend-mode: exclusion;
+
+}
+
+
+.holo-card[data-supertype="pokémon"][data-rarity="rare ultra"] .holo-card__shine:before,
+.holo-card[data-subtypes*="supporter"][data-rarity="rare ultra"] .holo-card__shine:before {
+
+  content: "";
+  -webkit-mask-image: none;
+  mask-image: none;
+  
+  background-image: 
+    radial-gradient( farthest-corner circle at var(--pointer-x) var(--pointer-y), 
+      hsl(0, 0%, 100%) 0%, 
+      hsla(0, 0%, 0%, 0) 40% 
+    );
+  background-position: center;
+  background-size: cover;
+  mix-blend-mode: overlay;
+  
+  opacity: 0.75;
+  z-index: 1;
+
+}
+
+
+
+
+
+
+
+/*
+
+  GLARE LAYERS
+
+*/
+
+.holo-card[data-supertype="pokémon"][data-rarity="rare ultra"] .holo-card__glare,
+.holo-card[data-subtypes*="supporter"][data-rarity="rare ultra"] .holo-card__glare {
+
+  background-image: 
+    radial-gradient( 
+      farthest-corner circle at var(--pointer-x) var(--pointer-y), 
+      hsl(0, 0%, 75%) 5%, 
+      hsl(200, 5%, 35%) 60%, 
+      hsl(320, 40%, 10%) 150% 
+    );
+
+  background-size: 120% 150%;
+  background-position: center center;
+
+  mix-blend-mode: hard-light;
+  filter: brightness(1) contrast(1.2) saturate(1);
+  
+  opacity: calc(var(--card-opacity) * .75 );
+
+}
+
+
+
+
+
+
+
+
+
+
+/*
+
+  NO MASK
+
+*/
+
+
+.holo-card:not(.masked)[data-supertype="pokémon"][data-rarity="rare ultra"] .holo-card__shine,
+.holo-card:not(.masked)[data-supertype="pokémon"][data-rarity="rare ultra"] .holo-card__shine:after,
+.holo-card:not(.masked)[data-trainer-gallery="true"][data-rarity="rare holo v"] .holo-card__shine,
+.holo-card:not(.masked)[data-trainer-gallery="true"][data-rarity="rare holo v"] .holo-card__shine:after {
+
+  --mask: none;
+  --foil: url("/img/illusion.png"); 
+  --imgsize: 33%;
+
+  -webkit-mask-image: var(--mask);
+  mask-image: var(--mask);
+	-webkit-mask-size: var(--imgsize);
+  mask-size: var(--imgsize);
+
+  background-blend-mode: exclusion, hue, hard-light;
+  filter: brightness(calc((var(--pointer-from-center)*.3) + .35)) contrast(2) saturate(1.5);
+
+}
+
+.holo-card:not(.masked)[data-supertype="pokémon"][data-rarity="rare ultra"] .holo-card__shine:before,
+.holo-card:not(.masked)[data-trainer-gallery="true"][data-rarity="rare holo v"] .holo-card__shine:before {
+  content: none;
+  display: none;
+}
+
+.holo-card:not(.masked)[data-supertype="pokémon"][data-rarity="rare ultra"] .holo-card__shine:after,
+.holo-card:not(.masked)[data-trainer-gallery="true"][data-rarity="rare holo v"] .holo-card__shine:after {
+  filter: brightness(calc((var(--pointer-from-center)*.5) + .8)) contrast(1.6) saturate(1.4);
+}
 /* ───────── CardStack ───────── */
 .card-stack {
   position: relative;

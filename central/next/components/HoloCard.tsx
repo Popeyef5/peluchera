@@ -229,10 +229,15 @@ export default function HoloCard({
 		};
 	}, [isMobile]);
 
+	// Simey's CSS expects an <img> structure: __back is a sibling, __front is
+	// a wrapper containing the front image + shine + glare. The `interactive`
+	// class disables their built-in hover behavior so our JS-set CSS vars
+	// drive the card.
+	void frontOk; void backOk;
 	return (
 		<div
 			ref={cardRef}
-			className={`holo-card ${className ?? ""}`}
+			className={`holo-card interactive ${className ?? ""}`}
 			data-rarity={rarity}
 			data-supertype={supertype ?? ""}
 			data-subtypes={subtypes?.join(" ") ?? ""}
@@ -245,20 +250,12 @@ export default function HoloCard({
 					className="holo-card__rotator"
 					style={{ transform: `rotateY(${faceUp ? 0 : 180}deg) rotateY(var(--rotate-x, 0deg)) rotateX(var(--rotate-y, 0deg))` }}
 				>
-					<div
-						className="holo-card__face holo-card__back"
-						style={backOk ? { backgroundImage: `url(${CARD_BACK_IMAGE})` } : undefined}
-					/>
-					<div
-						className="holo-card__face holo-card__front"
-						style={frontOk ? { backgroundImage: `url(${image})` } : undefined}
-					/>
-					{/* Shine + glare are siblings of the faces (not children of the
-					    front), so backface-visibility:hidden actually hides them
-					    when the inner rotates 180°. Keeping them inside __front
-					    flattens them out of the 3D rendering context. */}
-					<div className="holo-card__shine" />
-					<div className="holo-card__glare" />
+					<img className="holo-card__back" src={CARD_BACK_IMAGE} alt="" />
+					<div className="holo-card__front">
+						<img src={image} alt="" />
+						<div className="holo-card__shine" />
+						<div className="holo-card__glare" />
+					</div>
 				</div>
 			</div>
 		</div>
