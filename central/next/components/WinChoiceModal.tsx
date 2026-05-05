@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Box, Dialog, HStack, Portal, VStack } from "@chakra-ui/react";
 import { Canvas } from "@react-three/fiber";
 import { Environment, Float, PresentationControls } from "@react-three/drei";
@@ -11,8 +11,8 @@ import CardStack from "@/components/CardStack";
 type Phase = "pack" | "tearing" | "revealing" | "flipping" | "swiping";
 
 const TIMINGS = {
-	tearing: 600,    // pack shrinks + sparkles
-	revealing: 500,  // canvas fades out, stack fades in
+	tearing: 2100,   // pack slides down through the bottom of the canvas
+	revealing: 200,  // brief beat to let the canvas fade out cleanly
 	flipping: 700,   // top card flips face-up
 };
 
@@ -21,6 +21,16 @@ const WinChoiceModal = () => {
 	const lastSeen = useRef(roundWon);
 	const [open, setOpen] = useState(false);
 	const [phase, setPhase] = useState<Phase>("pack");
+
+	// `entered` gates the entry animation. We render the canvas Box at
+	// translateY(100vh) on the very first frame so the pack starts below the
+	// viewport, then flip to true on the next rAF so the CSS transition runs.
+	// `boosterReady` flips once the rise-in animation finishes — buttons appear then.
+	const [entered, setEntered] = useState(false);
+	const [boosterReady, setBoosterReady] = useState(false);
+
+	const ENTRY_DELAY_MS = 380;
+	const ENTRY_DURATION_MS = 1800;
 
 	useEffect(() => {
 		console.log('[WinChoiceModal] phase ->', phase);
@@ -33,6 +43,22 @@ const WinChoiceModal = () => {
 			setOpen(true);
 		}
 	}, [roundWon]);
+
+	useEffect(() => {
+		if (!open) {
+			setEntered(false);
+			setBoosterReady(false);
+			return;
+		}
+		// Delay past Chakra Dialog's own enter animation (~300ms) so the user
+		// actually sees the pack rise into view, not animate while invisible.
+		const t1 = setTimeout(() => setEntered(true), ENTRY_DELAY_MS);
+		const t2 = setTimeout(() => setBoosterReady(true), ENTRY_DELAY_MS + ENTRY_DURATION_MS);
+		return () => {
+			clearTimeout(t1);
+			clearTimeout(t2);
+		};
+	}, [open]);
 
 	const close = () => setOpen(false);
 
@@ -55,8 +81,10 @@ const WinChoiceModal = () => {
 	}, [open]);
 
 	const showCanvas = open && phase !== "swiping";
-	const canvasOpacity = phase === "revealing" || phase === "flipping" || phase === "swiping" ? 0 : 1;
-	const stackOpacity  = phase === "revealing" ? 0.3 : phase === "flipping" || phase === "swiping" ? 1 : 0;
+	const canvasOpacity = phase === "flipping" || phase === "swiping" ? 0 : 1;
+	// Cards live BEHIND the pack (see JSX order). They fade in as soon as the
+	// pack starts dropping so the receding pack reveals them.
+	const stackOpacity  = phase === "pack" ? 0 : 1;
 	const stackPointer  = phase === "swiping";
 
 	return (
@@ -80,13 +108,40 @@ const WinChoiceModal = () => {
 								borderRadius="1.25rem"
 								overflow="visible"
 							>
-								{/* Layer A — 3D pack */}
+								{/* Layer B — 2D card stack (BEHIND the pack so the dropping pack reveals it) */}
 								<Box
 									position="absolute"
 									inset={0}
-									transition="opacity 500ms ease"
+									transition="opacity 700ms ease"
+									style={{
+										opacity: stackOpacity,
+										pointerEvents: stackPointer ? "auto" : "none",
+									}}
+								>
+									{phase !== "pack" && (
+										<CardStack flipFirst={phase === "flipping" || phase === "swiping"} />
+									)}
+								</Box>
+
+								{/* Layer A — 3D pack (IN FRONT). Enters from below the viewport
+								    (translateY 100vh → 0 with expo-out), then falls back through
+								    the bottom on tearing (0 → 100vh with ease-in). The canvas tree
+								    shape is kept stable across phases — Float speeds + Presentation
+								    Controls clamps just go to zero when not in 'pack' so Booster
+								    doesn't unmount/remount and the GLTF scene isn't double-attached. */}
+								<Box
+									position="absolute"
+									inset={0}
+									transition={
+										phase === "pack"
+											? "transform 800ms cubic-bezier(0.16, 1, 0.3, 1)"
+											: "transform 1100ms cubic-bezier(0.55, 0, 0.85, 0.5)"
+									}
 									style={{
 										opacity: canvasOpacity,
+										transform: entered && phase === "pack"
+											? "translateY(0)"
+											: "translateY(100vh)",
 										pointerEvents: phase === "pack" ? "auto" : "none",
 									}}
 								>
@@ -98,44 +153,42 @@ const WinChoiceModal = () => {
 										>
 											<ambientLight intensity={0.45} />
 											<directionalLight position={[2, 3, 4]} intensity={1.2} />
-											<Environment preset="studio" />
-											{phase === "pack" ? (
+											<Suspense fallback={null}>
+												<Environment preset="studio" />
 												<PresentationControls
 													global
 													snap
-													polar={[-Math.PI / 4, Math.PI / 4]}
-													azimuth={[-Math.PI, Math.PI]}
+													polar={phase === "pack" ? [-Math.PI / 4, Math.PI / 4] : [0, 0]}
+													azimuth={phase === "pack" ? [-Math.PI, Math.PI] : [0, 0]}
 													config={{ mass: 1, tension: 170, friction: 26 }}
 												>
-													<Float speed={1.2} rotationIntensity={0.35} floatIntensity={0.5}>
-														<Booster tearing={false} />
+													<Float
+														speed={phase === "pack" ? 1.2 : 0}
+														rotationIntensity={phase === "pack" ? 0.35 : 0}
+														floatIntensity={phase === "pack" ? 0.5 : 0}
+													>
+														<Booster />
 													</Float>
 												</PresentationControls>
-											) : (
-												<Booster tearing={phase === "tearing" || phase === "revealing"} />
-											)}
+											</Suspense>
 										</Canvas>
-									)}
-								</Box>
-
-								{/* Layer B — 2D card stack */}
-								<Box
-									position="absolute"
-									inset={0}
-									transition="opacity 500ms ease"
-									style={{
-										opacity: stackOpacity,
-										pointerEvents: stackPointer ? "auto" : "none",
-									}}
-								>
-									{(phase === "revealing" || phase === "flipping" || phase === "swiping") && (
-										<CardStack flipFirst={phase === "flipping" || phase === "swiping"} />
 									)}
 								</Box>
 							</Box>
 
 							{phase === "pack" && (
-								<HStack gap={3} w="full" justify="center" wrap="wrap">
+								<HStack
+									gap={3}
+									w="full"
+									justify="center"
+									wrap="wrap"
+									transition="opacity 350ms ease, transform 350ms ease"
+									style={{
+										opacity: boosterReady ? 1 : 0,
+										transform: boosterReady ? "translateY(0)" : "translateY(8px)",
+										pointerEvents: boosterReady ? "auto" : "none",
+									}}
+								>
 									<button className="lg-btn" onClick={close}>Resell</button>
 									<button className="lg-btn" onClick={close}>Store</button>
 									<button className="lg-btn" onClick={openPack}>Open now</button>
