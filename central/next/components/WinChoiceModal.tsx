@@ -69,7 +69,7 @@ const WinChoiceModal = () => {
 						w="min(90vw, 540px)"
 						borderRadius="1.75rem"
 						p={0}
-						overflow="hidden"
+						overflow="visible"
 						bg="transparent"
 					>
 						<VStack gap={5} p={6}>

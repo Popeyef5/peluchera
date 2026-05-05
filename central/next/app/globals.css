@@ -121,25 +121,48 @@
   }
 }
 
-/* ───────── HoloCard ───────── */
+/* ─────────────────────── HoloCard ───────────────────────
+   Layered architecture (inspired by, but re-implemented from,
+   simeydotme/pokemon-cards-css — original is GPL-3.0):
+     .holo-card           → outer; perspective + sets data-rarity dispatch
+     .holo-card__translater → reserved for parent transforms (drag, exit)
+     .holo-card__rotator  → CSS-var driven rotation (pointer tilt + flip)
+     .holo-card__face     → flat front/back; backface-visibility hides the off side
+     .holo-card__shine    → rarity-specific holographic foil
+     .holo-card__glare    → cursor-tracked glossy highlight
+*/
 .holo-card {
+  --rotate-x: 0deg;
+  --rotate-y: 0deg;
+  --pointer-x: 50%;
+  --pointer-y: 50%;
+  --card-opacity: 0;
+  --background-x: 50%;
+  --background-y: 50%;
+  --card-radius: 18px;
   position: relative;
   width: 100%;
   height: 100%;
   perspective: 1200px;
 }
-.holo-card__inner {
+.holo-card__translater {
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
   -webkit-transform-style: preserve-3d;
-  transition: transform 700ms cubic-bezier(0.2, 0.85, 0.2, 1);
+}
+.holo-card__rotator {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  transition: transform 320ms cubic-bezier(0.2, 0.85, 0.2, 1);
   will-change: transform;
 }
 .holo-card__face {
   position: absolute;
   inset: 0;
-  border-radius: 18px;
+  border-radius: var(--card-radius);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   overflow: hidden;
@@ -150,20 +173,15 @@
     0 16px 40px rgba(20, 18, 14, 0.40),
     0 4px 12px rgba(20, 18, 14, 0.25);
 }
-.holo-card__face--back {
+.holo-card__back {
   transform: rotateY(180deg);
 }
-.holo-card__face--front:not([style*="background-image"]) {
+.holo-card__front:not([style*="background-image"]) {
   background:
     radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.55) 0%, transparent 45%),
-    conic-gradient(from 200deg,
-      oklch(78% 0.10 30  / 0.85),
-      oklch(82% 0.08 80  / 0.85),
-      oklch(80% 0.10 200 / 0.85),
-      oklch(74% 0.12 290 / 0.85),
-      oklch(78% 0.10 30  / 0.85));
+    linear-gradient(135deg, #2a2520, #1a1814);
 }
-.holo-card__face--back:not([style*="background-image"]) {
+.holo-card__back:not([style*="background-image"]) {
   background:
     radial-gradient(circle at 50% 50%,
       oklch(72% 0.16 30 / 0.95) 0%,
@@ -171,7 +189,7 @@
       oklch(28% 0.05 280) 36%,
       #1a1814 70%);
 }
-.holo-card__face--back:not([style*="background-image"])::before {
+.holo-card__back:not([style*="background-image"])::before {
   content: "";
   position: absolute;
   top: 50%;
@@ -190,19 +208,94 @@
     inset 0 0 0 4px rgba(20, 18, 14, 0.55),
     0 0 30px rgba(255, 255, 255, 0.18);
 }
-.holo-card__foil {
+
+/* Shine + glare layers (front-face only) */
+.holo-card__shine,
+.holo-card__glare {
   position: absolute;
   inset: 0;
+  border-radius: var(--card-radius);
   pointer-events: none;
-  background: conic-gradient(
-    from calc(var(--spec-angle, 200deg) - 30deg),
-    oklch(78% 0.10 30  / 0.10),
-    oklch(82% 0.08 80  / 0.12),
-    oklch(80% 0.10 200 / 0.14),
-    oklch(74% 0.12 290 / 0.12),
-    oklch(78% 0.10 30  / 0.10));
+  opacity: var(--card-opacity);
+  transition: opacity 200ms ease;
+}
+.holo-card__shine {
+  z-index: 2;
   mix-blend-mode: color-dodge;
-  opacity: 0.55;
+}
+.holo-card__glare {
+  z-index: 3;
+  mix-blend-mode: overlay;
+  background-image: radial-gradient(
+    farthest-corner circle at var(--pointer-x) var(--pointer-y),
+    hsla(0, 0%, 100%, 0.85) 8%,
+    hsla(0, 0%, 100%, 0.60) 22%,
+    hsla(0, 0%, 0%, 0.55) 90%
+  );
+}
+
+/* Rarity-specific shine — fresh expressions, same architectural pattern */
+
+/* common: no shine */
+.holo-card[data-rarity="common"] .holo-card__shine { background: none; }
+
+/* rare-holo: cosmic spectrum + faint scanlines, only applied where the foil is */
+.holo-card[data-rarity="rare-holo"] .holo-card__shine {
+  background-image:
+    repeating-linear-gradient(115deg,
+      oklch(72% 0.18 350) 0%,
+      oklch(76% 0.16 220) 16%,
+      oklch(80% 0.16 130) 32%,
+      oklch(82% 0.18 80)  48%,
+      oklch(74% 0.20 25)  64%,
+      oklch(72% 0.18 350) 80%),
+    repeating-linear-gradient(90deg,
+      rgba(0, 0, 0, 0.55) 0px, rgba(0, 0, 0, 0.55) 1px,
+      rgba(255, 255, 255, 0.10) 1px, rgba(255, 255, 255, 0.10) 2px);
+  background-size: 360% 360%, 100% 100%;
+  background-position:
+    calc(((50% - var(--background-x)) * 2.6) + 50%) calc(((50% - var(--background-y)) * 3.5) + 50%),
+    center center;
+  background-blend-mode: overlay;
+  filter: brightness(1.1) contrast(1.15) saturate(1.25);
+}
+
+/* full-art: rainbow sweep across the whole card, no clip */
+.holo-card[data-rarity="full-art"] .holo-card__shine {
+  background-image:
+    repeating-linear-gradient(125deg,
+      oklch(74% 0.22 25)  0%,
+      oklch(80% 0.18 80)  14%,
+      oklch(80% 0.18 140) 28%,
+      oklch(76% 0.18 200) 42%,
+      oklch(70% 0.22 290) 56%,
+      oklch(74% 0.22 350) 70%,
+      oklch(74% 0.22 25)  84%);
+  background-size: 220% 220%;
+  background-position:
+    calc(((50% - var(--background-x)) * 1.8) + 50%) calc(((50% - var(--background-y)) * 1.8) + 50%);
+  filter: brightness(1.18) contrast(1.10) saturate(1.35);
+}
+.holo-card[data-rarity="full-art"] .holo-card__shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    closest-side circle at var(--pointer-x) var(--pointer-y),
+    rgba(255, 255, 255, 0.45),
+    transparent 55%
+  );
+  mix-blend-mode: color-dodge;
+}
+
+/* Optional masked foil (e.g. classic holos where only the artwork shines) */
+.holo-card[style*="--mask"] .holo-card__shine {
+  -webkit-mask-image: var(--mask);
+  mask-image: var(--mask);
+  -webkit-mask-size: cover;
+  mask-size: cover;
+  -webkit-mask-position: center center;
+  mask-position: center center;
 }
 
 /* ───────── CardStack ───────── */

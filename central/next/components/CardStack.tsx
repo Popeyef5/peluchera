@@ -16,7 +16,7 @@ const RECEDE_MS = 1000; // recedes in z + descends (zIndex 0, behind)
 type DepartPhase = "lift" | "recede";
 type Departing = {
 	id: string;       // unique key per departure (so successive swipes each animate)
-	image: string;
+	card: typeof MOCK_DECK[number];
 	faceUp: boolean;
 	startX: number;
 	startY: number;
@@ -52,7 +52,7 @@ export default function CardStack({ flipFirst }: Props) {
 		const id = `${head.id}-${Date.now()}`;
 		setDeparting({
 			id,
-			image: head.image,
+			card: head,
 			faceUp: flipFirst,
 			startX: offsetX,
 			startY: offsetY,
@@ -79,14 +79,28 @@ export default function CardStack({ flipFirst }: Props) {
 			<div className="card-stack__deck">
 				{/* Slot 3 — bottom of the visible stack */}
 				<div className="card-stack__slot card-stack__slot--3">
-					<HoloCard image={after.image} faceUp={flipFirst} />
+					<HoloCard
+						image={after.image}
+						faceUp={flipFirst}
+						rarity={after.rarity}
+						supertype={after.supertype}
+						subtypes={after.subtypes}
+						mask={after.mask}
+					/>
 				</div>
 				{/* Slot 2 — peeks during drag */}
 				<motion.div
 					className="card-stack__slot card-stack__slot--2"
 					style={{ scale: peekScale, y: peekY }}
 				>
-					<HoloCard image={next.image} faceUp={flipFirst} />
+					<HoloCard
+						image={next.image}
+						faceUp={flipFirst}
+						rarity={next.rarity}
+						supertype={next.supertype}
+						subtypes={next.subtypes}
+						mask={next.mask}
+					/>
 				</motion.div>
 				{/* Slot 1 — the draggable card. Re-keyed per top.id so it remounts
 				    cleanly whenever the deck rotates. No exit animation here —
@@ -107,7 +121,14 @@ export default function CardStack({ flipFirst }: Props) {
 						}
 					}}
 				>
-					<HoloCard image={top.image} faceUp={flipFirst} />
+					<HoloCard
+						image={top.image}
+						faceUp={flipFirst}
+						rarity={top.rarity}
+						supertype={top.supertype}
+						subtypes={top.subtypes}
+						mask={top.mask}
+					/>
 				</motion.div>
 
 				{/* Departing overlay. Two-phase animation:
@@ -139,7 +160,14 @@ export default function CardStack({ flipFirst }: Props) {
 							if (departing.phase === "recede") setDeparting(null);
 						}}
 					>
-						<HoloCard image={departing.image} faceUp={departing.faceUp} />
+						<HoloCard
+							image={departing.card.image}
+							faceUp={departing.faceUp}
+							rarity={departing.card.rarity}
+							supertype={departing.card.supertype}
+							subtypes={departing.card.subtypes}
+							mask={departing.card.mask}
+						/>
 					</motion.div>
 				)}
 			</div>
