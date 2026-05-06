@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
 import { Box, Dialog, HStack, Portal, VStack } from "@chakra-ui/react";
 import { Canvas } from "@react-three/fiber";
 import { Environment, Float, PresentationControls } from "@react-three/drei";
@@ -10,6 +10,20 @@ import Booster from "@/components/Booster";
 import CardStack from "@/components/CardStack";
 
 type Phase = "pack" | "tearing" | "revealing" | "shuffling" | "flipping" | "swiping";
+
+// Tiny error boundary so a failed HDR fetch (drei's Environment loads an
+// external file from pmndrs/drei-assets) doesn't crash the whole canvas.
+class SilentBoundary extends React.Component<
+	{ children: React.ReactNode; fallback?: React.ReactNode },
+	{ failed: boolean }
+> {
+	state = { failed: false };
+	static getDerivedStateFromError() { return { failed: true }; }
+	componentDidCatch() {/* swallow — fallback renders */}
+	render() {
+		return this.state.failed ? (this.props.fallback ?? null) : this.props.children;
+	}
+}
 
 const TIMINGS = {
 	tearing: 2100,   // pack slides down through the bottom of the canvas
@@ -52,10 +66,19 @@ const WinChoiceModal = () => {
 	// preview the win flow on mobile without going through the full claw cycle.
 	useEffect(() => {
 		const onTestWin = () => {
+			console.log("[WinChoiceModal] test-win received");
+			(window as Window & { __garraTestWin?: boolean }).__garraTestWin = false;
 			setPhase("pack");
 			setOpen(true);
 		};
 		window.addEventListener("garra:test-win", onTestWin);
+		// Late-mount fallback: heavy dynamic-import bundles on mobile can take
+		// longer than the test-win 3s delay, so the event may fire before this
+		// listener attaches. Check the flag set by the test-win page and fire
+		// retroactively if needed.
+		if ((window as Window & { __garraTestWin?: boolean }).__garraTestWin) {
+			onTestWin();
+		}
 		return () => window.removeEventListener("garra:test-win", onTestWin);
 	}, []);
 
@@ -130,8 +153,10 @@ const WinChoiceModal = () => {
 	// pack starts dropping so the receding pack reveals them.
 	const stackOpacity  = phase === "pack" ? 0 : 1;
 	// Cards start far back in z while the pack is still in view, then come
-	// forward to z=0 once the pack is gone.
-	const stackZ        = phase === "pack" || phase === "tearing" ? -400 : 0;
+	// forward to z=0 once the pack is gone. Mobile cards are bigger, so they
+	// start ~50% further away to feel like a proper "approach" reveal.
+	const initialZ = isMobile ? -1200 : -400;
+	const stackZ   = phase === "pack" || phase === "tearing" ? initialZ : 0;
 	const stackPointer  = phase === "swiping";
 
 	return (
@@ -220,7 +245,9 @@ const WinChoiceModal = () => {
 											<ambientLight intensity={0.45} />
 											<directionalLight position={[2, 3, 4]} intensity={1.2} />
 											<Suspense fallback={null}>
-												<Environment preset="studio" />
+												<SilentBoundary>
+													<Environment preset="studio" />
+												</SilentBoundary>
 												<PresentationControls
 													global
 													snap
@@ -245,8 +272,15 @@ const WinChoiceModal = () => {
 
 							{/* Fixed-height button slot. Both button rows are always mounted
 							    inside, absolutely-positioned, and fade between phases — keeps
-							    the canvas above from reflowing when buttons swap in/out. */}
-							<Box position="relative" w="full" minH="2.75rem">
+							    the canvas above from reflowing when buttons swap in/out.
+							    Mobile gets extra top margin because the bigger cards extend
+							    past the inner Box vertically. */}
+							<Box
+								position="relative"
+								w="full"
+								minH="2.75rem"
+								mt={isMobile ? "3rem" : 0}
+							>
 								<HStack
 									gap={3}
 									w="full"

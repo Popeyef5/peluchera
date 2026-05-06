@@ -129,6 +129,49 @@
 .holo-card[data-face="down"] .holo-card__shine,
 .holo-card[data-face="down"] .holo-card__glare { display: none; }
 
+/* When the card is face-down, tilt is disabled (see HoloCard effects) — we
+   also zero out any tilt CSS vars that the listeners may have last written,
+   so the rotator's transform doesn't keep a stale rotation that combined
+   with the 180° flip causes ghost compositing on iOS during auto-shuffles. */
+.holo-card[data-face="down"] {
+  --rotate-x: 0deg;
+  --rotate-y: 0deg;
+  --pointer-x: 50%;
+  --pointer-y: 50%;
+  --card-opacity: 0;
+}
+
+/* Flip transition (rotator's transform isn't included in simey's transition list).
+   Mobile gets a longer 1s flip per the bigger card size. */
+.holo-card .holo-card__rotator {
+  transition: transform 700ms cubic-bezier(0.2, 0.85, 0.2, 1), box-shadow 0.4s ease, opacity 0.33s ease-out;
+}
+@media (max-width: 768px) {
+  .holo-card .holo-card__rotator {
+    transition: transform 1000ms cubic-bezier(0.2, 0.85, 0.2, 1), box-shadow 0.4s ease, opacity 0.33s ease-out;
+  }
+}
+
+/* simey's base.css paints background-color: var(--card-back) (solid blue)
+   underneath the back-face image. On iOS Safari that color renders a frame
+   before the background-image, producing a visible blue flash whenever a
+   new HoloCard mounts (auto-shuffles, departing card). Override to
+   transparent so the bg-color never shows. */
+.holo-card .holo-card__back { background-color: transparent !important; }
+
+/* simey applies transform-style: preserve-3d to every descendant of the
+   rotator. We keep preserve-3d on the faces (needed for backface-visibility
+   to hide the face that points away from camera) but flatten the foil
+   layers — they're 2D anyway and adding 3D layers on iOS Safari causes
+   ghost-frame compositing artifacts during motion. */
+.holo-card .holo-card__shine,
+.holo-card .holo-card__glare,
+.holo-card .holo-card__shine *,
+.holo-card .holo-card__glare * {
+  transform-style: flat !important;
+  -webkit-transform-style: flat !important;
+}
+
 /*
 
   BASE STYLES / VARIABLES

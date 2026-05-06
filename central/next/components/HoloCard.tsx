@@ -13,6 +13,10 @@ type Props = {
 	mask?: string;
 	trainerGallery?: boolean;
 	className?: string;
+	// When true: skip the foil overlay layers and the orientation/pointer
+	// listener. Used for non-active stack slots and the in-flight departing
+	// card to keep mobile composition cost down.
+	decorative?: boolean;
 };
 
 const MAX_TILT_DEG = 20;        // ±12° rotation when pointer is far from the card
@@ -38,6 +42,7 @@ export default function HoloCard({
 	mask,
 	trainerGallery,
 	className,
+	decorative,
 }: Props) {
 	const cardRef = useRef<HTMLDivElement>(null);
 	const rotatorRef = useRef<HTMLDivElement>(null);
@@ -62,7 +67,10 @@ export default function HoloCard({
 	// Desktop: outside-pointer tilt — card tilts toward the cursor when it's
 	// outside the card, snaps to neutral when inside (so drag works).
 	useEffect(() => {
-		if (isMobile) return;
+		// Skip tilt when face-down: foil isn't visible anyway, and the
+		// constant rotator transform updates can interfere with iOS Safari's
+		// compositor during the auto-shuffle motion animations.
+		if (isMobile || decorative || !faceUp) return;
 		let raf = 0;
 		let pendingX = 0;
 		let pendingY = 0;
@@ -118,7 +126,7 @@ export default function HoloCard({
 			window.removeEventListener("pointermove", onMove);
 			if (raf) cancelAnimationFrame(raf);
 		};
-	}, [isMobile]);
+	}, [isMobile, decorative, faceUp]);
 
 	// Mobile: device-orientation tilt — physically tilting the phone drives
 	// the same CSS vars (rotate-x/y, pointer-x/y, card-opacity) so the foil
@@ -126,7 +134,7 @@ export default function HoloCard({
 	// after the parent dispatches 'garra:tilt-granted' (fired post-permission
 	// from the Open Now button on iOS, or immediately on Android/desktop).
 	useEffect(() => {
-		if (!isMobile) return;
+		if (!isMobile || decorative || !faceUp) return;
 		const rotator = rotatorRef.current;
 		if (!rotator) return;
 		let raf = 0;
@@ -229,7 +237,7 @@ export default function HoloCard({
 			}
 			if (raf) cancelAnimationFrame(raf);
 		};
-	}, [isMobile]);
+	}, [isMobile, decorative, faceUp]);
 
 	// Simey's CSS expects an <img> structure: __back is a sibling, __front is
 	// a wrapper containing the front image + shine + glare. The `interactive`
@@ -253,11 +261,27 @@ export default function HoloCard({
 					className="holo-card__rotator"
 					style={{ transform: `rotateY(${faceUp ? 0 : 180}deg) rotateY(var(--rotate-x, 0deg)) rotateX(var(--rotate-y, 0deg))` }}
 				>
-					<img className="holo-card__back" src={CARD_BACK_IMAGE} alt="" />
+					{/* <img> with decoding="sync" forces iOS Safari to decode the
+					    bitmap before paint, avoiding the "transparent ghost" frame
+					    that appears when a freshly-mounted card animates while its
+					    background-image is still being decoded into a GPU layer. */}
+					<img
+						className="holo-card__back"
+						src={CARD_BACK_IMAGE}
+						alt=""
+						decoding="sync"
+						loading="eager"
+					/>
 					<div className="holo-card__front">
-						<img src={image} alt="" />
-						<div className="holo-card__shine" />
-						<div className="holo-card__glare" />
+						<div
+							style={{
+								backgroundImage: `url(${image})`,
+								backgroundSize: "cover",
+								backgroundPosition: "center",
+							}}
+						/>
+						{!decorative && <div className="holo-card__shine" />}
+						{!decorative && <div className="holo-card__glare" />}
 					</div>
 				</div>
 			</div>

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import HoloCard from "@/components/HoloCard";
+import { useIsMobile } from "@/components/hooks/useIsMobile";
 import { MOCK_DECK } from "@/lib/cards";
 
 type Props = {
@@ -32,6 +33,8 @@ type Departing = {
  * top slot, while the overlay plays out its animation independently.
  */
 export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComplete }: Props) {
+	const isMobile = useIsMobile();
+	const liftApex = isMobile ? -462 : -420; // mobile cards are bigger → need more headroom
 	const [deck, setDeck] = useState(MOCK_DECK);
 	const [departing, setDeparting] = useState<Departing | null>(null);
 	const x = useMotionValue(0);
@@ -130,6 +133,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						subtypes={after.subtypes}
 						mask={after.mask}
 						trainerGallery={after.trainerGallery}
+						decorative
 					/>
 				</div>
 				{/* Slot 2 — peeks during drag */}
@@ -197,7 +201,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 								// background-image and CSS layers across separate
 								// rendering passes when 3D transforms are involved,
 								// leaving "ghost" frames mid-flight.
-								? { x: 0, y: -420, scale: 1, opacity: 1 }
+								? { x: 0, y: liftApex, scale: 1, opacity: 1 }
 								: { x: 0, y: 0, scale: 0.86, opacity: 1 }
 						}
 						transition={{
