@@ -8,6 +8,7 @@ import { useClaw } from "@/components/providers";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
 import Booster from "@/components/Booster";
 import CardStack from "@/components/CardStack";
+import { PACK, SHUFFLE, FLIP, STACK_APPROACH } from "@/lib/animConfig";
 
 type Phase = "pack" | "tearing" | "revealing" | "shuffling" | "flipping" | "swiping";
 
@@ -26,12 +27,12 @@ class SilentBoundary extends React.Component<
 }
 
 const TIMINGS = {
-	tearing: 2100,   // pack slides down through the bottom of the canvas
-	revealing: 200,  // brief beat to let the canvas fade out cleanly
-	flipping: 700,   // top card flips face-up
+	tearing: PACK.tearingMs,
+	revealing: PACK.revealingMs,
+	flipping: FLIP.desktopMs,
 };
 
-const AUTO_SHUFFLE_COUNT = 3; // N face-down lift-and-back animations before the flip
+const AUTO_SHUFFLE_COUNT = SHUFFLE.count;
 
 const WinChoiceModal = () => {
 	const { roundWon } = useClaw();
@@ -47,8 +48,8 @@ const WinChoiceModal = () => {
 	const [entered, setEntered] = useState(false);
 	const [boosterReady, setBoosterReady] = useState(false);
 
-	const ENTRY_DELAY_MS = 380;
-	const ENTRY_DURATION_MS = 1500;
+	const ENTRY_DELAY_MS = PACK.entryDelayMs;
+	const ENTRY_DURATION_MS = PACK.entryDurationMs;
 
 	useEffect(() => {
 		console.log('[WinChoiceModal] phase ->', phase);
@@ -155,7 +156,7 @@ const WinChoiceModal = () => {
 	// Cards start far back in z while the pack is still in view, then come
 	// forward to z=0 once the pack is gone. Mobile cards are bigger, so they
 	// start ~50% further away to feel like a proper "approach" reveal.
-	const initialZ = isMobile ? -1200 : -400;
+	const initialZ = isMobile ? STACK_APPROACH.initialZMobile : STACK_APPROACH.initialZ;
 	const stackZ   = phase === "pack" || phase === "tearing" ? initialZ : 0;
 	const stackPointer  = phase === "swiping";
 

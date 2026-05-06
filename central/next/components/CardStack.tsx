@@ -5,6 +5,7 @@ import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import HoloCard from "@/components/HoloCard";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
 import { MOCK_DECK } from "@/lib/cards";
+import { SHUFFLE, SWIPE } from "@/lib/animConfig";
 
 type Props = {
 	flipFirst: boolean; // when true, the cards in the open pack are face-up
@@ -12,9 +13,9 @@ type Props = {
 	onAutoShuffleComplete?: () => void;
 };
 
-const SWIPE_COMMIT_PX = 140; // any direction past this commits
-const LIFT_MS   = 1000; // up off the stack (zIndex 4, in front)
-const RECEDE_MS = 1000; // recedes in z + descends (zIndex 0, behind)
+const SWIPE_COMMIT_PX = SWIPE.commitPx;
+const LIFT_MS   = SHUFFLE.liftMs;
+const RECEDE_MS = SHUFFLE.recedeMs;
 
 type DepartPhase = "lift" | "recede";
 type Departing = {
@@ -34,7 +35,7 @@ type Departing = {
  */
 export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComplete }: Props) {
 	const isMobile = useIsMobile();
-	const liftApex = isMobile ? -462 : -420; // mobile cards are bigger → need more headroom
+	const liftApex = isMobile ? SWIPE.liftApexMobile : SWIPE.liftApex;
 	const [deck, setDeck] = useState(MOCK_DECK);
 	const [departing, setDeparting] = useState<Departing | null>(null);
 	const x = useMotionValue(0);
@@ -202,7 +203,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 								// rendering passes when 3D transforms are involved,
 								// leaving "ghost" frames mid-flight.
 								? { x: 0, y: liftApex, scale: 1, opacity: 1 }
-								: { x: 0, y: 0, scale: 0.86, opacity: 1 }
+								: { x: 0, y: 0, scale: SWIPE.recedeScale, opacity: 1 }
 						}
 						transition={{
 							duration: (departing.phase === "lift" ? LIFT_MS : RECEDE_MS) / 1000,

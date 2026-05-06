@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { CARD_BACK_IMAGE, type Rarity, type Supertype } from "@/lib/cards";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
+import { TILT, FOIL } from "@/lib/animConfig";
 
 type Props = {
 	image: string;
@@ -19,8 +20,20 @@ type Props = {
 	decorative?: boolean;
 };
 
-const MAX_TILT_DEG = 20;        // ±12° rotation when pointer is far from the card
-const TILT_FALLOFF_PX = 600;    // distance from card center at which tilt is maxed
+const MAX_TILT_DEG = TILT.maxDeg;
+const TILT_FALLOFF_PX = TILT.falloffPx;
+
+// Module-level shared rest calibration for mobile orientation tilt. All
+// HoloCards on the page read from these so every card uses the SAME zero
+// baseline — otherwise each card captures its own rest at mount time and you
+// get cards that respond off slightly different baselines, producing the
+// "stacked / amplified" tilt effect the user reported.
+let sharedRestBeta: number | null = null;
+let sharedRestGamma: number | null = null;
+const clearSharedRest = () => { sharedRestBeta = null; sharedRestGamma = null; };
+if (typeof window !== "undefined") {
+	window.screen?.orientation?.addEventListener?.("change", clearSharedRest);
+}
 
 /**
  * Layered holographic card. Three nested transform layers:
@@ -87,19 +100,10 @@ export default function HoloCard({
 				const rect = card.getBoundingClientRect();
 				const cx = rect.left + rect.width / 2;
 				const cy = rect.top + rect.height / 2;
-				const inside =
-					pendingX >= rect.left && pendingX <= rect.right &&
-					pendingY >= rect.top  && pendingY <= rect.bottom;
 
-				if (inside) {
-					rotator.style.setProperty("--rotate-x", "0deg");
-					rotator.style.setProperty("--rotate-y", "0deg");
-					rotator.style.setProperty("--pointer-x", "50%");
-					rotator.style.setProperty("--pointer-y", "50%");
-					rotator.style.setProperty("--card-opacity", "0");
-					return;
-				}
-
+				// Single tilt formula whether the cursor is over the card or off
+				// it — when inside, dx/dy are small (≤ half-card-width) so tilt
+				// naturally stays gentle, controlled by TILT.falloffPx and maxDeg.
 				const dx = pendingX - cx;
 				const dy = pendingY - cy;
 				const norm = Math.min(1, Math.hypot(dx, dy) / TILT_FALLOFF_PX);
@@ -115,7 +119,7 @@ export default function HoloCard({
 				const py = ((pendingY - rect.top) / rect.height) * 100;
 				rotator.style.setProperty("--pointer-x", `${px}%`);
 				rotator.style.setProperty("--pointer-y", `${py}%`);
-				rotator.style.setProperty("--card-opacity", `${0.55 + 0.35 * norm}`);
+				rotator.style.setProperty("--card-opacity", `${FOIL.opacityFloor + FOIL.opacityRange * norm}`);
 				rotator.style.setProperty("--background-x", `${50 - (dx / rect.width) * 30}%`);
 				rotator.style.setProperty("--background-y", `${50 - (dy / rect.height) * 30}%`);
 			});
@@ -140,12 +144,10 @@ export default function HoloCard({
 		let raf = 0;
 		let beta = 0;
 		let gamma = 0;
-		let restBeta: number | null = null;   // captured on first reading — auto-calibrates
-		let restGamma: number | null = null;
 		let attached = false;
 
-		const TILT_SENSITIVITY = 0.7;          // multiplier from raw degrees to applied tilt
-		const TILT_DEAD_ZONE_DEG = 1.5;        // ignore micro-jitter
+		const TILT_SENSITIVITY = TILT.sensitivity;
+		const TILT_DEAD_ZONE_DEG = TILT.deadZoneDeg;
 
 		const getScreenAngle = (): number => {
 			// Returns one of 0, 90, -90, 180 — accounts for landscape orientation.
@@ -155,12 +157,15 @@ export default function HoloCard({
 
 		const apply = () => {
 			raf = 0;
-			if (restBeta == null || restGamma == null) {
-				restBeta = beta;
-				restGamma = gamma;
+			// Use the SHARED rest baseline so every card on the page tilts off
+			// the same zero point. The first listener to fire captures rest;
+			// every subsequent card reads from the same module-level value.
+			if (sharedRestBeta == null || sharedRestGamma == null) {
+				sharedRestBeta = beta;
+				sharedRestGamma = gamma;
 			}
-			let dBeta = beta - restBeta;
-			let dGamma = gamma - restGamma;
+			let dBeta = beta - sharedRestBeta;
+			let dGamma = gamma - sharedRestGamma;
 
 			// Account for landscape orientation: swap/flip axes accordingly.
 			const angle = getScreenAngle();
@@ -187,7 +192,7 @@ export default function HoloCard({
 			rotator.style.setProperty("--pointer-y", `${py}%`);
 
 			const norm = Math.min(1, Math.hypot(tiltX, tiltY) / MAX_TILT_DEG);
-			rotator.style.setProperty("--card-opacity", `${0.55 + 0.35 * norm}`);
+			rotator.style.setProperty("--card-opacity", `${FOIL.opacityFloor + FOIL.opacityRange * norm}`);
 			rotator.style.setProperty("--background-x", `${50 - (tiltX / MAX_TILT_DEG) * 30}%`);
 			rotator.style.setProperty("--background-y", `${50 - (-tiltY / MAX_TILT_DEG) * 30}%`);
 		};
@@ -198,18 +203,12 @@ export default function HoloCard({
 			if (!raf) raf = requestAnimationFrame(apply);
 		};
 
-		// Re-calibrate when the screen rotates so tilt stays referenced to current
-		// hold orientation.
-		const onScreenRotate = () => {
-			restBeta = null;
-			restGamma = null;
-		};
-
 		const attach = () => {
 			if (attached) return;
 			attached = true;
 			window.addEventListener("deviceorientation", onOrientation);
-			window.screen?.orientation?.addEventListener?.("change", onScreenRotate);
+			// Screen-rotation re-calibration is handled at module level
+			// (clearSharedRest) so all cards re-baseline together.
 		};
 
 		// On Android / desktop, tilt is available without permission — attach
@@ -233,7 +232,6 @@ export default function HoloCard({
 			window.removeEventListener("garra:tilt-granted", onGranted);
 			if (attached) {
 				window.removeEventListener("deviceorientation", onOrientation);
-				window.screen?.orientation?.removeEventListener?.("change", onScreenRotate);
 			}
 			if (raf) cancelAnimationFrame(raf);
 		};
