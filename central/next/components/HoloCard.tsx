@@ -106,22 +106,46 @@ export default function HoloCard({
 				// naturally stays gentle, controlled by TILT.falloffPx and maxDeg.
 				const dx = pendingX - cx;
 				const dy = pendingY - cy;
-				const norm = Math.min(1, Math.hypot(dx, dy) / TILT_FALLOFF_PX);
+				const distance = Math.hypot(dx, dy);
+
+				// Tilt direction is still based on cursor offset from the card
+				// center (cursor-driven parallax — works whether the cursor is
+				// over the card or off it).
 				const ax = (dx / TILT_FALLOFF_PX) * MAX_TILT_DEG;
 				const ay = (dy / TILT_FALLOFF_PX) * MAX_TILT_DEG;
 				const clampedX = Math.max(-MAX_TILT_DEG, Math.min(MAX_TILT_DEG, ax));
 				const clampedY = Math.max(-MAX_TILT_DEG, Math.min(MAX_TILT_DEG, ay));
 
-				rotator.style.setProperty("--rotate-x", `${clampedX}deg`);
-				rotator.style.setProperty("--rotate-y", `${-clampedY}deg`);
-				// Pointer position projected onto the card surface (used by glare gradient)
+				// Foil intensity uses PROXIMITY — closer cursor → stronger foil,
+				// matching simey's reference behavior where shine activates on
+				// hover rather than dimming. proximity = 1 at the card center,
+				// linearly fading to 0 at TILT.falloffPx away.
+				const proximity = Math.max(0, 1 - distance / TILT_FALLOFF_PX);
+
+				// Negate so the cursor "lifts" the nearest edge of the card
+				// toward the viewer (instead of pushing it back). Cursor right →
+				// right edge comes forward; cursor down → bottom comes forward.
+				rotator.style.setProperty("--rotate-x", `${-clampedX}deg`);
+				rotator.style.setProperty("--rotate-y", `${clampedY}deg`);
 				const px = ((pendingX - rect.left) / rect.width) * 100;
 				const py = ((pendingY - rect.top) / rect.height) * 100;
 				rotator.style.setProperty("--pointer-x", `${px}%`);
 				rotator.style.setProperty("--pointer-y", `${py}%`);
-				rotator.style.setProperty("--card-opacity", `${FOIL.opacityFloor + FOIL.opacityRange * norm}`);
-				rotator.style.setProperty("--background-x", `${50 - (dx / rect.width) * 30}%`);
-				rotator.style.setProperty("--background-y", `${50 - (dy / rect.height) * 30}%`);
+				rotator.style.setProperty("--card-opacity", `${FOIL.opacityFloor + FOIL.opacityRange * proximity}`);
+				// Background parallax flipped so the shine pattern slides AGAINST
+				// cursor direction, like a real foil's specular reflection.
+				rotator.style.setProperty("--background-x", `${50 + (dx / rect.width) * 30}%`);
+				rotator.style.setProperty("--background-y", `${50 + (dy / rect.height) * 30}%`);
+				// simey's rarity filters read these vars (e.g.
+				// `brightness(calc(var(--pointer-from-center) * 0.3 + 0.5))`).
+				// Without them every shine renders at 50% brightness and the
+				// metallic colors look washed out.
+				const fromLeft = Math.max(0, Math.min(1, px / 100));
+				const fromTop = Math.max(0, Math.min(1, py / 100));
+				const fromCenter = Math.hypot(fromLeft - 0.5, fromTop - 0.5) / 0.707;
+				rotator.style.setProperty("--pointer-from-left", `${fromLeft}`);
+				rotator.style.setProperty("--pointer-from-top", `${fromTop}`);
+				rotator.style.setProperty("--pointer-from-center", `${Math.min(1, fromCenter)}`);
 			});
 		};
 
@@ -193,8 +217,16 @@ export default function HoloCard({
 
 			const norm = Math.min(1, Math.hypot(tiltX, tiltY) / MAX_TILT_DEG);
 			rotator.style.setProperty("--card-opacity", `${FOIL.opacityFloor + FOIL.opacityRange * norm}`);
-			rotator.style.setProperty("--background-x", `${50 - (tiltX / MAX_TILT_DEG) * 30}%`);
-			rotator.style.setProperty("--background-y", `${50 - (-tiltY / MAX_TILT_DEG) * 30}%`);
+			rotator.style.setProperty("--background-x", `${50 + (tiltX / MAX_TILT_DEG) * 30}%`);
+			rotator.style.setProperty("--background-y", `${50 + (-tiltY / MAX_TILT_DEG) * 30}%`);
+			// Drive simey's filter vars from tilt magnitude/direction so
+			// metallic shines reach full vibrancy (brightness ramps up with
+			// pointer-from-center) instead of staying at the dim 0.5 floor.
+			const fromLeftMobile = Math.max(0, Math.min(1, 0.5 + (tiltX / MAX_TILT_DEG) * 0.5));
+			const fromTopMobile  = Math.max(0, Math.min(1, 0.5 + (-tiltY / MAX_TILT_DEG) * 0.5));
+			rotator.style.setProperty("--pointer-from-left", `${fromLeftMobile}`);
+			rotator.style.setProperty("--pointer-from-top", `${fromTopMobile}`);
+			rotator.style.setProperty("--pointer-from-center", `${norm}`);
 		};
 
 		const onOrientation = (e: DeviceOrientationEvent) => {

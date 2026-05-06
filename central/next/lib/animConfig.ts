@@ -15,7 +15,7 @@
 export const TILT = {
 	/** Peak tilt the card visual will respond to in either axis (degrees).
 	 *  Both desktop pointer and mobile orientation handlers clamp to ±this. */
-	maxDeg: 30,
+	maxDeg: 25,
 
 	/** Desktop only. Distance (in pixels) from the card center at which the
 	 *  pointer-tracking tilt reaches `maxDeg`. Lower = more sensitive cursor. */
@@ -23,7 +23,7 @@ export const TILT = {
 
 	/** Mobile only. Multiplier applied to (rawDegrees − rest) before clamping
 	 *  to `maxDeg`. Higher = phone tilts produce bigger card response. */
-	sensitivity: 0.5,
+	sensitivity: 1,
 
 	/** Mobile only. Tilt magnitude (degrees) below this is treated as zero so
 	 *  the foil doesn't shimmer when the phone is held still. */
@@ -34,10 +34,10 @@ export const TILT = {
 export const FOIL = {
 	/** Resting opacity of shine + glare layers when the user is barely
 	 *  tilting. Drives `--card-opacity`. Higher = always visible foil. */
-	opacityFloor: 0.75,
+	opacityFloor: 0,
 
 	/** Extra opacity added at maximum tilt. Final opacity = floor + range. */
-	opacityRange: 0.35,
+	opacityRange: 1,
 };
 
 // ─────────────────────────── stack-Z (cards approach) ───────────────────────
