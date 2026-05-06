@@ -11,6 +11,7 @@ type Props = {
 	supertype?: Supertype;
 	subtypes?: string[];
 	mask?: string;
+	trainerGallery?: boolean;
 	className?: string;
 };
 
@@ -35,6 +36,7 @@ export default function HoloCard({
 	supertype,
 	subtypes,
 	mask,
+	trainerGallery,
 	className,
 }: Props) {
 	const cardRef = useRef<HTMLDivElement>(null);
@@ -241,6 +243,7 @@ export default function HoloCard({
 			data-rarity={rarity}
 			data-supertype={supertype ?? ""}
 			data-subtypes={subtypes?.join(" ") ?? ""}
+			data-trainer-gallery={trainerGallery ? "true" : undefined}
 			data-face={faceUp ? "up" : "down"}
 			style={mask ? ({ ["--mask" as string]: `url(${mask})` } as React.CSSProperties) : undefined}
 		>

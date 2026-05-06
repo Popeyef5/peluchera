@@ -129,6 +129,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						supertype={after.supertype}
 						subtypes={after.subtypes}
 						mask={after.mask}
+						trainerGallery={after.trainerGallery}
 					/>
 				</div>
 				{/* Slot 2 — peeks during drag */}
@@ -143,6 +144,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						supertype={next.supertype}
 						subtypes={next.subtypes}
 						mask={next.mask}
+						trainerGallery={next.trainerGallery}
 					/>
 				</motion.div>
 				{/* Slot 1 — the draggable card. Re-keyed per top.id so it remounts
@@ -171,6 +173,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						supertype={top.supertype}
 						subtypes={top.subtypes}
 						mask={top.mask}
+						trainerGallery={top.trainerGallery}
 					/>
 				</motion.div>
 
@@ -221,6 +224,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 							supertype={departing.card.supertype}
 							subtypes={departing.card.subtypes}
 							mask={departing.card.mask}
+							trainerGallery={departing.card.trainerGallery}
 						/>
 					</motion.div>
 				)}

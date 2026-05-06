@@ -8,7 +8,6 @@ import { useClaw } from "@/components/providers";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
 import Booster from "@/components/Booster";
 import CardStack from "@/components/CardStack";
-import TiltDebug from "@/components/TiltDebug";
 
 type Phase = "pack" | "tearing" | "revealing" | "shuffling" | "flipping" | "swiping";
 
@@ -136,8 +135,6 @@ const WinChoiceModal = () => {
 	const stackPointer  = phase === "swiping";
 
 	return (
-		<>
-		{isMobile && open && <TiltDebug />}
 		<Dialog.Root open={open} onOpenChange={(e) => setOpen(e.open)} placement="center">
 			<Portal>
 				<Dialog.Backdrop className="lg-drawer-backdrop" />
@@ -291,7 +288,6 @@ const WinChoiceModal = () => {
 				</Dialog.Positioner>
 			</Portal>
 		</Dialog.Root>
-		</>
 	);
 };
 
