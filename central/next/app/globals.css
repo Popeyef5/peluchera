@@ -129,6 +129,31 @@
 .holo-card[data-face="down"] .holo-card__shine,
 .holo-card[data-face="down"] .holo-card__glare { display: none; }
 
+/* Without the per-card mask (which simey serves from a private CDN, 404 on
+   poke-holo.simey.me), simey's rare-holo-vmax shine paints rainbow stripes
+   over the entire card. Replace the shine background with just the vmaxbg
+   foil texture + the pointer radial — matches simey's reference look for
+   non-masked vmax cards (Charizard VMAX, etc.).
+   Foil tiles at simey's intended 60% × 30% (small repeating pattern), not
+   `cover` which stretches the vmaxbg.jpg into one giant whirl that
+   dominates the card. */
+.holo-card:not(.masked)[data-rarity="rare holo vmax"] .holo-card__shine {
+  background-image:
+    var(--foil),
+    radial-gradient(
+      farthest-corner circle at var(--pointer-x) var(--pointer-y),
+      hsla(189, 76%, 77%, 0.6) 0%,
+      hsla(147, 59%, 77%, 0.6) 25%,
+      hsla(271, 55%, 69%, 0.6) 50%,
+      hsla(355, 56%, 72%, 0.6) 75%
+    );
+  background-size: 60% 30%, 200% 200%;
+  background-position:
+    var(--background-x) var(--background-y),
+    var(--background-x) var(--background-y);
+  background-blend-mode: soft-light;
+}
+
 /* When the card is face-down, tilt is disabled (see HoloCard effects) — we
    also zero out any tilt CSS vars that the listeners may have last written,
    so the rotator's transform doesn't keep a stale rotation that combined

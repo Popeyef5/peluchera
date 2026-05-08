@@ -37,7 +37,7 @@ export const FOIL = {
 	opacityFloor: 0,
 
 	/** Extra opacity added at maximum tilt. Final opacity = floor + range. */
-	opacityRange: 1,
+	opacityRange: 0.7,
 };
 
 // ─────────────────────────── stack-Z (cards approach) ───────────────────────

@@ -8,22 +8,25 @@ Inbound (from central):
     {"type": "turn_start", "data": ...}                 -> simulates a turn
 
 Outbound (broadcast to central, after turn_start):
-    {"type": "turn_end"}            -> always
-    {"type": "prize_won"}           -> only if turn was a "win"
+    {"type": "turn_end"}                                -> always
+    {"type": "prize_won", "data": {"ball_serial": ...}} -> only if turn was a "win"
 
 HTTP scenario controls (curl-friendly):
     POST /scenarios/always-win
     POST /scenarios/always-lose
     POST /scenarios/random          (default)
     POST /scenarios/disconnect      (closes all WS clients, useful for reconnect tests)
+    POST /scenarios/next-ball/{serial}  (force the next prize_won to use this ball)
     GET  /scenarios/state
 """
 
 import asyncio
+import itertools
 import json
 import logging
 import os
 import random
+from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException
 
@@ -34,6 +37,14 @@ DEFAULT_WIN_RATE = float(os.getenv("MOCK_WIN_RATE", "1.0"))
 TURN_DURATION_MIN = float(os.getenv("MOCK_TURN_MIN_SEC", "2.0"))
 TURN_DURATION_MAX = float(os.getenv("MOCK_TURN_MAX_SEC", "4.0"))
 PRIZE_DELAY_SEC = float(os.getenv("MOCK_PRIZE_DELAY_SEC", "0.5"))
+
+# Default to the serials produced by app.seed_dev. Override with
+# MOCK_BALL_SERIALS=BALL-B000,BALL-B001,... if you've seeded differently.
+DEFAULT_BALL_SERIALS = (
+    "BALL-B000,BALL-B001,BALL-B002,BALL-B003,BALL-B004,BALL-B005,"
+    "BALL-C000,BALL-C001,BALL-C002,BALL-C003,BALL-C004,BALL-C005"
+)
+BALL_SERIALS = [s.strip() for s in os.getenv("MOCK_BALL_SERIALS", DEFAULT_BALL_SERIALS).split(",") if s.strip()]
 
 
 class Scenario:
@@ -46,6 +57,11 @@ class State:
     def __init__(self):
         self.mode = Scenario.RANDOM
         self.win_rate = DEFAULT_WIN_RATE
+        # Round-robin over the configured ball pool so consecutive wins
+        # exercise both prize types. `next_ball_override` lets the
+        # /scenarios/next-ball endpoint pin a specific serial for one win.
+        self._ball_cycle = itertools.cycle(BALL_SERIALS) if BALL_SERIALS else None
+        self.next_ball_override: Optional[str] = None
 
     def is_win(self) -> bool:
         if self.mode == Scenario.ALWAYS_WIN:
@@ -55,6 +71,15 @@ class State:
         roll = random.random()
         log.info(f"is_win roll={roll:.4f} threshold={self.win_rate} -> {roll < self.win_rate}")
         return roll < self.win_rate
+
+    def next_ball_serial(self) -> Optional[str]:
+        if self.next_ball_override is not None:
+            serial = self.next_ball_override
+            self.next_ball_override = None
+            return serial
+        if self._ball_cycle is None:
+            return None
+        return next(self._ball_cycle)
 
 
 state = State()
@@ -94,7 +119,10 @@ async def simulate_turn():
     await manager.broadcast(json.dumps({"type": "turn_end"}))
     if won:
         await asyncio.sleep(PRIZE_DELAY_SEC)
-        await manager.broadcast(json.dumps({"type": "prize_won"}))
+        ball_serial = state.next_ball_serial()
+        payload = {"type": "prize_won", "data": {"ball_serial": ball_serial} if ball_serial else None}
+        log.info(f"prize_won ball_serial={ball_serial}")
+        await manager.broadcast(json.dumps(payload))
 
 
 async def on_move(_websocket, message):
@@ -174,6 +202,14 @@ async def scenario_disconnect():
     return {"closed": n}
 
 
+@app.post("/scenarios/next-ball/{serial}")
+async def scenario_next_ball(serial: str):
+    """Force the next prize_won to use a specific ball serial. Useful for
+    triggering a known prize kind (BOOSTER_PAIR vs SINGLE_CARD) in tests."""
+    state.next_ball_override = serial
+    return {"next_ball_override": serial}
+
+
 @app.get("/scenarios/state")
 async def scenario_state():
     return {
@@ -181,6 +217,8 @@ async def scenario_state():
         "win_rate": state.win_rate,
         "active_connections": len(manager.active_connections),
         "turn_duration_range": [TURN_DURATION_MIN, TURN_DURATION_MAX],
+        "ball_pool": BALL_SERIALS,
+        "next_ball_override": state.next_ball_override,
     }
 
 

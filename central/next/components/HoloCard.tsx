@@ -91,67 +91,69 @@ export default function HoloCard({
 		const card = cardRef.current;
 		if (!rotator || !card) return;
 
+		// Verbatim port of simey's interact() formulas — see
+		// simeydotme/pokemon-cards-css src/lib/components/Card.svelte.
+		// Listener fires only while the cursor is over the card; outside,
+		// vars decay (we set --card-opacity = 0 on leave).
+		const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
+		const adjust = (v: number, fromMin: number, fromMax: number, toMin: number, toMax: number) =>
+			toMin + ((v - fromMin) / (fromMax - fromMin)) * (toMax - toMin);
+
+		const apply = () => {
+			raf = 0;
+			const rect = card.getBoundingClientRect();
+			const absX = pendingX - rect.left;
+			const absY = pendingY - rect.top;
+			const px = clamp((100 / rect.width) * absX);   // 0..100, clamped
+			const py = clamp((100 / rect.height) * absY);
+			const cx = px - 50;                            // -50..+50
+			const cy = py - 50;
+
+			// Rotation: simey uses /3.5 (≈14° max). We expose the divisor as
+			// TILT.maxDeg via 50 / maxDeg so the user can tune amplitude.
+			const rotDivisor = 50 / MAX_TILT_DEG;
+			rotator.style.setProperty("--rotate-x", `${-cx / rotDivisor}deg`);
+			rotator.style.setProperty("--rotate-y", `${cy / rotDivisor}deg`);
+
+			// Background parallax: simey's narrow 37–63% / 33–67% remap.
+			rotator.style.setProperty("--background-x", `${adjust(px, 0, 100, 37, 63)}%`);
+			rotator.style.setProperty("--background-y", `${adjust(py, 0, 100, 33, 67)}%`);
+
+			// Glare position = raw cursor%.
+			rotator.style.setProperty("--pointer-x", `${px}%`);
+			rotator.style.setProperty("--pointer-y", `${py}%`);
+
+			// Filter inputs: simey divides by 50, not the half-diagonal.
+			const fromCenter = clamp(Math.hypot(cy, cx) / 50, 0, 1);
+			rotator.style.setProperty("--pointer-from-center", `${fromCenter}`);
+			rotator.style.setProperty("--pointer-from-top", `${py / 100}`);
+			rotator.style.setProperty("--pointer-from-left", `${px / 100}`);
+
+			// Opacity: 1 while interacting (matches simey's hover state).
+			// FOIL.opacityFloor/Range still let the user dim if they want.
+			rotator.style.setProperty(
+				"--card-opacity",
+				`${FOIL.opacityFloor + FOIL.opacityRange * 1}`,
+			);
+		};
+
 		const onMove = (e: PointerEvent) => {
 			pendingX = e.clientX;
 			pendingY = e.clientY;
-			if (raf) return;
-			raf = requestAnimationFrame(() => {
-				raf = 0;
-				const rect = card.getBoundingClientRect();
-				const cx = rect.left + rect.width / 2;
-				const cy = rect.top + rect.height / 2;
-
-				// Single tilt formula whether the cursor is over the card or off
-				// it — when inside, dx/dy are small (≤ half-card-width) so tilt
-				// naturally stays gentle, controlled by TILT.falloffPx and maxDeg.
-				const dx = pendingX - cx;
-				const dy = pendingY - cy;
-				const distance = Math.hypot(dx, dy);
-
-				// Tilt direction is still based on cursor offset from the card
-				// center (cursor-driven parallax — works whether the cursor is
-				// over the card or off it).
-				const ax = (dx / TILT_FALLOFF_PX) * MAX_TILT_DEG;
-				const ay = (dy / TILT_FALLOFF_PX) * MAX_TILT_DEG;
-				const clampedX = Math.max(-MAX_TILT_DEG, Math.min(MAX_TILT_DEG, ax));
-				const clampedY = Math.max(-MAX_TILT_DEG, Math.min(MAX_TILT_DEG, ay));
-
-				// Foil intensity uses PROXIMITY — closer cursor → stronger foil,
-				// matching simey's reference behavior where shine activates on
-				// hover rather than dimming. proximity = 1 at the card center,
-				// linearly fading to 0 at TILT.falloffPx away.
-				const proximity = Math.max(0, 1 - distance / TILT_FALLOFF_PX);
-
-				// Negate so the cursor "lifts" the nearest edge of the card
-				// toward the viewer (instead of pushing it back). Cursor right →
-				// right edge comes forward; cursor down → bottom comes forward.
-				rotator.style.setProperty("--rotate-x", `${-clampedX}deg`);
-				rotator.style.setProperty("--rotate-y", `${clampedY}deg`);
-				const px = ((pendingX - rect.left) / rect.width) * 100;
-				const py = ((pendingY - rect.top) / rect.height) * 100;
-				rotator.style.setProperty("--pointer-x", `${px}%`);
-				rotator.style.setProperty("--pointer-y", `${py}%`);
-				rotator.style.setProperty("--card-opacity", `${FOIL.opacityFloor + FOIL.opacityRange * proximity}`);
-				// Background parallax flipped so the shine pattern slides AGAINST
-				// cursor direction, like a real foil's specular reflection.
-				rotator.style.setProperty("--background-x", `${50 + (dx / rect.width) * 30}%`);
-				rotator.style.setProperty("--background-y", `${50 + (dy / rect.height) * 30}%`);
-				// simey's rarity filters read these vars (e.g.
-				// `brightness(calc(var(--pointer-from-center) * 0.3 + 0.5))`).
-				// Without them every shine renders at 50% brightness and the
-				// metallic colors look washed out.
-				const fromLeft = Math.max(0, Math.min(1, px / 100));
-				const fromTop = Math.max(0, Math.min(1, py / 100));
-				const fromCenter = Math.hypot(fromLeft - 0.5, fromTop - 0.5) / 0.707;
-				rotator.style.setProperty("--pointer-from-left", `${fromLeft}`);
-				rotator.style.setProperty("--pointer-from-top", `${fromTop}`);
-				rotator.style.setProperty("--pointer-from-center", `${Math.min(1, fromCenter)}`);
-			});
+			if (!raf) raf = requestAnimationFrame(apply);
 		};
 
-		window.addEventListener("pointermove", onMove);
+		const onLeave = () => {
+			rotator.style.setProperty("--card-opacity", "0");
+		};
+
+		// Listener attaches to the card itself — simey's behavior: only fire
+		// while cursor is over the card.
+		card.addEventListener("pointermove", onMove);
+		card.addEventListener("pointerleave", onLeave);
 		return () => {
-			window.removeEventListener("pointermove", onMove);
+			card.removeEventListener("pointermove", onMove);
+			card.removeEventListener("pointerleave", onLeave);
 			if (raf) cancelAnimationFrame(raf);
 		};
 	}, [isMobile, decorative, faceUp]);

@@ -58,7 +58,10 @@ export const MOCK_DECK: Card[] = [
 	{ id: "tg-vmax",      name: "Mimikyu VMAX (Trainer Gallery)",    rarity: "rare holo vmax",            supertype: "pokémon", subtypes: ["vmax"],      image: `${TCG}/swsh9tg/TG17.png`, trainerGallery: true },
 	{ id: "shiny",        name: "Minccino (Shiny Vault)",            rarity: "rare shiny",                supertype: "pokémon", subtypes: ["basic"],     image: `${TCG}/swsh45sv/SV093.png` },
 	{ id: "shiny-v",      name: "Lapras V (Shiny Vault)",            rarity: "rare shiny v",              supertype: "pokémon", subtypes: ["basic", "v"], image: `${TCG}/swsh45sv/SV101.png` },
-	{ id: "shiny-vmax",   name: "Charizard VMAX (Shiny Vault)",      rarity: "rare shiny vmax",           supertype: "pokémon", subtypes: ["vmax"],      image: `${TCG}/swsh45sv/SV107.png` },
+	// Note: simey's own dataset lists this card as "Rare Holo VMAX", not
+	// "Rare Shiny VMAX" — they file it under the Shiny Vault section but
+	// apply the standard VMAX rarity styling.
+	{ id: "shiny-vmax",   name: "Charizard VMAX (Shiny Vault)",      rarity: "rare holo vmax",            supertype: "pokémon", subtypes: ["vmax"],      image: `${TCG}/swsh45sv/SV107.png` },
 ];
 
 export const CARD_BACK_IMAGE = "/cards/back.png";

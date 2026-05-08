@@ -1,0 +1,520 @@
+"""State-machine transitions for wins and inventory.
+
+Each public function is a single short transaction. The caller is expected
+to commit (or rely on the surrounding session context manager). Errors are
+typed so route handlers can map them to HTTP status codes.
+
+The win lifecycle and trust model are documented in the project memory at
+~/.claude/projects/-home-gaston-garra/memory/project_garra_overview.md.
+"""
+
+import uuid
+import logging
+from datetime import datetime, timedelta
+from typing import Optional, TypedDict, Literal
+
+from sqlalchemy import select, update, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from .config import RESELL_PRICE_BY_RARITY_CENTS, RESELL_PRICE_BY_BOOSTER_SKU_CENTS
+from .models import (
+    User, Win, Ball, ClosedBooster, OpenedBooster, Card, Shipment, LedgerEntry,
+    QueueEntry,
+    WinStatus, BallStatus, InventoryStatus, CardStatus, PrizeKind,
+    SettlementKind, ShipmentStatus, LedgerKind,
+)
+
+log = logging.getLogger(__name__)
+
+RESELL_DEADLINE_DAYS = 30
+
+
+# ─── Errors ─────────────────────────────────────────────────────────────
+
+class BallNotAvailable(Exception): ...
+class PoolExhausted(Exception): ...
+class WinAlreadySettled(Exception): ...
+class WinKindMismatch(Exception): ...
+class NotOwner(Exception): ...
+class CardNotActionable(Exception): ...
+
+
+class ShippingAddress(TypedDict, total=False):
+    line1: str
+    line2: Optional[str]
+    city: str
+    region: str
+    postal: str
+    country: str
+
+
+def _expiry_from_now() -> datetime:
+    return datetime.utcnow() + timedelta(days=RESELL_DEADLINE_DAYS)
+
+
+# ─── Identity ───────────────────────────────────────────────────────────
+
+async def get_or_create_user(session: AsyncSession, wallet_address: str) -> User:
+    """Look up or lazily create a User row for a wallet address.
+
+    The legacy QueueEntry/Withdrawal tables key off `address` directly. New
+    tables (Win, Card, Shipment, LedgerEntry) FK to User. This is the
+    bridge — call it any time you need a user row for a wallet.
+    """
+    res = await session.execute(
+        select(User).where(User.wallet_address == wallet_address)
+    )
+    user = res.scalar_one_or_none()
+    if user is None:
+        user = User(wallet_address=wallet_address)
+        session.add(user)
+        await session.flush()
+    return user
+
+
+# ─── Win creation (at grab time) ────────────────────────────────────────
+
+async def reserve_win(
+    session: AsyncSession,
+    *,
+    ball_serial: str,
+    wallet_address: str,
+    queue_entry_id: int,
+) -> Win:
+    """Called when the claw confirms a grab.
+
+    Pre-conditions assumed by the caller:
+    - The RFID secret + prize_id read from the ball has been verified
+      against its on-chain commitment.
+    - The QueueEntry exists and corresponds to this player's turn.
+
+    Atomically:
+    - Marks the ball GRABBED.
+    - For BOOSTER_PAIR: reserves the bound OpenedBooster (single-row) plus
+      a fungible ClosedBooster of the same SKU (FOR UPDATE SKIP LOCKED).
+    - For SINGLE_CARD: reserves the bound Card.
+    - Creates the Win row in PENDING with a 30d expiry, snapshotting the
+      resell price computed from the ball's bound prize.
+
+    Does NOT flip QueueEntry.win — that stays driven by the on-chain
+    PlayerWin event handled in listeners.py, which is the authoritative
+    on-chain confirmation.
+
+    Raises PoolExhausted if any required inventory is missing — the caller
+    should refund the bet (BET_REFUND ledger entry) per its own policy.
+    """
+    res = await session.execute(
+        select(Ball).where(Ball.serial == ball_serial).with_for_update()
+    )
+    ball: Optional[Ball] = res.scalar_one_or_none()
+    if ball is None or ball.status != BallStatus.LOADED:
+        raise BallNotAvailable(f"Ball {ball_serial} is not LOADED")
+
+    user = await get_or_create_user(session, wallet_address)
+    ball.status = BallStatus.GRABBED
+
+    if ball.prize_kind == PrizeKind.BOOSTER_PAIR:
+        opened_id = ball.opened_booster_id
+        r1 = await session.execute(
+            update(OpenedBooster)
+            .where(
+                OpenedBooster.id == opened_id,
+                OpenedBooster.status == InventoryStatus.AVAILABLE,
+            )
+            .values(status=InventoryStatus.RESERVED)
+        )
+        if r1.rowcount == 0:
+            raise PoolExhausted(f"OpenedBooster {opened_id} not available")
+
+        sku = (await session.execute(
+            select(OpenedBooster.sku).where(OpenedBooster.id == opened_id)
+        )).scalar_one()
+
+        # Atomically claim a fungible ClosedBooster of same SKU. SKIP LOCKED
+        # so concurrent winners of the same SKU don't serialize on the lock;
+        # ORDER BY id keeps allocation deterministic for replay/tests.
+        claimed = await session.execute(text("""
+            UPDATE closed_booster
+            SET status = 'RESERVED'
+            WHERE id = (
+                SELECT id FROM closed_booster
+                WHERE sku = :sku AND status = 'AVAILABLE'
+                ORDER BY id
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            RETURNING id;
+        """), {"sku": sku})
+        row = claimed.first()
+        if row is None:
+            raise PoolExhausted(f"No ClosedBooster for SKU {sku}")
+
+        win = Win(
+            user_id=user.id,
+            queue_entry_id=queue_entry_id,
+            ball_id=ball.id,
+            prize_kind=ball.prize_kind,
+            expires_at=_expiry_from_now(),
+            resell_price_cents=_booster_resell_price(sku),
+        )
+        session.add(win)
+        await session.flush()  # populate win.id
+
+        await session.execute(
+            update(OpenedBooster)
+            .where(OpenedBooster.id == opened_id)
+            .values(reserved_by_win_id=win.id)
+        )
+        await session.execute(
+            update(ClosedBooster)
+            .where(ClosedBooster.id == row.id)
+            .values(reserved_by_win_id=win.id)
+        )
+        return win
+
+    # SINGLE_CARD
+    card_id = ball.prize_card_id
+    card_row = (await session.execute(
+        select(Card).where(Card.id == card_id)
+    )).scalar_one_or_none()
+    if card_row is None:
+        raise PoolExhausted(f"Card {card_id} not found")
+    r = await session.execute(
+        update(Card)
+        .where(Card.id == card_id, Card.status == CardStatus.IN_POOL)
+        .values(status=CardStatus.RESERVED)
+    )
+    if r.rowcount == 0:
+        raise PoolExhausted(f"Card {card_id} not available")
+
+    win = Win(
+        user_id=user.id,
+        queue_entry_id=queue_entry_id,
+        ball_id=ball.id,
+        prize_kind=ball.prize_kind,
+        expires_at=_expiry_from_now(),
+        resell_price_cents=_card_resell_price(card_row),
+        prize_card_id=card_id,
+    )
+    session.add(win)
+    await session.flush()
+    return win
+
+
+def _booster_resell_price(sku: str) -> int:
+    return RESELL_PRICE_BY_BOOSTER_SKU_CENTS.get(
+        sku, RESELL_PRICE_BY_BOOSTER_SKU_CENTS["default"]
+    )
+
+
+def _card_resell_price(card: Card) -> int:
+    return RESELL_PRICE_BY_RARITY_CENTS.get(card.rarity.value, 0)
+
+
+# ─── Booster-pair settlements ───────────────────────────────────────────
+
+async def open_booster_win(session: AsyncSession, win_id: uuid.UUID) -> None:
+    """User opens a booster digitally — release closed, consume opened,
+    transfer the filmed cards to the user's collection."""
+    win = await _load_pending_booster_win(session, win_id)
+
+    await session.execute(
+        update(ClosedBooster)
+        .where(ClosedBooster.id == win.closed_booster.id)
+        .values(status=InventoryStatus.AVAILABLE, reserved_by_win_id=None)
+    )
+    await session.execute(
+        update(OpenedBooster)
+        .where(OpenedBooster.id == win.opened_booster.id)
+        .values(status=InventoryStatus.CONSUMED)
+    )
+    await session.execute(
+        update(Card)
+        .where(Card.opened_booster_id == win.opened_booster.id)
+        .values(
+            owner_user_id=win.user_id,
+            status=CardStatus.IN_COLLECTION,
+            acquired_at=datetime.utcnow(),
+        )
+    )
+    win.status = WinStatus.SETTLED_OPEN
+    win.settled_at = datetime.utcnow()
+    win.settled_by = SettlementKind.USER_OPEN
+
+
+async def resell_booster_win(session: AsyncSession, win_id: uuid.UUID) -> None:
+    await _settle_booster_as_resell(session, win_id, SettlementKind.USER_RESELL)
+
+
+async def ship_booster_win(
+    session: AsyncSession,
+    win_id: uuid.UUID,
+    address: ShippingAddress,
+) -> Shipment:
+    win = await _load_pending_booster_win(session, win_id)
+
+    await session.execute(
+        update(OpenedBooster)
+        .where(OpenedBooster.id == win.opened_booster.id)
+        .values(status=InventoryStatus.AVAILABLE, reserved_by_win_id=None)
+    )
+
+    shipment = Shipment(user_id=win.user_id, shipping_address=dict(address))
+    session.add(shipment)
+    await session.flush()
+
+    await session.execute(
+        update(ClosedBooster)
+        .where(ClosedBooster.id == win.closed_booster.id)
+        .values(
+            status=InventoryStatus.SHIPPED,
+            reserved_by_win_id=None,
+            shipment_id=shipment.id,
+        )
+    )
+    win.status = WinStatus.SETTLED_SHIP
+    win.settled_at = datetime.utcnow()
+    win.settled_by = SettlementKind.USER_SHIP
+    return shipment
+
+
+async def _settle_booster_as_resell(
+    session: AsyncSession,
+    win_id: uuid.UUID,
+    settled_by: SettlementKind,
+) -> None:
+    win = await _load_pending_booster_win(session, win_id)
+
+    await session.execute(
+        update(ClosedBooster)
+        .where(ClosedBooster.id == win.closed_booster.id)
+        .values(status=InventoryStatus.AVAILABLE, reserved_by_win_id=None)
+    )
+    await session.execute(
+        update(OpenedBooster)
+        .where(OpenedBooster.id == win.opened_booster.id)
+        .values(status=InventoryStatus.AVAILABLE, reserved_by_win_id=None)
+    )
+    session.add(LedgerEntry(
+        user_id=win.user_id,
+        kind=(LedgerKind.AUTO_RESELL if settled_by == SettlementKind.AUTO_RESELL else LedgerKind.RESELL),
+        amount_cents=win.resell_price_cents,
+        win_id=win.id,
+    ))
+    win.status = (
+        WinStatus.EXPIRED if settled_by == SettlementKind.AUTO_RESELL
+        else WinStatus.SETTLED_RESELL
+    )
+    win.settled_at = datetime.utcnow()
+    win.settled_by = settled_by
+
+
+# ─── Single-card settlements ────────────────────────────────────────────
+
+async def keep_card_win(session: AsyncSession, win_id: uuid.UUID) -> None:
+    win = await _load_pending_card_win(session, win_id)
+    await session.execute(
+        update(Card)
+        .where(Card.id == win.prize_card_id)
+        .values(
+            status=CardStatus.IN_COLLECTION,
+            owner_user_id=win.user_id,
+            acquired_at=datetime.utcnow(),
+        )
+    )
+    win.status = WinStatus.SETTLED_KEEP
+    win.settled_at = datetime.utcnow()
+    win.settled_by = SettlementKind.USER_KEEP
+
+
+async def resell_card_win(session: AsyncSession, win_id: uuid.UUID) -> None:
+    await _settle_card_as_resell(session, win_id, SettlementKind.USER_RESELL)
+
+
+async def ship_card_win(
+    session: AsyncSession,
+    win_id: uuid.UUID,
+    address: ShippingAddress,
+) -> Shipment:
+    win = await _load_pending_card_win(session, win_id)
+
+    shipment = Shipment(user_id=win.user_id, shipping_address=dict(address))
+    session.add(shipment)
+    await session.flush()
+
+    # Bypass IN_COLLECTION — user is committing to physical ownership.
+    # acquired_at still set for the audit trail.
+    await session.execute(
+        update(Card)
+        .where(Card.id == win.prize_card_id)
+        .values(
+            status=CardStatus.SHIPPED,
+            owner_user_id=win.user_id,
+            acquired_at=datetime.utcnow(),
+            shipment_id=shipment.id,
+        )
+    )
+    win.status = WinStatus.SETTLED_SHIP
+    win.settled_at = datetime.utcnow()
+    win.settled_by = SettlementKind.USER_SHIP
+    return shipment
+
+
+async def _settle_card_as_resell(
+    session: AsyncSession,
+    win_id: uuid.UUID,
+    settled_by: SettlementKind,
+) -> None:
+    win = await _load_pending_card_win(session, win_id)
+
+    await session.execute(
+        update(Card).where(Card.id == win.prize_card_id).values(status=CardStatus.IN_POOL)
+    )
+    session.add(LedgerEntry(
+        user_id=win.user_id,
+        kind=(LedgerKind.AUTO_RESELL if settled_by == SettlementKind.AUTO_RESELL else LedgerKind.RESELL),
+        amount_cents=win.resell_price_cents,
+        win_id=win.id,
+    ))
+    win.status = (
+        WinStatus.EXPIRED if settled_by == SettlementKind.AUTO_RESELL
+        else WinStatus.SETTLED_RESELL
+    )
+    win.settled_at = datetime.utcnow()
+    win.settled_by = settled_by
+
+
+# ─── From-collection actions on Card ────────────────────────────────────
+
+async def ship_card_from_collection(
+    session: AsyncSession,
+    *,
+    card_id: uuid.UUID,
+    user_id: uuid.UUID,
+    address: ShippingAddress,
+) -> Shipment:
+    card = await session.get(Card, card_id)
+    if card is None:
+        raise CardNotActionable(f"Card {card_id} not found")
+    if card.owner_user_id != user_id:
+        raise NotOwner(f"User {user_id} does not own card {card_id}")
+    if card.status != CardStatus.IN_COLLECTION:
+        raise CardNotActionable(f"Card not shippable from status {card.status}")
+
+    shipment = Shipment(user_id=user_id, shipping_address=dict(address))
+    session.add(shipment)
+    await session.flush()
+
+    await session.execute(
+        update(Card).where(Card.id == card_id).values(
+            status=CardStatus.SHIPPED, shipment_id=shipment.id
+        )
+    )
+    return shipment
+
+
+async def resell_card_from_collection(
+    session: AsyncSession,
+    *,
+    card_id: uuid.UUID,
+    user_id: uuid.UUID,
+    resell_price_cents: int,
+) -> None:
+    card = await session.get(Card, card_id)
+    if card is None:
+        raise CardNotActionable(f"Card {card_id} not found")
+    if card.owner_user_id != user_id:
+        raise NotOwner(f"User {user_id} does not own card {card_id}")
+    if card.status != CardStatus.IN_COLLECTION:
+        raise CardNotActionable(f"Card not resellable from status {card.status}")
+
+    await session.execute(
+        update(Card).where(Card.id == card_id).values(status=CardStatus.RESOLD)
+    )
+    session.add(LedgerEntry(
+        user_id=user_id,
+        kind=LedgerKind.CARD_RESELL,
+        amount_cents=resell_price_cents,
+    ))
+
+
+# ─── Operator: void a stuck/lost ball ───────────────────────────────────
+
+async def void_ball(session: AsyncSession, ball_id: uuid.UUID) -> None:
+    """Operator-side. Releases the bound prize back to the pool. The ball's
+    secret should be published off-chain alongside this call so anyone
+    tracking commitments can verify the prize wasn't reassigned silently."""
+    ball = await session.get(Ball, ball_id)
+    if ball is None:
+        raise BallNotAvailable(f"Ball {ball_id} not found")
+    if ball.status != BallStatus.LOADED:
+        raise BallNotAvailable(f"Cannot void ball in status {ball.status}")
+
+    if ball.prize_kind == PrizeKind.BOOSTER_PAIR and ball.opened_booster_id:
+        await session.execute(
+            update(OpenedBooster)
+            .where(OpenedBooster.id == ball.opened_booster_id)
+            .values(status=InventoryStatus.AVAILABLE)
+        )
+    elif ball.prize_kind == PrizeKind.SINGLE_CARD and ball.prize_card_id:
+        await session.execute(
+            update(Card)
+            .where(Card.id == ball.prize_card_id)
+            .values(status=CardStatus.IN_POOL)
+        )
+    ball.status = BallStatus.VOIDED
+    ball.voided_at = datetime.utcnow()
+
+
+# ─── Cron: auto-resell expired pending wins ─────────────────────────────
+
+async def run_auto_resell_expired(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> int:
+    """Find all PENDING wins past their expiry and settle each as
+    AUTO_RESELL. Each win is its own short tx so a bad row can't block
+    the rest. Intended to run on a periodic scheduler (e.g. once a minute).
+    """
+    async with session_factory() as session:
+        res = await session.execute(
+            select(Win.id, Win.prize_kind)
+            .where(Win.status == WinStatus.PENDING, Win.expires_at <= datetime.utcnow())
+        )
+        expired = res.all()
+
+    settled = 0
+    for win_id, prize_kind in expired:
+        try:
+            async with session_factory() as session:
+                async with session.begin():
+                    if prize_kind == PrizeKind.BOOSTER_PAIR:
+                        await _settle_booster_as_resell(session, win_id, SettlementKind.AUTO_RESELL)
+                    else:
+                        await _settle_card_as_resell(session, win_id, SettlementKind.AUTO_RESELL)
+            settled += 1
+        except WinAlreadySettled:
+            # Race with a user terminal action; expected, just skip.
+            continue
+        except Exception as e:
+            log.warning("auto-resell skipped for %s: %s", win_id, e)
+    return settled
+
+
+# ─── Helpers ────────────────────────────────────────────────────────────
+
+async def _load_pending_booster_win(session: AsyncSession, win_id: uuid.UUID) -> Win:
+    win = await session.get(Win, win_id)
+    if win is None or win.status != WinStatus.PENDING:
+        raise WinAlreadySettled(f"Win {win_id} is not PENDING")
+    if win.prize_kind != PrizeKind.BOOSTER_PAIR:
+        raise WinKindMismatch(f"Win {win_id} is not a booster pair")
+    return win
+
+
+async def _load_pending_card_win(session: AsyncSession, win_id: uuid.UUID) -> Win:
+    win = await session.get(Win, win_id)
+    if win is None or win.status != WinStatus.PENDING:
+        raise WinAlreadySettled(f"Win {win_id} is not PENDING")
+    if win.prize_kind != PrizeKind.SINGLE_CARD:
+        raise WinKindMismatch(f"Win {win_id} is not a single card")
+    return win

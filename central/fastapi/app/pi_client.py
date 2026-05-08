@@ -1,5 +1,6 @@
 # import socketio, asyncio, websockets, json
 from datetime import datetime
+from typing import Optional
 from eth_utils import to_bytes
 import os, threading
 from web3 import Web3
@@ -10,7 +11,8 @@ from .abi import claw_abi
 from .logging import log
 from sqlalchemy import select, func
 from .deps import async_session
-from .models import QueueEntry
+from .models import QueueEntry, PrizeKind
+from . import win_transitions as wt
 import asyncio, websockets, json
 
 PI_WEBSOCKET_URL = PI_SERVER_URL.replace('http://', 'ws://').replace('https://', 'wss://')
@@ -59,7 +61,7 @@ async def handle_pi_messages():
                 if message_type == "turn_end":
                     asyncio.create_task(turn_end())
                 elif message_type == "prize_won":
-                    asyncio.create_task(on_turn_win())
+                    asyncio.create_task(on_turn_win(data.get("data") or {}))
                 else:
                     log.warning(f"Unknown message type from Pi: {message_type}")
                     
@@ -161,35 +163,82 @@ async def turn_end(*_):
       log.info(f"Started turn {state.current_key} by player {state.current_player} from turn_end callback")
     
   
-async def on_turn_win(*_):
-        
+async def on_turn_win(data: Optional[dict] = None):
+    """Handler for Pi's `prize_won` message.
+
+    Expected payload (from the RFID reader on the claw):
+        { "ball_serial": "<unique ball id>", ... }
+
+    The ball_serial is required to look up the bound prize and create a
+    Win row via win_transitions.reserve_win. If the Pi sends nothing (the
+    legacy contract), we fall back to the old behaviour: emit player_win
+    and notify the chain, but no Win row is created. Once Pi firmware is
+    updated to include ball_serial, this fallback can be removed.
+    """
+    data = data or {}
+    ball_serial = data.get("ball_serial")
+
     key_str = state.current_key
     if not key_str:
         log.info("No current key, win is not from game")
         return
-    
+
     key_bytes = bytes.fromhex(key_str)
-    
-    log.info(f"Pi emitted player win. Player: {state.current_player}. Turn key: 0x{key_str}")
-    await sio.emit("player_win")
-    
+    log.info(f"Pi emitted player win. Player: {state.current_player}. Turn key: 0x{key_str}. Ball: {ball_serial}")
+
+    win_payload: Optional[dict] = None
+    if ball_serial and state.current_player:
+        try:
+            async with async_session() as db:
+                entry = await db.scalar(
+                    select(QueueEntry).where(QueueEntry.key == key_str)
+                )
+                if entry is None:
+                    log.warning("on_turn_win: no QueueEntry for key %s — skipping reserve_win", key_str)
+                else:
+                    win = await wt.reserve_win(
+                        db,
+                        ball_serial=ball_serial,
+                        wallet_address=state.current_player,
+                        queue_entry_id=entry.id,
+                    )
+                    await db.commit()
+                    win_payload = {
+                        "win_id": str(win.id),
+                        "prize_kind": win.prize_kind.value,
+                        "expires_at": int(win.expires_at.timestamp()),
+                        "resell_price_cents": win.resell_price_cents,
+                    }
+                    log.info(f"reserve_win OK: win_id={win.id} prize_kind={win.prize_kind.value}")
+        except wt.BallNotAvailable as e:
+            log.warning("on_turn_win: ball not available: %s", e)
+        except wt.PoolExhausted as e:
+            # The bet was placed but no inventory remains. The user still
+            # needs to be made whole — refund handling lives in the bet
+            # flow / chain settlement, not here. TODO: emit a refund event.
+            log.error("on_turn_win: pool exhausted: %s", e)
+        except Exception:
+            log.exception("on_turn_win: reserve_win failed")
+
+    # Notify the winning client. Payload is optional; old listeners ignore
+    # extra fields. Targeted to the player's room (set up at wallet_connected).
+    await sio.emit("player_win", win_payload, room=state.current_player)
+
+    # Existing on-chain notification — settles the win on the contract.
     w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
     contract = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
     owner = w3.eth.account.from_key(PRIVATE_KEY).address
 
-    # build transaction
     txn = contract.functions.notifyWin(key_bytes).build_transaction({
         "from": owner,
         "nonce": w3.eth.get_transaction_count(owner, 'pending'),
         "chainId": CHAIN_ID,
     })
-    
-    # sign and send
+
     signed = w3.eth.account.sign_transaction(txn, private_key=PRIVATE_KEY)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
     receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-    
-    # check result
+
     if receipt.status == 1:
         log.info(f"Win on {state.current_key} successfully notified!")
     else:

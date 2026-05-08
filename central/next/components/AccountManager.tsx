@@ -9,6 +9,7 @@ import { FaWallet } from "react-icons/fa";
 import { RxCross2 } from "react-icons/rx";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { parseTimestamp } from "@/lib/utils";
+import Inventory from "./Inventory";
 
 // const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
@@ -218,7 +219,7 @@ export const AccountManager = (
 								<Tabs.Root
 									lazyMount
 									unmountOnExit
-									defaultValue="Bets"
+									defaultValue="Inventory"
 									onClick={(event) => { event.stopPropagation() }}
 									minW={"60%"}
 								>
@@ -228,7 +229,7 @@ export const AccountManager = (
 										gap={4}
 										justifyContent={"space-around"}
 									>
-										{['Bets', 'Withdrawals'].map((label) => (
+										{['Inventory', 'Bets', 'Withdrawals'].map((label) => (
 											<Tabs.Trigger
 												key={label}
 												value={label}
@@ -248,6 +249,9 @@ export const AccountManager = (
 											</Tabs.Trigger>
 										))}
 									</Tabs.List>
+									<Tabs.Content value="Inventory" p={0}>
+										<Inventory />
+									</Tabs.Content>
 									<Tabs.Content value="Bets" p={0}>
 										<ScrollArea className='h-[100px]'>
 											<VStack>

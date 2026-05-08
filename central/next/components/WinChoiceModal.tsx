@@ -5,6 +5,7 @@ import { Box, Dialog, HStack, Portal, VStack } from "@chakra-ui/react";
 import { Canvas } from "@react-three/fiber";
 import { Environment, Float, PresentationControls } from "@react-three/drei";
 import { useClaw } from "@/components/providers";
+import { toaster } from "@/components/ui/toaster";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
 import Booster from "@/components/Booster";
 import CardStack from "@/components/CardStack";
@@ -35,7 +36,7 @@ const TIMINGS = {
 const AUTO_SHUFFLE_COUNT = SHUFFLE.count;
 
 const WinChoiceModal = () => {
-	const { roundWon } = useClaw();
+	const { roundWon, pendingWin, openBoosterWin, resellPendingWin, keepCardWin, dismissPendingWin } = useClaw();
 	const isMobile = useIsMobile();
 	const lastSeen = useRef(roundWon);
 	const [open, setOpen] = useState(false);
@@ -133,7 +134,70 @@ const WinChoiceModal = () => {
 		setTimeout(() => setPhase("revealing"), TIMINGS.tearing);
 		setTimeout(() => setPhase("shuffling"), TIMINGS.tearing + TIMINGS.revealing);
 		// shuffling → flipping is triggered by CardStack's onAutoShuffleComplete
+
+		// Settle the win on the backend in parallel with the animation. The
+		// response carries the actual revealed cards but we don't yet feed
+		// them into CardStack (it still uses the mock seed in lib/cards.ts);
+		// that's the next polish slice.
+		if (pendingWin?.prize_kind === 'BOOSTER_PAIR') {
+			openBoosterWin().then((res) => {
+				if (!res.ok) console.warn('openBoosterWin failed:', res.error, res.code);
+			});
+		}
 	};
+
+	const handleResell = async () => {
+		if (!pendingWin) { close(); return; }
+		const res = await resellPendingWin();
+		if (res.ok) {
+			const cents = res.data?.credited_cents ?? 0;
+			toaster.create({
+				description: `Sold for $${(cents / 100).toFixed(2)}`,
+				type: "success",
+				duration: 2500,
+			});
+		} else {
+			toaster.create({
+				description: `Couldn't resell: ${res.error ?? "unknown error"}`,
+				type: "error",
+				duration: 2500,
+			});
+		}
+		close();
+	};
+
+	const handleKeepCard = async () => {
+		if (!pendingWin) { close(); return; }
+		const res = await keepCardWin();
+		if (res.ok) {
+			toaster.create({
+				description: "Added to your collection",
+				type: "success",
+				duration: 2000,
+			});
+		} else {
+			toaster.create({
+				description: `Couldn't keep card: ${res.error ?? "unknown error"}`,
+				type: "error",
+				duration: 2500,
+			});
+		}
+		close();
+	};
+
+	// Local dismiss only — the Win row stays PENDING in the DB and shows up
+	// in the user's inventory tab to act on later.
+	const handleAddToInventory = () => {
+		dismissPendingWin();
+		close();
+	};
+
+	// "Open now" is the booster-pack reveal animation. For single-card wins
+	// the same button position becomes "Add to collection" — different
+	// backend call, no animation, since there's nothing to "open."
+	const isSingleCard = pendingWin?.prize_kind === 'SINGLE_CARD';
+	const primaryLabel = isSingleCard ? "Add to collection" : "Open now";
+	const onPrimary = isSingleCard ? handleKeepCard : openPack;
 
 	const onAutoShuffleComplete = () => {
 		setPhase("flipping");
@@ -298,9 +362,9 @@ const WinChoiceModal = () => {
 										pointerEvents: phase === "pack" && boosterReady ? "auto" : "none",
 									}}
 								>
-									<button className="lg-btn" onClick={close}>Resell</button>
-									<button className="lg-btn" onClick={close}>Store</button>
-									<button className="lg-btn" onClick={openPack}>Open now</button>
+									<button className="lg-btn" onClick={handleResell}>Resell</button>
+									<button className="lg-btn" onClick={handleAddToInventory}>Add to inventory</button>
+									<button className="lg-btn" onClick={onPrimary}>{primaryLabel}</button>
 								</HStack>
 
 								<HStack

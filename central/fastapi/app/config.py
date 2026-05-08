@@ -18,6 +18,23 @@ PRIVATE_KEY      = os.environ.get("CLAW_PRIVATE_KEY")
 DEFAULT_MAX_FEE    = os.environ.get("DEFAULT_MAX_FEE", 20)
 DEFAULT_FEE_GROWTH = os.environ.get("DEFAULT_FEE_GROWTH", 50)
 
+# Resell prices per CardRarity, in cents. Placeholder — operator should
+# eventually drive this from an admin-config table or a per-card snapshot.
+RESELL_PRICE_BY_RARITY_CENTS = {
+	"COMMON":     50,
+	"UNCOMMON":   150,
+	"RARE":       400,
+	"HOLO_RARE":  900,
+	"ULTRA_RARE": 2500,
+	"CHASE":      8000,
+}
+
+# Resell price per booster SKU, in cents. "default" is the fallback when an
+# unknown SKU shows up. Same placeholder caveat as above.
+RESELL_PRICE_BY_BOOSTER_SKU_CENTS = {
+	"default": 500,
+}
+
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", None)
 TELEGRAM_BOT_CHATS = {
 	'regular': int(info) if (info := os.environ.get("TELEGRAM_BOT_CHAT_INFO", None)) is not None else None

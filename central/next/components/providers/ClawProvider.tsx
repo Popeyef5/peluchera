@@ -77,6 +77,44 @@ interface RoundStartData {
 	round_info: [number, number]; // [MaxFee, FeeGrowth]
 }
 
+export type PrizeKind = 'BOOSTER_PAIR' | 'SINGLE_CARD';
+
+export interface PendingWin {
+	win_id: string;
+	prize_kind: PrizeKind;
+	expires_at: number;          // unix seconds
+	resell_price_cents: number;
+}
+
+export interface WinCard {
+	id: string;
+	set: string;
+	number: string;
+	rarity: string;
+	image_url: string;
+	condition: string | null;
+	status: string;
+	acquired_at: number | null;
+}
+
+export interface SettleResult<T = Record<string, unknown>> {
+	ok: boolean;
+	error?: string;
+	code?: string;
+	data?: T;
+}
+
+// Richer pending-win shape returned by get_inventory. Extends PendingWin
+// with prize details so the inventory tile can render context (sku,
+// card preview) without an extra round-trip.
+export interface InventoryWin extends PendingWin {
+	created_at: number;
+	ball_serial: string | null;
+	closed_booster?: { id: string; sku: string };
+	opened_booster?: { id: string; sku: string; video_url: string; video_hash: string };
+	card_preview?: WinCard;
+}
+
 interface ClawCtx {
 	queueCount: number;
 	position: number;
@@ -93,11 +131,22 @@ interface ClawCtx {
 	roundPlayed: number;
 	roundWon: number;
 	secondsLeft: number;
+	pendingWin: PendingWin | null;
 	setBetAmount: (v: number) => void;
 	press: (a: keyof typeof ACTION_TO_KEY) => void;
 	release: (a: keyof typeof ACTION_TO_KEY) => void;
 	approveAndBet: () => void;
 	withdraw: () => void;
+	openBoosterWin: () => Promise<SettleResult<{ cards: WinCard[] }>>;
+	resellPendingWin: () => Promise<SettleResult<{ credited_cents: number }>>;
+	keepCardWin: () => Promise<SettleResult<{ card: WinCard }>>;
+	dismissPendingWin: () => void;
+	// Inventory — works on any Win/Card the user owns, not just pendingWin.
+	getInventory: () => Promise<SettleResult<{ pendingWins: InventoryWin[]; cards: WinCard[] }>>;
+	openBoosterByWinId: (winId: string) => Promise<SettleResult<{ cards: WinCard[] }>>;
+	resellWinByWinId: (winId: string, prizeKind: PrizeKind) => Promise<SettleResult<{ credited_cents: number }>>;
+	keepCardByWinId: (winId: string) => Promise<SettleResult<{ card: WinCard }>>;
+	resellCardFromCollection: (cardId: string) => Promise<SettleResult<{ credited_cents: number }>>;
 }
 
 function useCountdown(initialSeconds: number): [number, (s: number) => void] {
@@ -155,6 +204,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [clawSocketOn, setClawSocketOn] = useState(false);
 	const [roundPlayed, setRoundPlayed] = useState(0);
 	const [roundWon, setRoundWon] = useState(0);
+	const [pendingWin, setPendingWin] = useState<PendingWin | null>(null);
 	const [secondsLeft, updateSeconds] = useCountdown(0);
 
 	/* wallet */
@@ -218,7 +268,9 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 					type: "loading",      // shows spinner & neutral colour
 				});
 
-				// start fallback timer — go red if we hear nothing
+				// Fallback — go red if no player_win arrives. The always-on
+				// player_win listener below cancels this timer if the win
+				// event lands first.
 				timerId.current = setTimeout(() => {
 					if (!toastId.current) return;
 					toaster.update(toastId.current, {
@@ -229,26 +281,6 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 					});
 					toastId.current = null;
 				}, 6000);
-
-				/** listen ONCE for the outcome, then morph the same toast */
-				socket.once("player_win", () => {
-					console.log('[claw] player_win (scoped, inside turn_end)');
-					if (timerId.current) clearTimeout(timerId.current);       // cancel fallback
-					if (!toastId.current) return;
-
-					setRoundWon((w) => w + 1);
-
-					celebrate()
-
-					toaster.update(toastId.current, {
-						description: "🎉 You won!",
-						type: "success",
-						duration: 1000,
-						closable: true,
-					});
-
-					toastId.current = null;
-				});
 			}
 			setQueueCount((q) => Math.max(q - 1, 0));
 			setIsPlaying(false);
@@ -290,9 +322,30 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setAccountWithdrawals(data.withdrawals);
 		}
 
-		const onPlayerWinDebug = () => console.log('[claw] player_win (always-on listener)');
-		socket.on('player_win', onPlayerWinDebug);
+		// Backend emits player_win room-targeted to the winning player only,
+		// with payload = PendingWin (or null in legacy fallback). This single
+		// listener captures the payload, morphs the loading toast set up in
+		// onTurnEnd, and increments roundWon to trigger the win modal.
+		const onPlayerWin = (payload: PendingWin | null) => {
+			console.log('[claw] player_win', payload);
+			if (timerId.current) clearTimeout(timerId.current);
+			if (payload?.win_id) setPendingWin(payload);
 
+			if (toastId.current) {
+				toaster.update(toastId.current, {
+					description: "🎉 You won!",
+					type: "success",
+					duration: 1000,
+					closable: true,
+				});
+				toastId.current = null;
+			}
+
+			setRoundWon((w) => w + 1);
+			celebrate();
+		};
+
+		socket.on('player_win', onPlayerWin);
 		socket.on('player_queued', onPlayerQueued);
 		socket.on('turn_start', onTurnStart);
 		socket.on('claw_connection_change', onClawSocketConnectionChange);
@@ -303,7 +356,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		socket.on('round_start', onRoundStart);
 
 		return () => {
-			socket.off('player_win', onPlayerWinDebug);
+			socket.off('player_win', onPlayerWin);
 			socket.off('player_queued', onPlayerQueued);
 			socket.off('turn_start', onTurnStart);
 			socket.off('claw_connection_change', onClawSocketConnectionChange);
@@ -393,6 +446,94 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		}
 	}, [address, chainId, betAmount, socket]);
 
+	/* win actions — param-based primitives + modal-bound wrappers */
+
+	type AckResolver<T> = (r: { status: string } & Record<string, unknown>, resolve: (v: SettleResult<T>) => void) => void;
+
+	const emitAck = useCallback(<T,>(event: string, data: object, parse: AckResolver<T>): Promise<SettleResult<T>> => {
+		return new Promise((resolve) => {
+			socket.emit(event, data, (r: { status: string } & Record<string, unknown>) => parse(r, resolve));
+		});
+	}, [socket]);
+
+	const openBoosterByWinId = useCallback(
+		(winId: string) => emitAck<{ cards: WinCard[] }>('open_booster_win', { win_id: winId }, (r, resolve) => {
+			if (r.status === 'ok') resolve({ ok: true, data: { cards: (r.cards as WinCard[] | undefined) ?? [] } });
+			else resolve({ ok: false, error: r.error as string | undefined, code: r.code as string | undefined });
+		}),
+		[emitAck],
+	);
+
+	const resellWinByWinId = useCallback(
+		(winId: string, prizeKind: PrizeKind) => {
+			const event = prizeKind === 'BOOSTER_PAIR' ? 'resell_booster_win' : 'resell_card_win';
+			return emitAck<{ credited_cents: number }>(event, { win_id: winId }, (r, resolve) => {
+				if (r.status === 'ok') resolve({ ok: true, data: { credited_cents: (r.credited_cents as number | undefined) ?? 0 } });
+				else resolve({ ok: false, error: r.error as string | undefined, code: r.code as string | undefined });
+			});
+		},
+		[emitAck],
+	);
+
+	const keepCardByWinId = useCallback(
+		(winId: string) => emitAck<{ card: WinCard }>('keep_card_win', { win_id: winId }, (r, resolve) => {
+			if (r.status === 'ok' && r.card) resolve({ ok: true, data: { card: r.card as WinCard } });
+			else resolve({ ok: false, error: r.error as string | undefined, code: r.code as string | undefined });
+		}),
+		[emitAck],
+	);
+
+	const resellCardFromCollection = useCallback(
+		(cardId: string) => emitAck<{ credited_cents: number }>('resell_card_from_collection', { card_id: cardId }, (r, resolve) => {
+			if (r.status === 'ok') resolve({ ok: true, data: { credited_cents: (r.credited_cents as number | undefined) ?? 0 } });
+			else resolve({ ok: false, error: r.error as string | undefined, code: r.code as string | undefined });
+		}),
+		[emitAck],
+	);
+
+	const getInventory = useCallback(
+		() => emitAck<{ pendingWins: InventoryWin[]; cards: WinCard[] }>('get_inventory', {}, (r, resolve) => {
+			if (r.status === 'ok') {
+				resolve({
+					ok: true,
+					data: {
+						pendingWins: (r.pending_wins as InventoryWin[] | undefined) ?? [],
+						cards: (r.cards as WinCard[] | undefined) ?? [],
+					},
+				});
+			} else resolve({ ok: false, error: r.error as string | undefined, code: r.code as string | undefined });
+		}),
+		[emitAck],
+	);
+
+	// Modal-bound wrappers — clear pendingWin on success since the modal
+	// represents that one notification.
+	const openBoosterWin = useCallback(async (): Promise<SettleResult<{ cards: WinCard[] }>> => {
+		if (!pendingWin?.win_id) return { ok: false, error: "no pending win" };
+		const r = await openBoosterByWinId(pendingWin.win_id);
+		if (r.ok) setPendingWin(null);
+		return r;
+	}, [pendingWin, openBoosterByWinId]);
+
+	const resellPendingWin = useCallback(async (): Promise<SettleResult<{ credited_cents: number }>> => {
+		if (!pendingWin?.win_id) return { ok: false, error: "no pending win" };
+		const r = await resellWinByWinId(pendingWin.win_id, pendingWin.prize_kind);
+		if (r.ok) setPendingWin(null);
+		return r;
+	}, [pendingWin, resellWinByWinId]);
+
+	const keepCardWin = useCallback(async (): Promise<SettleResult<{ card: WinCard }>> => {
+		if (!pendingWin?.win_id) return { ok: false, error: "no pending win" };
+		if (pendingWin.prize_kind !== 'SINGLE_CARD') return { ok: false, error: "not a single-card win" };
+		const r = await keepCardByWinId(pendingWin.win_id);
+		if (r.ok) setPendingWin(null);
+		return r;
+	}, [pendingWin, keepCardByWinId]);
+
+	const dismissPendingWin = useCallback(() => {
+		setPendingWin(null);
+	}, []);
+
 	const withdraw = useCallback(async () => {
 		if (!address || !chainId) {
 			toaster.create({
@@ -447,11 +588,21 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		roundPlayed,
 		roundWon,
 		secondsLeft,
+		pendingWin,
 		setBetAmount,
 		press,
 		release,
 		approveAndBet,
 		withdraw,
+		openBoosterWin,
+		resellPendingWin,
+		keepCardWin,
+		dismissPendingWin,
+		getInventory,
+		openBoosterByWinId,
+		resellWinByWinId,
+		keepCardByWinId,
+		resellCardFromCollection,
 	};
 
 	return <ClawContext.Provider value={value}>{children}</ClawContext.Provider>;
