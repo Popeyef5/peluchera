@@ -62,6 +62,8 @@ async def handle_pi_messages():
                     asyncio.create_task(turn_end())
                 elif message_type == "prize_won":
                     asyncio.create_task(on_turn_win(data.get("data") or {}))
+                elif message_type == "fault":
+                    asyncio.create_task(on_pi_fault(data.get("data") or {}))
                 else:
                     log.warning(f"Unknown message type from Pi: {message_type}")
                     
@@ -163,6 +165,32 @@ async def turn_end(*_):
       log.info(f"Started turn {state.current_key} by player {state.current_player} from turn_end callback")
     
   
+async def on_pi_fault(data: Optional[dict] = None):
+    """Handler for Pi's `fault` message (forwarded from the chute ESP32).
+
+    Wire shape: {"kind": "rfid_failed" | "exit_timeout" | "internal_error",
+                 "reason"?: "still_blocked" | "esp_timeout" | "esp_reset"}.
+
+    Before the ESP32 split + this handler, chute faults were dropped on
+    the floor (logged as "Unknown message type"), so the frontend would
+    silently fall through to "Better luck next time" even though the
+    cabinet was physically latched. Now:
+
+    - Operators get a logged signal.
+    - The current player's room gets a `cabinet_fault` event so the
+      frontend can surface "we're sorting this out" instead of a fake loss.
+
+    Note: this does NOT settle anything on-chain. The operator path
+    (void_ball + ledger refund) still happens out-of-band.
+    """
+    data = data or {}
+    kind = data.get("kind") or "unknown"
+    reason = data.get("reason")
+    log.warning("Pi reported cabinet fault: kind=%s reason=%s", kind, reason)
+    if state.current_player:
+        await sio.emit("cabinet_fault", data, room=state.current_player)
+
+
 async def on_turn_win(data: Optional[dict] = None):
     """Handler for Pi's `prize_won` message.
 

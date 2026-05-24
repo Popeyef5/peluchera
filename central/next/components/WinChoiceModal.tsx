@@ -1,9 +1,9 @@
 "use client";
 
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Box, Dialog, HStack, Portal, VStack } from "@chakra-ui/react";
 import { Canvas } from "@react-three/fiber";
-import { Environment, Float, PresentationControls } from "@react-three/drei";
+import { Float, PresentationControls } from "@react-three/drei";
 import { useClaw } from "@/components/providers";
 import { toaster } from "@/components/ui/toaster";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
@@ -12,20 +12,6 @@ import CardStack from "@/components/CardStack";
 import { PACK, SHUFFLE, FLIP, STACK_APPROACH } from "@/lib/animConfig";
 
 type Phase = "pack" | "tearing" | "revealing" | "shuffling" | "flipping" | "swiping";
-
-// Tiny error boundary so a failed HDR fetch (drei's Environment loads an
-// external file from pmndrs/drei-assets) doesn't crash the whole canvas.
-class SilentBoundary extends React.Component<
-	{ children: React.ReactNode; fallback?: React.ReactNode },
-	{ failed: boolean }
-> {
-	state = { failed: false };
-	static getDerivedStateFromError() { return { failed: true }; }
-	componentDidCatch() {/* swallow — fallback renders */}
-	render() {
-		return this.state.failed ? (this.props.fallback ?? null) : this.props.children;
-	}
-}
 
 const TIMINGS = {
 	tearing: PACK.tearingMs,
@@ -48,9 +34,19 @@ const WinChoiceModal = () => {
 	// `boosterReady` flips once the rise-in animation finishes — buttons appear then.
 	const [entered, setEntered] = useState(false);
 	const [boosterReady, setBoosterReady] = useState(false);
+	// Two independent gates for `entered`: Chakra's own dialog-enter has to
+	// finish first (delayPassed), AND the GLB has to be loaded (meshReady).
+	// Without the mesh gate the rise can race the fetch and the user sees a
+	// half-loaded mesh pop into existence mid-climb.
+	const [meshReady, setMeshReady] = useState(false);
+	const [delayPassed, setDelayPassed] = useState(false);
 
 	const ENTRY_DELAY_MS = PACK.entryDelayMs;
 	const ENTRY_DURATION_MS = PACK.entryDurationMs;
+	// Hard upper bound for waiting on the GLB. With useGLTF.preload() at
+	// module load the mesh is normally cached well before this; the fallback
+	// only fires for cold loads, slow networks, or load failures.
+	const MESH_WAIT_TIMEOUT_MS = 1200;
 
 	useEffect(() => {
 		console.log('[WinChoiceModal] phase ->', phase);
@@ -88,17 +84,37 @@ const WinChoiceModal = () => {
 		if (!open) {
 			setEntered(false);
 			setBoosterReady(false);
+			setDelayPassed(false);
+			// meshReady is intentionally NOT reset — drei's useGLTF caches
+			// the parsed scene globally, so once it's loaded it stays loaded
+			// for the lifetime of the page.
 			return;
 		}
-		// Delay past Chakra Dialog's own enter animation (~300ms) so the user
-		// actually sees the pack rise into view, not animate while invisible.
-		const t1 = setTimeout(() => setEntered(true), ENTRY_DELAY_MS);
-		const t2 = setTimeout(() => setBoosterReady(true), ENTRY_DELAY_MS + ENTRY_DURATION_MS);
+		// Chakra Dialog's own enter animation (~300ms) plays first; the rise
+		// shouldn't start while the modal is still flying in.
+		const t1 = setTimeout(() => setDelayPassed(true), ENTRY_DELAY_MS);
+		// Fallback in case the GLB never reports ready (load failure, very
+		// slow network) — start the rise anyway so the UI doesn't lock up.
+		const t2 = setTimeout(() => setMeshReady(true), MESH_WAIT_TIMEOUT_MS);
 		return () => {
 			clearTimeout(t1);
 			clearTimeout(t2);
 		};
 	}, [open]);
+
+	// Rise starts when both gates are open: dialog-enter delay elapsed AND
+	// the GLB is loaded (or the fallback timeout fired). Buttons follow
+	// ENTRY_DURATION_MS after the rise begins.
+	useEffect(() => {
+		if (!open || entered) return;
+		if (meshReady && delayPassed) setEntered(true);
+	}, [open, meshReady, delayPassed, entered]);
+
+	useEffect(() => {
+		if (!entered) return;
+		const t = setTimeout(() => setBoosterReady(true), ENTRY_DURATION_MS);
+		return () => clearTimeout(t);
+	}, [entered, ENTRY_DURATION_MS]);
 
 	const close = () => setOpen(false);
 
@@ -230,14 +246,13 @@ const WinChoiceModal = () => {
 				<Dialog.Backdrop className="lg-drawer-backdrop" />
 				<Dialog.Positioner overflow="hidden">
 					<Dialog.Content
-						className={isMobile ? undefined : "glass holo-rim"}
 						w="min(92vw, 660px)"
-						borderRadius={isMobile ? 0 : "1.75rem"}
+						borderRadius={0}
 						p={0}
 						overflow="visible"
 						bg="transparent"
-						boxShadow={isMobile ? "none" : undefined}
-						style={isMobile ? { background: "transparent", backdropFilter: "none", WebkitBackdropFilter: "none" } : undefined}
+						boxShadow="none"
+						style={{ background: "transparent", backdropFilter: "none", WebkitBackdropFilter: "none" }}
 					>
 						<VStack gap={5} p={6} bg="transparent">
 							<Box
@@ -307,12 +322,9 @@ const WinChoiceModal = () => {
 											}}
 											style={{ background: "transparent" }}
 										>
-											<ambientLight intensity={0.45} />
+											<ambientLight intensity={8.45} />
 											<directionalLight position={[2, 3, 4]} intensity={1.2} />
 											<Suspense fallback={null}>
-												<SilentBoundary>
-													<Environment preset="studio" />
-												</SilentBoundary>
 												<PresentationControls
 													global
 													snap
@@ -325,7 +337,7 @@ const WinChoiceModal = () => {
 														rotationIntensity={phase === "pack" ? 0.35 : 0}
 														floatIntensity={phase === "pack" ? 0.5 : 0}
 													>
-														<Booster />
+														<Booster onReady={() => setMeshReady(true)} />
 													</Float>
 												</PresentationControls>
 											</Suspense>

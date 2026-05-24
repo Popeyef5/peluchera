@@ -1,178 +1,158 @@
+"""Pi-side websocket server: claw I/O + bridge to the chute ESP32.
+
+Wire protocol with central is unchanged:
+
+Inbound (central → Pi):
+  {"type": "move",        "data": {"bitmask": int}}
+  {"type": "turn_start",  "data": ...}
+  {"type": "fault_clear", "data": ...}
+
+Outbound (Pi → central):
+  {"type": "turn_end"}
+  {"type": "prize_won",   "data": {"tag_uid": "<hex>"}}
+  {"type": "fault",       "data": {"kind": "...", "reason"?: "..."}}
+
+The chute identification subsystem (entry/exit break-beams, PN5180 pool,
+solenoid) lives on the ESP32 now — see esp/ and esp_link.py. fault frames
+that originate on the ESP32 are forwarded as-is, which fixes the pre-split
+bug where any chute fault was silently dropped on the Pi side.
+"""
+
 import asyncio
 import json
 import logging
-import lgpio
+from contextlib import asynccontextmanager
+from typing import Optional
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException
+
+from esp_link import EspLink
+from fsm import FSM, FSMHooks, EV_TURN_START, EV_FAULT_CLEAR
+from hardware import ClawOutputs, Sensors, open_gpiochip
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("rpi")
 
 
-# Pi 5 RP1 header: /dev/gpiochip0 on current Bookworm; /dev/gpiochip4 on early Pi 5 kernels.
-def _open_gpiochip():
-    last_err = None
-    for chip in (0, 4):
-        try:
-            return lgpio.gpiochip_open(chip)
-        except lgpio.error as e:
-            last_err = e
-    raise RuntimeError(f"No usable gpiochip found (tried 0 and 4): {last_err}")
+# Hardware singletons. Constructed at import; the loop + ESP link are
+# bound in lifespan.
+h = open_gpiochip()
+claw = ClawOutputs(h)
+events: asyncio.Queue[str] = asyncio.Queue()
+esp_events: asyncio.Queue = asyncio.Queue()
+sensors = Sensors(h=h, events=events)
+sensors.install()
+esp = EspLink()
 
+fsm: Optional[FSM] = None
 
-h = _open_gpiochip()
-
-COIN = 16
-GRAB = 26
-W = 12
-A = 5
-S = 6
-D = 13
-BB = 17
-CLAW = 27
-
-
-class GameState:
-    def __init__(self):
-        self.processing_turn = False
-
-
-game_state = GameState()
-
-OUTPUT_PINS = {
-    1 << 0: A,  # Left
-    1 << 1: D,  # Right
-    1 << 2: W,  # Up
-    1 << 3: S,  # Down
-    1 << 4: GRAB,  # Grab
-    1 << 5: COIN,  # Credit
-}
-
-for pin in OUTPUT_PINS.values():
-    lgpio.gpio_claim_output(h, pin, 0)
-
-for pin in (BB, CLAW):
-    lgpio.gpio_claim_input(h, pin, lgpio.SET_PULL_UP)
-
-GLITCH_US = 100
-lgpio.gpio_set_debounce_micros(h, BB, GLITCH_US)
-lgpio.gpio_set_debounce_micros(h, CLAW, 100 * GLITCH_US)
-
-app = FastAPI()
-
-
-async def on_move(websocket, message):
-    """Handle movement commands from the client."""
-    mask = message.get("bitmask", 0)
-    for bit, pin in OUTPUT_PINS.items():
-        lgpio.gpio_write(h, pin, 1 if mask & bit else 0)
-
-
-async def on_turn_start(websocket, message):
-    log.info("Turn start")
-    game_state.processing_turn = False
-    lgpio.gpio_write(h, COIN, 1)
-    await asyncio.sleep(0.1)
-    lgpio.gpio_write(h, COIN, 0)
-    await asyncio.sleep(0.1)
-    lgpio.gpio_write(h, W, 1)
-    await asyncio.sleep(0.1)
-    lgpio.gpio_write(h, W, 0)
-
-
-MESSAGE_HANDLERS = {
-    "move": on_move,
-    "turn_start": on_turn_start
-}
 
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.active_connections.append(ws)
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, ws: WebSocket):
         try:
-            self.active_connections.remove(websocket)
-        except Exception as e:
-            log.warning(f"Error removing connection: {e}")
+            self.active_connections.remove(ws)
+        except ValueError:
+            pass
 
-    async def send_personal_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
-
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
+    async def broadcast(self, payload: dict) -> None:
+        text = json.dumps(payload)
+        for c in list(self.active_connections):
             try:
-                await connection.send_text(message)
+                await c.send_text(text)
             except Exception as e:
-                log.warning(f"Error sending message to connection: {e}")
+                log.warning("send failed: %s", e)
+
 
 manager = ConnectionManager()
 
-@app.websocket("/")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    log.info(f"WebSocket connected")
 
+async def _esp_pump() -> None:
+    """Fan ESP events into the FSM-owned queue."""
+    async for msg in esp.events():
+        await esp_events.put(msg)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    global fsm
+    loop = asyncio.get_running_loop()
+    sensors.bind_loop(loop)
+
+    esp_task = asyncio.create_task(esp.run())
+    pump_task = asyncio.create_task(_esp_pump())
+
+    fsm = FSM(
+        events=events,
+        esp_events=esp_events,
+        esp=esp,
+        hooks=FSMHooks(
+            broadcast=manager.broadcast,
+            start_turn_pulse=claw.start_turn_pulse,
+        ),
+    )
+    fsm_task = asyncio.create_task(fsm.run())
+    try:
+        yield
+    finally:
+        for t in (fsm_task, pump_task, esp_task):
+            t.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+async def on_move(_ws, message):
+    claw.apply_move_bitmask((message or {}).get("bitmask", 0))
+
+
+async def on_turn_start(_ws, _message):
+    log.info("turn_start received")
+    events.put_nowait(EV_TURN_START)
+
+
+async def on_fault_clear(_ws, _message):
+    log.info("fault_clear received")
+    events.put_nowait(EV_FAULT_CLEAR)
+
+
+MESSAGE_HANDLERS = {
+    "move": on_move,
+    "turn_start": on_turn_start,
+    "fault_clear": on_fault_clear,
+}
+
+
+@app.websocket("/")
+async def websocket_endpoint(ws: WebSocket):
+    await manager.connect(ws)
+    log.info("WS connected (active=%d)", len(manager.active_connections))
     try:
         while True:
-            data = await websocket.receive_text()
+            data = await ws.receive_text()
             try:
-                # Parse JSON message
                 message = json.loads(data)
-                message_type = message.get("type")
-                message_data = message.get("data")
-
-                # Check if message type is supported
-                if message_type in MESSAGE_HANDLERS:
-                    # Call appropriate handler
-                    await MESSAGE_HANDLERS[message_type](websocket, message_data)
+                mtype = message.get("type")
+                mdata = message.get("data")
+                handler = MESSAGE_HANDLERS.get(mtype)
+                if handler:
+                    await handler(ws, mdata)
                 else:
-                    # Send error for unknown message type
-                    error_response = {
+                    await ws.send_text(json.dumps({
                         "type": "error",
-                        "message": f"Unknown message type: {message_type}",
-                        "supported_types": list(MESSAGE_HANDLERS.keys())
-                    }
-                    await websocket.send_text(json.dumps(error_response))
-
+                        "message": f"Unknown message type: {mtype}",
+                        "supported_types": list(MESSAGE_HANDLERS.keys()),
+                    }))
             except json.JSONDecodeError:
-                # Handle invalid JSON
-                error_response = {
-                    "type": "error",
-                    "message": "Invalid JSON format"
-                }
-                await websocket.send_text(json.dumps(error_response))
-
+                await ws.send_text(json.dumps({
+                    "type": "error", "message": "Invalid JSON format",
+                }))
     except (WebSocketDisconnect, WebSocketException) as e:
-        manager.disconnect(websocket)
-        log.warning("WebSocket disconnected")
-        log.warning(e)
-
-
-loop = asyncio.get_event_loop()  # grab the main loop once
-
-def prize_won(chip, gpio, level, tick):
-    if level == 0:
-        if not game_state.processing_turn:
-            return
-        log.info("Prize won")
-        loop.call_soon_threadsafe(asyncio.create_task, manager.broadcast(json.dumps({"type": "prize_won"})))
-        game_state.processing_turn = False
-
-
-def turn_end(chip, gpio, level, tick):
-    if level == 1:
-        log.info("Turn end")
-        game_state.processing_turn = True
-        loop.call_soon_threadsafe(asyncio.create_task, manager.broadcast(json.dumps({"type": "turn_end"})))
-
-
-# lgpio.callback returns a handle that must stay alive for the callback to keep firing.
-_bb_cb = lgpio.callback(h, BB, lgpio.FALLING_EDGE, prize_won)
-_claw_cb = lgpio.callback(h, CLAW, lgpio.RISING_EDGE, turn_end)
-
-if __name__ == "__main__":
-    import fastapi
-    fastapi.run(app, host="0.0.0.0", port=5001, debug=True)
+        manager.disconnect(ws)
+        log.warning("WS disconnected: %s", e)

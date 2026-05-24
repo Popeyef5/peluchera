@@ -38,8 +38,14 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 	const liftApex = isMobile ? SWIPE.liftApexMobile : SWIPE.liftApex;
 	const [deck, setDeck] = useState(MOCK_DECK);
 	const [departing, setDeparting] = useState<Departing | null>(null);
+	const [dragging, setDragging] = useState(false);
 	const x = useMotionValue(0);
 	const y = useMotionValue(0);
+
+	// Top-stack tilt is muted while the user is dragging the top card or while
+	// a programmatic shuffle is running — tilt on a translating card looks
+	// wobbly. HoloCard handles the smooth ease back to neutral.
+	const tiltSuppressed = dragging || (autoShuffles ?? 0) > 0;
 
 	// Refs to access current state from inside long-lived effects
 	const deckRef = React.useRef(deck);
@@ -150,6 +156,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						subtypes={next.subtypes}
 						mask={next.mask}
 						trainerGallery={next.trainerGallery}
+						suppressTilt={tiltSuppressed}
 					/>
 				</motion.div>
 				{/* Slot 1 — the draggable card. Re-keyed per top.id so it remounts
@@ -161,7 +168,9 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 					drag
 					dragMomentum={false}
 					style={{ x, y }}
+					onDragStart={() => setDragging(true)}
 					onDragEnd={(_, info) => {
+						setDragging(false);
 						const dist = Math.hypot(info.offset.x, info.offset.y);
 						if (dist > SWIPE_COMMIT_PX) {
 							commit(info.offset.x, info.offset.y);
@@ -179,6 +188,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						subtypes={top.subtypes}
 						mask={top.mask}
 						trainerGallery={top.trainerGallery}
+						suppressTilt={tiltSuppressed}
 					/>
 				</motion.div>
 
@@ -230,6 +240,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 							subtypes={departing.card.subtypes}
 							mask={departing.card.mask}
 							trainerGallery={departing.card.trainerGallery}
+							suppressTilt
 						/>
 					</motion.div>
 				)}

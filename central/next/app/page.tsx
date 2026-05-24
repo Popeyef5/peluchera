@@ -12,8 +12,10 @@ import GameController from "@/components/GameController";
 import AccountManager from "@/components/AccountManager";
 import { useColorMode } from "@/components/ui/color-mode";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
+import { subscribeOrientation } from "@/lib/orientationTilt";
 
 const WinChoiceModal = dynamic(() => import("@/components/WinChoiceModal"), { ssr: false });
+const MotionPermissionModal = dynamic(() => import("@/components/MotionPermissionModal"), { ssr: false });
 
 const display = Bricolage_Grotesque({
 	weight: ["400", "500", "700", "800"],
@@ -50,10 +52,13 @@ const DEFAULTS = {
 
 /* ── Hooks ─────────────────────────────────────────────────────────────── */
 
-/** Global specular tracker. Writes --spec-angle + --spec-strength on every
- *  `.spec` element on every pointermove. */
-function useGlobalSpecular() {
+/** Global specular tracker. On desktop, writes --spec-angle + --spec-strength on
+ *  every `.spec` element from cursor position. On mobile, the same vars come from
+ *  device orientation — one global tilt direction applies uniformly to all spec
+ *  elements (a phone tilt represents a single incident light direction). */
+function useGlobalSpecular(isMobile: boolean) {
 	useEffect(() => {
+		if (isMobile) return;
 		const update = (cx: number, cy: number) => {
 			const els = document.querySelectorAll<HTMLElement>(".spec");
 			for (const el of els) {
@@ -77,7 +82,20 @@ function useGlobalSpecular() {
 		const onMove = (e: PointerEvent) => update(e.clientX, e.clientY);
 		window.addEventListener("pointermove", onMove);
 		return () => window.removeEventListener("pointermove", onMove);
-	}, []);
+	}, [isMobile]);
+
+	useEffect(() => {
+		if (!isMobile) return;
+		return subscribeOrientation(({ angle, strength }) => {
+			const els = document.querySelectorAll<HTMLElement>(".spec");
+			const angStr = `${angle.toFixed(2)}deg`;
+			const strStr = strength.toFixed(3);
+			for (const el of els) {
+				el.style.setProperty("--spec-angle", angStr);
+				el.style.setProperty("--spec-strength", strStr);
+			}
+		});
+	}, [isMobile]);
 }
 
 /* ── Pieces ────────────────────────────────────────────────────────────── */
@@ -102,6 +120,7 @@ const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | 
 	const ref = useRef<HTMLButtonElement>(null);
 
 	useEffect(() => {
+		if (mobile) return;
 		let raf: number | null = null;
 		const update = (cx: number, cy: number) => {
 			const el = ref.current;
@@ -128,7 +147,29 @@ const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | 
 			window.removeEventListener("pointermove", onMove);
 			if (raf) cancelAnimationFrame(raf);
 		};
-	}, []);
+	}, [mobile]);
+
+	// Mobile: drive the play button's local gloss vars (--lmx / --lmy /
+	// --gangle) from phone tilt instead of cursor. Tilt direction maps to a
+	// virtual pointer position inside the button — tilt right and the gloss
+	// pools toward the right edge, tilt up and it rises to the top.
+	useEffect(() => {
+		if (!mobile) return;
+		return subscribeOrientation(({ dBeta, dGamma, angle }) => {
+			const el = ref.current;
+			if (!el) return;
+			const r = el.getBoundingClientRect();
+			if (r.width === 0 || r.height === 0) return;
+			const TILT_RANGE = 22;
+			const tx = Math.max(-1, Math.min(1, dGamma / TILT_RANGE));
+			const ty = Math.max(-1, Math.min(1, -dBeta / TILT_RANGE));
+			const lmx = r.width * (0.5 + 0.5 * tx);
+			const lmy = r.height * (0.5 + 0.5 * ty);
+			el.style.setProperty("--lmx", `${lmx.toFixed(1)}px`);
+			el.style.setProperty("--lmy", `${lmy.toFixed(1)}px`);
+			el.style.setProperty("--gangle", `${angle.toFixed(2)}deg`);
+		});
+	}, [mobile]);
 
 	useEffect(() => {
 		if (position > 1) setUserText(`Your position in queue: ${position}`);
@@ -204,7 +245,6 @@ const Rates = () => (
 
 const Rules = ({ containerRef }: { containerRef?: React.RefObject<HTMLElement | null> }) => {
 	const [open, setOpen] = useState(false);
-	const isMobile = useIsMobile();
 	return (
 		<Drawer.Root placement="bottom" open={open} onOpenChange={(e) => setOpen(e.open)}>
 			<Drawer.Trigger asChild>
@@ -215,8 +255,7 @@ const Rules = ({ containerRef }: { containerRef?: React.RefObject<HTMLElement | 
 				<Drawer.Positioner pos={containerRef ? "absolute" : "fixed"} boxSize="full">
 					<Drawer.Content
 						className="glass holo-rim rules-drawer"
-						borderTopRadius="1.5rem"
-						borderBottomRadius={isMobile ? "0" : "1.5rem"}
+						borderRadius="1.5rem"
 					>
 						<button className="lg-drawer__close" onClick={() => setOpen(false)} aria-label="Close">✕</button>
 						<div className="rates__tag">Quick start</div>
@@ -553,6 +592,105 @@ const Styles = ({ accent }: { accent: string }) => (
 		}
 		.lg-root .rules:hover { transform: translateY(-1px); }
 
+		/* D-pad keys */
+		.lg-root .kbd {
+			width: 7vh; height: 7vh;
+			display: inline-flex; align-items: center; justify-content: center;
+			font-family: var(--lg-display);
+			color: var(--ink);
+			border-radius: 16px;
+			cursor: pointer;
+			background: linear-gradient(180deg, rgba(255,255,255,0.62) 0%, rgba(220,216,206,0.38) 100%);
+			backdrop-filter: blur(calc(20px * var(--frost))) saturate(125%);
+			-webkit-backdrop-filter: blur(calc(20px * var(--frost))) saturate(125%);
+			border: 1px solid rgba(255,255,255,0.7);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.95),
+				inset 0 -1px 0 rgba(31,29,26,0.06),
+				0 6px 14px rgba(31,29,26,0.10);
+			transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+			user-select: none;
+			touch-action: none;
+			-webkit-tap-highlight-color: transparent;
+			position: relative;
+		}
+		.lg-root .kbd__glyph {
+			font-size: 2.6vh;
+			line-height: 1;
+			font-weight: 500;
+			z-index: 3;
+			color: var(--ink);
+		}
+		.lg-root .kbd[data-active] {
+			transform: translateY(1px);
+			background: linear-gradient(180deg, rgba(220,216,206,0.60) 0%, rgba(200,196,186,0.42) 100%);
+			box-shadow:
+				inset 0 2px 6px rgba(31,29,26,0.18),
+				inset 0 0 0 1px rgba(255,255,255,0.55),
+				0 2px 4px rgba(31,29,26,0.08);
+		}
+
+		/* GRAB — scaled sibling of .play */
+		.lg-root .grab {
+			width: 14vh; height: 14vh;
+			flex: 0 0 auto;
+			display: flex; align-items: center; justify-content: center;
+			position: relative; overflow: hidden;
+			border-radius: 50%; cursor: pointer;
+			background: linear-gradient(180deg, rgba(255,255,255,0.72) 0%, rgba(220,216,206,0.40) 100%);
+			backdrop-filter: blur(calc(28px * var(--frost))) saturate(130%);
+			-webkit-backdrop-filter: blur(calc(28px * var(--frost))) saturate(130%);
+			border: 1px solid rgba(255,255,255,0.75);
+			color: var(--ink);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,1),
+				inset 0 -1px 0 rgba(31,29,26,0.08),
+				0 14px 30px rgba(31,29,26,0.16),
+				0 2px 6px rgba(31,29,26,0.08);
+			transition: transform 180ms ease, box-shadow 180ms ease;
+			user-select: none;
+			touch-action: none;
+			-webkit-tap-highlight-color: transparent;
+		}
+		.lg-root .grab:hover { transform: translateY(-1px); }
+		.lg-root .grab[data-active] {
+			transform: translateY(1px);
+			box-shadow:
+				inset 0 3px 10px rgba(31,29,26,0.22),
+				inset 0 0 0 1px rgba(255,255,255,0.55),
+				0 4px 10px rgba(31,29,26,0.10);
+		}
+		.lg-root .grab__label {
+			font-family: var(--lg-display);
+			font-weight: 700;
+			font-size: 2vh;
+			letter-spacing: 0.18em;
+			color: var(--ink);
+			z-index: 3;
+		}
+		.lg-root .grab__inner-gloss {
+			position: absolute; inset: 0; border-radius: inherit;
+			background: radial-gradient(
+				ellipse 90% 140% at var(--lmx, 50%) var(--lmy, 50%),
+				rgba(255,255,255,0.55) 0%,
+				rgba(255,255,255,0.22) 25%,
+				rgba(255,255,255,0.06) 55%,
+				rgba(255,255,255,0) 90%);
+			pointer-events: none; z-index: 1;
+		}
+		.lg-root .grab__sweep {
+			position: absolute; inset: 0; pointer-events: none; z-index: 2;
+			background: radial-gradient(
+				ellipse 75% 140% at var(--lmx, 50%) var(--lmy, 50%),
+				oklch(82% 0.06 80 / 0.10) 0%,
+				oklch(80% 0.07 200 / 0.08) 35%,
+				oklch(74% 0.09 290 / 0.06) 60%,
+				transparent 85%);
+			opacity: 0;
+			transition: opacity 380ms ease;
+		}
+		.lg-root .grab:hover .grab__sweep { opacity: 1; }
+
 		/* Video */
 		.lg-root .video {
 			position: relative;
@@ -745,6 +883,41 @@ const Styles = ({ accent }: { accent: string }) => (
 				inset 0 1px 0 rgba(255,255,255,0.16),
 				0 6px 18px rgba(0,0,0,0.45);
 		}
+		.dark .lg-root .kbd {
+			color: var(--ink);
+			background: linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 100%);
+			border: 1px solid rgba(255,255,255,0.13);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.18),
+				0 6px 14px rgba(0,0,0,0.40);
+		}
+		.dark .lg-root .kbd[data-active] {
+			background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+			box-shadow:
+				inset 0 2px 6px rgba(0,0,0,0.55),
+				inset 0 0 0 1px rgba(255,255,255,0.10),
+				0 2px 4px rgba(0,0,0,0.30);
+		}
+		.dark .lg-root .grab {
+			background: linear-gradient(180deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.04) 100%);
+			border: 1px solid rgba(255,255,255,0.16);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.20),
+				0 14px 40px rgba(0,0,0,0.55);
+		}
+		.dark .lg-root .grab[data-active] {
+			box-shadow:
+				inset 0 3px 10px rgba(0,0,0,0.55),
+				inset 0 0 0 1px rgba(255,255,255,0.10),
+				0 4px 10px rgba(0,0,0,0.40);
+		}
+		.dark .lg-root .grab__inner-gloss {
+			background: radial-gradient(
+				ellipse 90% 140% at var(--lmx, 50%) var(--lmy, 50%),
+				rgba(255,255,255,0.30) 0%,
+				rgba(255,255,255,0.10) 30%,
+				rgba(255,255,255,0) 70%);
+		}
 		.dark .lg-root .wordmark__name {
 			background: linear-gradient(180deg,
 				color-mix(in oklab, var(--ink) 95%, white) 0%,
@@ -763,6 +936,64 @@ const Styles = ({ accent }: { accent: string }) => (
 
 		@media (prefers-reduced-motion: reduce) {
 			.lg-root *, .lg-root *::before, .lg-root *::after { animation: none !important; }
+		}
+
+		/* Motion-permission modal */
+		.motion-perm {
+			color: var(--ink, #1f1d1a);
+			font-family: var(--lg-display);
+		}
+		.motion-perm__title {
+			font-weight: 700;
+			font-size: 1.45rem;
+			letter-spacing: -0.025em;
+			margin: 0;
+		}
+		.motion-perm__body {
+			font-size: 0.95rem;
+			line-height: 1.55;
+			color: var(--ink-soft, #5a564f);
+			margin: 0;
+		}
+		.motion-perm__btn {
+			padding: 0.7em 1.3em;
+			font-family: var(--lg-display);
+			font-weight: 600;
+			font-size: 0.92rem;
+			letter-spacing: 0.01em;
+			color: var(--ink, #1f1d1a);
+			border-radius: 14px;
+			cursor: pointer;
+			background: linear-gradient(180deg, rgba(255,255,255,0.72) 0%, rgba(220,216,206,0.42) 100%);
+			backdrop-filter: blur(calc(20px * var(--frost, 1))) saturate(125%);
+			-webkit-backdrop-filter: blur(calc(20px * var(--frost, 1))) saturate(125%);
+			border: 1px solid rgba(255,255,255,0.75);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.95),
+				inset 0 -1px 0 rgba(31,29,26,0.06),
+				0 4px 12px rgba(31,29,26,0.12);
+			transition: transform 200ms ease;
+		}
+		.motion-perm__btn:hover { transform: translateY(-1px); }
+		.motion-perm__btn:active { transform: translateY(0); }
+		.motion-perm__btn--ghost {
+			background: linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(220,216,206,0.18) 100%);
+			color: var(--ink-soft, #5a564f);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.6),
+				0 2px 6px rgba(31,29,26,0.06);
+		}
+		.dark .motion-perm__btn {
+			color: var(--ink, #ece6d8);
+			background: linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 100%);
+			border: 1px solid rgba(255,255,255,0.14);
+			box-shadow:
+				inset 0 1px 0 rgba(255,255,255,0.18),
+				0 4px 12px rgba(0,0,0,0.4);
+		}
+		.dark .motion-perm__btn--ghost {
+			color: var(--ink-soft, #a59f93);
+			background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
 		}
 	`}</style>
 );
@@ -801,6 +1032,15 @@ const HUD = ({ logoSrc }: { logoSrc: string }) => {
 };
 
 const Mobile = ({ logoSrc, rootRef }: { logoSrc: string; rootRef: React.RefObject<HTMLDivElement | null> }) => {
+	// Drawer host: viewport-sized positioning context for portaled drawers. On
+	// mobile the Shell Box (rootRef) is the scrollable page-content column —
+	// taller than the viewport — so a Drawer.Content with `position: absolute;
+	// bottom: 0` relative to that lands at the bottom of the *page*, not the
+	// *viewport*. This Box is position:fixed inside lg-root, so Drawer content
+	// portaled here sits in a viewport-sized box and bottom:0 lands at the
+	// viewport bottom. pointer-events:none so it doesn't intercept taps when
+	// no drawer is open; Chakra's own Backdrop/Content re-enable events.
+	const drawerHostRef = useRef<HTMLDivElement>(null);
 	return (
 		<VStack w="full" p={8} gap={8} align="stretch">
 			<HStack w="full" justify="space-between">
@@ -808,7 +1048,7 @@ const Mobile = ({ logoSrc, rootRef }: { logoSrc: string; rootRef: React.RefObjec
 				<Box maxW="50%">
 					<Image className="logo" width={200} height={360} src={logoSrc} alt="Garra" priority />
 				</Box>
-				<AccountManager containerRef={rootRef} triggerClassName="chip chip--circle holo-rim spec" />
+				<AccountManager containerRef={drawerHostRef} triggerClassName="chip chip--circle holo-rim spec" />
 			</HStack>
 			<Flex aspectRatio={4 / 3} w="full" justifyItems="center">
 				<Video />
@@ -817,7 +1057,8 @@ const Mobile = ({ logoSrc, rootRef }: { logoSrc: string; rootRef: React.RefObjec
 				<Play glossMode={DEFAULTS.glossMode} mobile />
 			</Flex>
 			<Rates />
-			<Rules containerRef={rootRef} />
+			<Rules containerRef={drawerHostRef} />
+			<Box ref={drawerHostRef} pos="fixed" inset="6px" pointerEvents="none" />
 		</VStack>
 	);
 };
@@ -825,7 +1066,8 @@ const Mobile = ({ logoSrc, rootRef }: { logoSrc: string; rootRef: React.RefObjec
 /* ── Shell ─────────────────────────────────────────────────────────────── */
 
 function Shell() {
-	useGlobalSpecular();
+	const isMobile = useIsMobile();
+	useGlobalSpecular(isMobile);
 
 	const { colorMode } = useColorMode();
 	const dark = colorMode === "dark";
@@ -843,7 +1085,6 @@ function Shell() {
 		"--spec-intensity": DEFAULTS.spec,
 	};
 
-	const isMobile = useIsMobile();
 	const rootRef = useRef<HTMLDivElement>(null);
 
 	return (
@@ -856,6 +1097,7 @@ function Shell() {
 			<Styles accent={accent} />
 			{!isMobile ? <HUD logoSrc={logoSrc} /> : <Mobile logoSrc={logoSrc} rootRef={rootRef} />}
 			<WinChoiceModal />
+			<MotionPermissionModal containerRef={rootRef} />
 		</Box>
 	);
 }

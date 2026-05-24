@@ -65,3 +65,56 @@ export const MOCK_DECK: Card[] = [
 ];
 
 export const CARD_BACK_IMAGE = "/cards/back.png";
+
+/**
+ * Maps a card to the tileable foil texture used as the first layer of its
+ * shine/glare `background-image` stacks (CSS `var(--foil)`). Simey points
+ * `--foil` at a per-card painted texture served from a private CDN; we don't
+ * have access to that, so we pick one of our generic foils per rarity bucket.
+ * We lose per-card variation but every premium rarity gets a real texture
+ * instead of an empty layer.
+ *
+ * Texture choices follow simey's etch+style buckets:
+ *   sunpillar  → metal.png      (V, radiant, shiny V)
+ *   swsecret   → galaxy.jpg     (VMAX, VSTAR, secret, rainbow alt, shiny VMAX)
+ *   rainbow    → rainbow.jpg    (rainbow holo, trainer gallery default)
+ *   swholo     → cosmos.png     (rare holo, rare holo cosmos)
+ *   glitter    → glitter.png    (amazing rare, shiny)
+ *   wave       → wave.png       (rare ultra full-art, reverse holo)
+ */
+export function getFoilTexture(
+	card: Pick<Card, "rarity" | "subtypes" | "trainerGallery">,
+): string | undefined {
+	if (card.trainerGallery) {
+		if (card.subtypes?.includes("vmax")) return "/img/galaxy.jpg";
+		if (card.subtypes?.includes("v"))    return "/img/metal.png";
+		if (card.rarity === "rare secret")   return "/img/galaxy.jpg";
+		return "/img/rainbow.jpg";
+	}
+	switch (card.rarity) {
+		case "common":                    return undefined;
+		case "rare reverse holo":         return "/img/wave.png";
+		case "rare holo":                 return "/img/cosmos.png";
+		case "rare holo cosmos":          return "/img/cosmos.png";
+		// Drop the .shine:before texture layer entirely — every generic tile we
+		// have shows visible pattern artifacts here, and simey's hand-painted
+		// per-card swsecret texture isn't something we can fake. Leaving --foil
+		// unset invalidates the .shine:before background-image, so the layer
+		// just doesn't render — the double-glitter base + .glare highlight are
+		// closer to simey's appearance than any tiled foil we can substitute.
+		case "amazing rare":              return undefined;
+		case "radiant rare":              return "/img/metal.png";
+		case "rare holo v":               return "/img/metal.png";
+		case "rare ultra":                return "/img/wave.png";
+		case "rare holo vmax":            return "/img/galaxy.jpg";
+		case "rare holo vstar":           return "/img/galaxy.jpg";
+		case "rare rainbow":              return "/img/rainbow.jpg";
+		case "rare rainbow alt":          return "/img/rainbow.jpg";
+		case "rare secret":               return "/img/galaxy.jpg";
+		case "trainer gallery rare holo": return "/img/rainbow.jpg";
+		case "rare shiny":                return "/img/glitter.png";
+		case "rare shiny v":              return "/img/metal.png";
+		case "rare shiny vmax":           return "/img/galaxy.jpg";
+		default:                          return undefined;
+	}
+}

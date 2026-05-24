@@ -1,48 +1,22 @@
 'use client';
-import React, { useEffect } from 'react';
-import { Button, Flex, Grid, GridItem, FlexProps } from '@chakra-ui/react';
+import React, { useEffect, useRef } from 'react';
+import { Flex, Grid, GridItem } from '@chakra-ui/react';
 import { useClaw, ACTION_TO_KEY, KEYMAP } from '@/components/providers/ClawProvider';
 import { useIsMobile } from './hooks/useIsMobile';
 
-type KbdProps =
-  FlexProps &               // chakra styling props
-  React.ButtonHTMLAttributes<HTMLButtonElement>; // onMouseDown, disabled, etc.
-
-export const Kbd: React.FC<KbdProps> = ({ children, h = 4, w = 4, ...props }) => {
-  return <Flex
-    as="button"
-    fontFamily="auto"
-    align="center"
-    justify="center"
-    border={{ base: "0.4vh solid black", _dark: "0.4vh solid white" }}
-    h={h}
-    minH={"6.5vh"}
-    w={w}
-    minW={"6.5vh"}
-    p={"1.4vw"}
-    borderRadius="md"
-    fontSize="3.6vh"
-    userSelect="none"
-    touchAction="none"
-    onContextMenu={e => e.preventDefault()}
-    css={{
-      "&[data-active]": {
-        background: { base: "black", _dark: "white" },
-        color: { base: "white", _dark: "black" }
-      }
-    }}
-    {...props}
-  >
-    {children}
-  </Flex>
-}
+type Action = 'up' | 'down' | 'left' | 'right' | 'grab';
 
 interface GameControllerProps {
-  keySize?: number | string,
-  buttonSize?: number | string
+  keySize?: number | string;
+  buttonSize?: number | string;
 }
 
-type Action = 'up' | 'down' | 'left' | 'right' | 'grab';
+const GLYPH: Record<Exclude<Action, 'grab'>, string> = {
+  up: '↑',
+  down: '↓',
+  left: '←',
+  right: '→',
+};
 
 const setActiveByAction = (action: Action, on: boolean) => {
   const el = document.querySelector<HTMLElement>(`[data-action="${action}"]`);
@@ -51,18 +25,40 @@ const setActiveByAction = (action: Action, on: boolean) => {
   else el.removeAttribute('data-active');
 };
 
-const GameController: React.FC<GameControllerProps> = ({
-  keySize = 4,
-  buttonSize = 28
-}: GameControllerProps) => {
+const GameController: React.FC<GameControllerProps> = () => {
   const isMobile = useIsMobile();
   const { isPlaying, press, release } = useClaw();
+  const grabRef = useRef<HTMLButtonElement>(null);
 
-  /* helper that wires the proper pointer events */
+  /* cursor-tracked vars on GRAB — matches .play behavior */
+  useEffect(() => {
+    if (!isPlaying) return;
+    let raf: number | null = null;
+    const update = (cx: number, cy: number) => {
+      const el = grabRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty('--lmx', `${cx - r.left}px`);
+      el.style.setProperty('--lmy', `${cy - r.top}px`);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        update(e.clientX, e.clientY);
+      });
+    };
+    window.addEventListener('pointermove', onMove);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [isPlaying]);
+
   const bind = (action: Action) => ({
     'data-action': action,
     onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
-      e.preventDefault();               // <- stops text-selection/drag
+      e.preventDefault();
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       setActiveByAction(action, true);
       press(action);
@@ -74,15 +70,14 @@ const GameController: React.FC<GameControllerProps> = ({
     onPointerLeave: () => {
       setActiveByAction(action, false);
       release(action);
-    },   // finger slides away
+    },
     onPointerCancel: () => {
       setActiveByAction(action, false);
       release(action);
-    },  // browser gesture cancelled
-  }
-  );
+    },
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  });
 
-  /* keyboard listeners */
   useEffect(() => {
     if (!isPlaying) return;
 
@@ -115,63 +110,38 @@ const GameController: React.FC<GameControllerProps> = ({
 
   if (!isPlaying) return null;
 
+  const arrow = (action: Exclude<Action, 'grab'>, colStart: number, rowStart: number) => (
+    <GridItem colStart={colStart} rowStart={rowStart}>
+      <button className="kbd holo-rim spec" {...bind(action)}>
+        <span className="kbd__glyph">{GLYPH[action]}</span>
+      </button>
+    </GridItem>
+  );
+
   return (
     <Flex
       align="center"
-      justify={"space-evenly"}
-      w={"100%"}
-      h={"100%"}
-      containerType={"size"}
+      justify="space-evenly"
+      w="100%"
+      h="100%"
+      containerType="size"
       css={!isMobile && {
-        "@media (max-width: 175vh)": {
-          flexDirection: "column"
-        }
+        '@media (max-width: 175vh)': {
+          flexDirection: 'column',
+        },
       }}
     >
-      <Grid
-        gap={"0.8vh"}
-      >
-        {/* row 1, col 2  ── UP */}
-        <GridItem colStart={2} rowStart={1}>
-          <Kbd w={keySize} h={keySize} {...bind('up')}>&uarr;</Kbd>
-        </GridItem>
-
-        {/* row 2, col 1  ── LEFT */}
-        <GridItem colStart={1} rowStart={2}>
-          <Kbd w={keySize} h={keySize} {...bind('left')}>&larr;</Kbd>
-        </GridItem>
-
-        {/* row 2, col 2  ── DOWN */}
-        <GridItem colStart={2} rowStart={2}>
-          <Kbd w={keySize} h={keySize} {...bind('down')}>&darr;</Kbd>
-        </GridItem>
-
-        {/* row 2, col 3  ── RIGHT */}
-        <GridItem colStart={3} rowStart={2}>
-          <Kbd w={keySize} h={keySize} {...bind('right')}>&rarr;</Kbd>
-        </GridItem>
+      <Grid gap="0.9vh">
+        {arrow('up', 2, 1)}
+        {arrow('left', 1, 2)}
+        {arrow('down', 2, 2)}
+        {arrow('right', 3, 2)}
       </Grid>
-      <Button
-        h={buttonSize}
-        minH={"14vh"}
-        color={{ base: "black", _dark: "white" }}
-        bg={{ base: "white", _dark: "black" }}
-        border={{ base: "0.4vh solid black", _dark: "0.4vh solid white" }}
-        borderRadius="full"
-        aspectRatio={1}
-        fontSize="3.6vh"
-        touchAction="none"
-        onContextMenu={e => e.preventDefault()}
-        css={{
-          "&[data-active]": {
-            background: { base: "black", _dark: "white" },
-            color: { base: "white", _dark: "black" }
-          }
-        }}
-        {...bind('grab')}
-      >
-        GRAB
-      </Button>
+      <button ref={grabRef} className="grab holo-rim spec" {...bind('grab')}>
+        <span className="grab__inner-gloss" />
+        <span className="grab__sweep" />
+        <span className="grab__label">GRAB</span>
+      </button>
     </Flex>
   );
 };

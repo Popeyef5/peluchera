@@ -2,3 +2,4 @@ uvicorn
 fastapi
 websockets
 lgpio
+pyserial-asyncio

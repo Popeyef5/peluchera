@@ -77,7 +77,6 @@ export default function WebRTCPlayer() {
       ref={wrapRef}
       p={isFS ? "24px" : 0}
       justify={"center"}
-      background={{ base: "white", _dark: "black" }}
       borderRadius={"2rem"}
     >
       <video

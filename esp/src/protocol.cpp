@@ -1,0 +1,76 @@
+#include "protocol.h"
+
+namespace proto {
+
+static String rx_buf;
+
+bool poll(Parsed &out) {
+    while (Serial.available()) {
+        char c = (char)Serial.read();
+        if (c == '\n') {
+            String line = rx_buf;
+            rx_buf = "";
+            if (line.length() == 0) continue;
+
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, line);
+            if (err) {
+                Serial.printf("{\"type\":\"log\",\"msg\":\"bad-json: %s\"}\n", err.c_str());
+                continue;
+            }
+            const char *t = doc["type"] | "";
+            if (strcmp(t, "arm") == 0)              out.kind = Inbound::ARM;
+            else if (strcmp(t, "fault_clear") == 0) out.kind = Inbound::FAULT_CLEAR;
+            else if (strcmp(t, "ping") == 0)        out.kind = Inbound::PING;
+            else                                    out.kind = Inbound::UNKNOWN;
+            out.seq = doc["seq"] | 0L;
+            return true;
+        }
+        if (rx_buf.length() < 512) rx_buf += c;  // discard runaway garbage
+    }
+    return false;
+}
+
+static void writeln(const JsonDocument &doc) {
+    serializeJson(doc, Serial);
+    Serial.write('\n');
+}
+
+void emit_ready(const char *fw_version, const char *latched_fault_or_null) {
+    JsonDocument d;
+    d["type"] = "ready";
+    d["fw"]   = fw_version;
+    if (latched_fault_or_null) d["fault"] = latched_fault_or_null;
+    else                       d["fault"] = nullptr;
+    writeln(d);
+}
+
+void emit_prize_won(const char *uid_hex) {
+    JsonDocument d;
+    d["type"] = "prize_won";
+    d["data"]["tag_uid"] = uid_hex;
+    writeln(d);
+}
+
+void emit_fault(const char *kind, const char *reason_or_null) {
+    JsonDocument d;
+    d["type"] = "fault";
+    d["data"]["kind"] = kind;
+    if (reason_or_null) d["data"]["reason"] = reason_or_null;
+    writeln(d);
+}
+
+void emit_no_fall() {
+    JsonDocument d;
+    d["type"] = "no_fall";
+    writeln(d);
+}
+
+void emit_pong(long seq) {
+    JsonDocument d;
+    d["type"] = "pong";
+    d["seq"]  = seq;
+    writeln(d);
+}
+
+}  // namespace proto

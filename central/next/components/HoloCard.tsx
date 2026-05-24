@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { CARD_BACK_IMAGE, type Rarity, type Supertype } from "@/lib/cards";
+import { CARD_BACK_IMAGE, getFoilTexture, type Rarity, type Supertype } from "@/lib/cards";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
 import { TILT, FOIL } from "@/lib/animConfig";
 
@@ -18,6 +18,11 @@ type Props = {
 	// listener. Used for non-active stack slots and the in-flight departing
 	// card to keep mobile composition cost down.
 	decorative?: boolean;
+	// When true: stop reacting to pointer movement and ease the rotator back
+	// to neutral. Used by the parent stack while the user is dragging or while
+	// a programmatic shuffle is in flight — tilt on top of a translating card
+	// looks wobbly.
+	suppressTilt?: boolean;
 };
 
 const MAX_TILT_DEG = TILT.maxDeg;
@@ -56,12 +61,18 @@ export default function HoloCard({
 	trainerGallery,
 	className,
 	decorative,
+	suppressTilt,
 }: Props) {
 	const cardRef = useRef<HTMLDivElement>(null);
 	const rotatorRef = useRef<HTMLDivElement>(null);
 	const [frontOk, setFrontOk] = useState(true);
 	const [backOk, setBackOk] = useState(true);
 	const isMobile = useIsMobile();
+
+	// Ref mirror so the rAF apply() reads the live value without re-binding the
+	// pointer listener every time the parent toggles drag/shuffle.
+	const suppressRef = useRef(!!suppressTilt);
+	useEffect(() => { suppressRef.current = !!suppressTilt; }, [suppressTilt]);
 
 	useEffect(() => {
 		const img = new Image();
@@ -77,8 +88,9 @@ export default function HoloCard({
 		img.src = CARD_BACK_IMAGE;
 	}, []);
 
-	// Desktop: outside-pointer tilt — card tilts toward the cursor when it's
-	// outside the card, snaps to neutral when inside (so drag works).
+	// Desktop: global pointer tilt — the card keeps reacting to the cursor
+	// even when it's outside the card's bounding rect (px/py clamp to 0..100
+	// so the tilt locks at the edge instead of snapping to neutral).
 	useEffect(() => {
 		// Skip tilt when face-down: foil isn't visible anyway, and the
 		// constant rotator transform updates can interfere with iOS Safari's
@@ -93,14 +105,16 @@ export default function HoloCard({
 
 		// Verbatim port of simey's interact() formulas — see
 		// simeydotme/pokemon-cards-css src/lib/components/Card.svelte.
-		// Listener fires only while the cursor is over the card; outside,
-		// vars decay (we set --card-opacity = 0 on leave).
 		const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
 		const adjust = (v: number, fromMin: number, fromMax: number, toMin: number, toMax: number) =>
 			toMin + ((v - fromMin) / (fromMax - fromMin)) * (toMax - toMin);
 
 		const apply = () => {
 			raf = 0;
+			// Parent has asked us to freeze (drag / auto-shuffle). Don't touch
+			// the rotator vars — the suppress effect below has already eased
+			// rotate-x/y to 0 via the rotator's existing CSS transition.
+			if (suppressRef.current) return;
 			const rect = card.getBoundingClientRect();
 			const absX = pendingX - rect.left;
 			const absY = pendingY - rect.top;
@@ -143,20 +157,26 @@ export default function HoloCard({
 			if (!raf) raf = requestAnimationFrame(apply);
 		};
 
-		const onLeave = () => {
-			rotator.style.setProperty("--card-opacity", "0");
-		};
-
-		// Listener attaches to the card itself — simey's behavior: only fire
-		// while cursor is over the card.
-		card.addEventListener("pointermove", onMove);
-		card.addEventListener("pointerleave", onLeave);
+		// Window-level listener — tilt and foil keep tracking when the cursor
+		// leaves the card. No pointerleave reset.
+		window.addEventListener("pointermove", onMove);
 		return () => {
-			card.removeEventListener("pointermove", onMove);
-			card.removeEventListener("pointerleave", onLeave);
+			window.removeEventListener("pointermove", onMove);
 			if (raf) cancelAnimationFrame(raf);
 		};
 	}, [isMobile, decorative, faceUp]);
+
+	// When the parent flips suppressTilt on, ease the rotator back to neutral.
+	// The .holo-card__rotator's CSS transition on `transform` (set in
+	// globals.css) handles the actual smoothness — we just snap the vars.
+	useEffect(() => {
+		if (isMobile || decorative || !faceUp) return;
+		if (!suppressTilt) return;
+		const rotator = rotatorRef.current;
+		if (!rotator) return;
+		rotator.style.setProperty("--rotate-x", "0deg");
+		rotator.style.setProperty("--rotate-y", "0deg");
+	}, [suppressTilt, isMobile, decorative, faceUp]);
 
 	// Mobile: device-orientation tilt — physically tilting the phone drives
 	// the same CSS vars (rotate-x/y, pointer-x/y, card-opacity) so the foil
@@ -285,7 +305,14 @@ export default function HoloCard({
 			data-subtypes={subtypes?.join(" ") ?? ""}
 			data-trainer-gallery={trainerGallery ? "true" : undefined}
 			data-face={faceUp ? "up" : "down"}
-			style={mask ? ({ ["--mask" as string]: `url(${mask})` } as React.CSSProperties) : undefined}
+			style={(() => {
+				const foil = getFoilTexture({ rarity, subtypes, trainerGallery });
+				if (!mask && !foil) return undefined;
+				const s: Record<string, string> = {};
+				if (mask) s["--mask"] = `url(${mask})`;
+				if (foil) s["--foil"] = `url(${foil})`;
+				return s as React.CSSProperties;
+			})()}
 		>
 			<div className="holo-card__translater">
 				<div
