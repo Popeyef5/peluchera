@@ -25,12 +25,34 @@ services:
       - '80:80'
     depends_on:
       - next
+      - next-admin
       - fastapi
       - db
     volumes:
-      - ./proxy/nginx.dev.conf:/etc/nginx/nginx.conf 
+      - ./proxy/nginx.dev.conf:/etc/nginx/nginx.conf
     networks:
       - claw_network
+
+  next-admin:
+    build:
+      context: ./next-admin
+      target: dev
+    container_name: claw_next_admin
+    expose:
+      - '3001'
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - db
+    volumes:
+      - ./next-admin:/code
+      - /code/node_modules
+    networks:
+      - claw_network
+    env_file:
+      - .env
+      - path: .env.admin
+        required: false
 
   next:
     build:
@@ -77,6 +99,8 @@ services:
     env_file:
       - .env
       - path: .env.dev
+        required: false
+      - path: .env.admin
         required: false
     environment:
       - PI_SERVER_URL=${PI_DEV_URL:-http://mock-pi:5001}

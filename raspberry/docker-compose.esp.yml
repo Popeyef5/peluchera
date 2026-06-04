@@ -1,0 +1,12 @@
+# Overlay that adds the chute ESP32 USB bind. Use when the board is wired in:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.esp.yml up socket
+#
+# Override ESP_PORT if your adapter enumerates as /dev/ttyACM0 instead of
+# /dev/ttyUSB0.
+services:
+  socket:
+    devices:
+      - ${ESP_PORT:-/dev/ttyUSB0}:${ESP_PORT:-/dev/ttyUSB0}
+    environment:
+      - ESP_PORT=${ESP_PORT:-/dev/ttyUSB0}

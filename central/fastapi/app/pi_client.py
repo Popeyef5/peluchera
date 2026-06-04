@@ -6,7 +6,7 @@ import os, threading
 from web3 import Web3
 import app.state as state
 from .socket.sio_instance import sio
-from .config import BASE_RPC_HTTP, CLAW_ADDRESS, PI_SERVER_URL, INTER_TURN_DELAY, PRIVATE_KEY, CHAIN_ID
+from .config import BASE_RPC_HTTP, CLAW_ADDRESS, PI_SERVER_URL, INTER_TURN_DELAY, PRIVATE_KEY, CHAIN_ID, BYPASS_PAYMENT
 from .abi import claw_abi
 from .logging import log
 from sqlalchemy import select, func
@@ -64,6 +64,10 @@ async def handle_pi_messages():
                     asyncio.create_task(on_turn_win(data.get("data") or {}))
                 elif message_type == "fault":
                     asyncio.create_task(on_pi_fault(data.get("data") or {}))
+                elif message_type == "tag_scanned":
+                    on_tag_scanned(data.get("data") or {})
+                elif message_type == "enroll_timeout":
+                    on_enroll_timeout()
                 else:
                     log.warning(f"Unknown message type from Pi: {message_type}")
                     
@@ -191,6 +195,29 @@ async def on_pi_fault(data: Optional[dict] = None):
         await sio.emit("cabinet_fault", data, room=state.current_player)
 
 
+def on_tag_scanned(data: Optional[dict] = None):
+    """Pi-forwarded ESP `tag_scanned` — drop the UID into state.enroll_pending
+    so the admin status endpoint can return it. Silently no-ops if no enroll
+    is pending (e.g., a stale event after timeout)."""
+    data = data or {}
+    serial = data.get("ball_serial")
+    if not serial:
+        log.warning("tag_scanned with no ball_serial; ignoring")
+        return
+    if not state.enroll_pending:
+        log.info("tag_scanned but no enrollment pending; ignoring (%s)", serial)
+        return
+    state.enroll_pending["scanned_ball_serial"] = serial
+    log.info("Enrollment scan recorded: %s", serial)
+
+
+def on_enroll_timeout():
+    if not state.enroll_pending:
+        return
+    state.enroll_pending["timed_out"] = True
+    log.info("Enrollment timed out")
+
+
 async def on_turn_win(data: Optional[dict] = None):
     """Handler for Pi's `prize_won` message.
 
@@ -251,6 +278,12 @@ async def on_turn_win(data: Optional[dict] = None):
     # Notify the winning client. Payload is optional; old listeners ignore
     # extra fields. Targeted to the player's room (set up at wallet_connected).
     await sio.emit("player_win", win_payload, room=state.current_player)
+
+    if BYPASS_PAYMENT:
+        # The QueueEntry key is synthetic in bypass mode — the contract knows
+        # nothing about it, so notifyWin would revert.
+        log.info("BYPASS_PAYMENT: skipping notifyWin for key %s", key_str)
+        return
 
     # Existing on-chain notification — settles the win on the contract.
     w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))

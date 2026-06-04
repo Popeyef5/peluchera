@@ -1,12 +1,32 @@
 'use client';
 
 import React, {
-	createContext, useCallback, useContext, useEffect, useState, useRef
+	createContext, useCallback, useContext, useEffect, useState, useRef, useMemo
 } from 'react';
 import { useSocket } from '@/components/providers/SocketProvider';
 import {
 	useAppKitAccount, useAppKitNetwork,
 } from '@reown/appkit/react';
+
+// Demo / public-session toggle — see central/fastapi/app/config.py for the
+// matching server flag. When on, the play flow skips wallet connect, permit
+// signing, and on-chain settlement; identity is a per-session synthetic
+// "guest" address stored in sessionStorage so the backend can still room
+// targeted events properly.
+export const BYPASS_PAYMENT = process.env.NEXT_PUBLIC_BYPASS_PAYMENT === 'true';
+
+const GUEST_ADDRESS_KEY = 'garra:guest-address';
+
+function getOrCreateGuestAddress(): `0x${string}` {
+	if (typeof window === 'undefined') return '0x0000000000000000000000000000000000000000';
+	const existing = window.sessionStorage.getItem(GUEST_ADDRESS_KEY);
+	if (existing) return existing as `0x${string}`;
+	const bytes = new Uint8Array(20);
+	window.crypto.getRandomValues(bytes);
+	const addr = ('0x' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`;
+	window.sessionStorage.setItem(GUEST_ADDRESS_KEY, addr);
+	return addr;
+}
 import { toaster } from "@/components/ui/toaster"
 import { USDCAddress, erc20WithPermitAbi, clawAddress } from '@/lib/crypto/contracts';
 import { readContract, signTypedData } from 'wagmi/actions';
@@ -207,9 +227,17 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [pendingWin, setPendingWin] = useState<PendingWin | null>(null);
 	const [secondsLeft, updateSeconds] = useCountdown(0);
 
-	/* wallet */
-	const { address } = useAppKitAccount();
+	/* wallet — in bypass mode, identity is a per-session synthetic guest
+	 * address; the AppKit hook still runs (cheap, harmless) but we ignore its
+	 * output so disconnected guests can play.
+	 */
+	const { address: walletAddress } = useAppKitAccount();
 	const { chainId } = useAppKitNetwork();
+	const guestAddress = useMemo(
+		() => (BYPASS_PAYMENT ? getOrCreateGuestAddress() : undefined),
+		[],
+	);
+	const address = BYPASS_PAYMENT ? guestAddress : walletAddress;
 
 	/* tell backend who we are */
 	useEffect(() => {
@@ -396,8 +424,35 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 	/* approve + bet */
 	const approveAndBet = useCallback(async () => {
-		if (!address || !chainId) return;
+		if (!address) return;
 		setLoading(true);
+
+		if (BYPASS_PAYMENT) {
+			// Skip permit signing entirely. Backend ignores amount/deadline/
+			// signature in bypass mode but the event still has its shape.
+			socket.emit(
+				'join_queue',
+				{ address, amount: 0, deadline: 0, signature: '0x' },
+				(r: { status: string; position: number; error?: string }) => {
+					if (r.status === 'ok') {
+						setPosition(r.position);
+					} else {
+						toaster.create({
+							description: `Error: ${r.error}`,
+							type: 'error',
+							duration: 2500,
+						});
+					}
+					setLoading(false);
+				},
+			);
+			return;
+		}
+
+		if (!chainId) {
+			setLoading(false);
+			return;
+		}
 		try {
 			const userAddr = address as `0x${string}`;
 			const amount = BigInt(betAmount);

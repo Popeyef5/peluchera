@@ -7,6 +7,7 @@ import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 import { ClawProvider, SocketProvider, useClaw } from "@/components/providers";
+import { BYPASS_PAYMENT } from "@/components/providers/ClawProvider";
 import WebRTCPlayer from "@/components/WebRTCPlayer";
 import GameController from "@/components/GameController";
 import AccountManager from "@/components/AccountManager";
@@ -182,9 +183,11 @@ const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | 
 
 	const glossCls =
 		glossMode === "linear" ? "play--gloss-linear" : glossMode === "radial" ? "play--gloss-radial" : "";
-	const onClick = !isConnected ? () => open() : approveAndBet;
-	const disabled = loading || (isConnected && !clawSocketOn);
-	const label = !isConnected ? "CONNECT WALLET" : "PLAY";
+	// In bypass mode there's no wallet step — Play is the entry point.
+	const ready = BYPASS_PAYMENT || isConnected;
+	const onClick = ready ? approveAndBet : () => open();
+	const disabled = loading || (ready && !clawSocketOn);
+	const label = ready ? "PLAY" : "CONNECT WALLET";
 
 	const content = isPlaying ? (
 		<GameController />
@@ -1018,7 +1021,9 @@ const HUD = ({ logoSrc }: { logoSrc: string }) => {
 					<Box w="80%" maxW="40vh" textAlign="center">
 						<Image className="logo" width={800} height={200} src={logoSrc} alt="Garra" priority />
 					</Box>
-					<AccountManager containerRef={columnRef} triggerClassName="chip chip--circle holo-rim spec" />
+					{BYPASS_PAYMENT
+						? <Box w="4.4vh" h="4.4vh" />
+						: <AccountManager containerRef={columnRef} triggerClassName="chip chip--circle holo-rim spec" />}
 				</HStack>
 				<Play glossMode={DEFAULTS.glossMode} />
 				<Rates />
@@ -1048,7 +1053,9 @@ const Mobile = ({ logoSrc, rootRef }: { logoSrc: string; rootRef: React.RefObjec
 				<Box maxW="50%">
 					<Image className="logo" width={200} height={360} src={logoSrc} alt="Garra" priority />
 				</Box>
-				<AccountManager containerRef={drawerHostRef} triggerClassName="chip chip--circle holo-rim spec" />
+				{BYPASS_PAYMENT
+					? <Box w="4.4vh" h="4.4vh" />
+					: <AccountManager containerRef={drawerHostRef} triggerClassName="chip chip--circle holo-rim spec" />}
 			</HStack>
 			<Flex aspectRatio={4 / 3} w="full" justifyItems="center">
 				<Video />

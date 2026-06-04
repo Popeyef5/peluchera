@@ -20,7 +20,7 @@ States
 
 Outbound protocol (Pi → central):
   {"type": "turn_end"}
-  {"type": "prize_won", "data": {"tag_uid": "<hex>"}}
+  {"type": "prize_won", "data": {"ball_serial": "<hex>"}}
   {"type": "fault",     "data": {"kind": "...", "reason"?: "..."}}
 
 Inbound protocol (central → Pi):

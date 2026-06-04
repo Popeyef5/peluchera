@@ -22,8 +22,10 @@ bool poll(Parsed &out) {
             if (strcmp(t, "arm") == 0)              out.kind = Inbound::ARM;
             else if (strcmp(t, "fault_clear") == 0) out.kind = Inbound::FAULT_CLEAR;
             else if (strcmp(t, "ping") == 0)        out.kind = Inbound::PING;
+            else if (strcmp(t, "enroll") == 0)      out.kind = Inbound::ENROLL;
             else                                    out.kind = Inbound::UNKNOWN;
-            out.seq = doc["seq"] | 0L;
+            out.seq        = doc["seq"] | 0L;
+            out.timeout_ms = (uint32_t)(doc["timeout_ms"] | 10000U);
             return true;
         }
         if (rx_buf.length() < 512) rx_buf += c;  // discard runaway garbage
@@ -48,7 +50,7 @@ void emit_ready(const char *fw_version, const char *latched_fault_or_null) {
 void emit_prize_won(const char *uid_hex) {
     JsonDocument d;
     d["type"] = "prize_won";
-    d["data"]["tag_uid"] = uid_hex;
+    d["data"]["ball_serial"] = uid_hex;
     writeln(d);
 }
 
@@ -70,6 +72,19 @@ void emit_pong(long seq) {
     JsonDocument d;
     d["type"] = "pong";
     d["seq"]  = seq;
+    writeln(d);
+}
+
+void emit_tag_scanned(const char *uid_hex) {
+    JsonDocument d;
+    d["type"] = "tag_scanned";
+    d["data"]["ball_serial"] = uid_hex;
+    writeln(d);
+}
+
+void emit_enroll_timeout() {
+    JsonDocument d;
+    d["type"] = "enroll_timeout";
     writeln(d);
 }
 

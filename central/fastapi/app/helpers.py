@@ -1,6 +1,6 @@
 import asyncio, requests
 from .logging import log
-from .config import PRIVATE_KEY, CLAW_ADDRESS, BASE_RPC_HTTP, CHAIN_ID
+from .config import PRIVATE_KEY, CLAW_ADDRESS, BASE_RPC_HTTP, CHAIN_ID, BYPASS_PAYMENT
 from web3 import Web3
 from .abi import claw_abi
 from .models import QueueEntry, Withdrawal, Round
@@ -51,12 +51,16 @@ async def safe_place_bet(loop, *args):
 
 
 async def user_account_data(addr, db):
-    w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
-    balance = (
-        w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
-        .functions.getTotalBalance(addr)
-        .call()
-    )
+    if BYPASS_PAYMENT:
+        # No on-chain custody in bypass mode — guests have no contract balance.
+        balance = 0
+    else:
+        w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
+        balance = (
+            w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
+            .functions.getTotalBalance(addr)
+            .call()
+        )
     bets_mappings = await db.execute(
         select(
             QueueEntry.bet.label("bet"),

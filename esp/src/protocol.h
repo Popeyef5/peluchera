@@ -4,8 +4,9 @@
 // other than '\n'. Matches the shape the Pi forwards to central, so
 // prize_won / fault payloads pass through untouched.
 //
-// Inbound  (Pi  → ESP):  {"type":"arm"} | {"type":"fault_clear"} | {"type":"ping","seq":N}
-// Outbound (ESP → Pi ):  ready / prize_won / fault / no_fall / pong
+// Inbound  (Pi  → ESP):  arm | fault_clear | ping | enroll
+// Outbound (ESP → Pi ):  ready | prize_won | fault | no_fall | pong |
+//                        tag_scanned | enroll_timeout
 #pragma once
 
 #include <Arduino.h>
@@ -22,11 +23,12 @@ constexpr const char *FAULT_INTERNAL      = "internal_error";
 constexpr const char *REASON_STILL_BLOCKED = "still_blocked";
 
 // Inbound message kinds.
-enum class Inbound { UNKNOWN, ARM, FAULT_CLEAR, PING };
+enum class Inbound { UNKNOWN, ARM, FAULT_CLEAR, PING, ENROLL };
 
 struct Parsed {
-    Inbound kind;
-    long    seq;  // populated for PING
+    Inbound  kind;
+    long     seq;          // populated for PING
+    uint32_t timeout_ms;   // populated for ENROLL
 };
 
 // Reads at most one line from Serial and parses it. Non-blocking; returns
@@ -39,5 +41,10 @@ void emit_prize_won(const char *uid_hex);
 void emit_fault(const char *kind, const char *reason_or_null);
 void emit_no_fall();
 void emit_pong(long seq);
+// Admin enrollment outbound: tag_scanned carries the UID of the first tag
+// presented during the enroll window; enroll_timeout signals that the
+// window ended with no tag detected.
+void emit_tag_scanned(const char *uid_hex);
+void emit_enroll_timeout();
 
 }  // namespace proto

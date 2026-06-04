@@ -14,6 +14,23 @@ CLAW_ADDRESS     = os.environ.get("CLAW_CONTRACT_ADDRESS")
 CHAIN_ID         = int(os.environ.get("CHAIN_ID"))
 PRIVATE_KEY      = os.environ.get("CLAW_PRIVATE_KEY")
 
+# When true, the play flow skips wallet/permit/on-chain steps entirely:
+# join_queue accepts dummy bet data and creates a QueueEntry with a synthetic
+# key; on_turn_win skips notifyWin; user_account_data returns balance=0
+# without an RPC call. Intended for demos / public sessions where you want
+# people to hit Play without connecting a wallet. The commit-reveal trust
+# guarantee is off in this mode, by design.
+BYPASS_PAYMENT   = os.environ.get("BYPASS_PAYMENT", "false").lower() == "true"
+
+# Admin app — Supabase auth integration. JWTs minted by Supabase are HS256-
+# signed with the project's JWT secret. Backend verifies incoming admin
+# requests against this secret; if unset, the admin router refuses to mount
+# and any admin request 401s. SUPABASE_URL is informational (used in error
+# messages); SUPABASE_JWT_AUDIENCE defaults to Supabase's standard "authenticated".
+SUPABASE_URL          = os.environ.get("SUPABASE_URL")
+SUPABASE_JWT_SECRET   = os.environ.get("SUPABASE_JWT_SECRET")
+SUPABASE_JWT_AUDIENCE = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
+
 # Default game settings
 DEFAULT_MAX_FEE    = os.environ.get("DEFAULT_MAX_FEE", 20)
 DEFAULT_FEE_GROWTH = os.environ.get("DEFAULT_FEE_GROWTH", 50)

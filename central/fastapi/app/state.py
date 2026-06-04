@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy import select, func
 from datetime import datetime, timezone, timedelta
 from .db import async_session
@@ -13,6 +14,13 @@ game_state = [0, 0]  # list so it’s mutable in-place
 round_info = [DEFAULT_MAX_FEE, DEFAULT_FEE_GROWTH]
 changing_round = False
 pi_connected = False
+
+# Admin tag-enrollment slot. Set by /admin/balls/enroll/start, populated by
+# pi_client when the Pi forwards `tag_scanned` or `enroll_timeout`, polled by
+# /admin/balls/enroll/status. Only one enrollment may be active at a time
+# (gated in the admin router).
+# Shape: {"expires_at": float, "scanned_ball_serial": Optional[str], "timed_out": bool}
+enroll_pending: Optional[dict] = None
 
 def set_pi_status(connected: bool) -> None:
     """Update global flags that reflect the Pi‑side socket health."""

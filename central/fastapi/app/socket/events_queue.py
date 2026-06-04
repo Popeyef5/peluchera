@@ -1,10 +1,11 @@
 import asyncio
+import secrets
 
 from sqlalchemy import select, func
 from web3 import Web3
 from datetime import datetime
 
-from ..config import BASE_RPC_HTTP, CLAW_ADDRESS, PRIVATE_KEY, CHAIN_ID
+from ..config import BASE_RPC_HTTP, CLAW_ADDRESS, PRIVATE_KEY, CHAIN_ID, BYPASS_PAYMENT
 from ..abi import claw_abi
 from ..models import QueueEntry, Round, Withdrawal
 from ..deps import async_session
@@ -154,8 +155,6 @@ async def check_balance(sid, data):
 @sio.on("join_queue")
 async def join_queue(sid, data):
     addr = sid_to_addr[sid]
-    amount, deadline, signature = data["amount"], data["deadline"], data["signature"]
-    log.info("amount: %d, signature %s" % (amount, signature))
 
     async with async_session() as db:
         round_ = await db.scalar(select(Round).order_by(Round.created_at.desc()))
@@ -169,18 +168,26 @@ async def join_queue(sid, data):
             log.warning("Rejected player %s for double entry" % addr)
             return {"status": "error", "position": -1, "error": "user already in queue"}
 
-        # on-chain
-        loop = asyncio.get_running_loop()
-        ok, key = await safe_place_bet(loop, addr, amount, deadline, signature)
-        if not ok:
-            log.warning(
-                "Rejected entry by %s because bet placing threw an error" % addr
-            )
-            return {
-                "status": "error",
-                "position": -1,
-                "error": "unexpected error while placing bet",
-            }
+        if BYPASS_PAYMENT:
+            # Synthetic key keeps QueueEntry.key unique and the rest of the
+            # turn/win plumbing happy. There's no on-chain commit behind it —
+            # notifyWin is correspondingly skipped in pi_client.on_turn_win.
+            key = secrets.token_bytes(32)
+            log.info("BYPASS_PAYMENT: skipped on-chain bet for %s, synthetic key %s", addr, key.hex())
+        else:
+            amount, deadline, signature = data["amount"], data["deadline"], data["signature"]
+            log.info("amount: %d, signature %s" % (amount, signature))
+            loop = asyncio.get_running_loop()
+            ok, key = await safe_place_bet(loop, addr, amount, deadline, signature)
+            if not ok:
+                log.warning(
+                    "Rejected entry by %s because bet placing threw an error" % addr
+                )
+                return {
+                    "status": "error",
+                    "position": -1,
+                    "error": "unexpected error while placing bet",
+                }
 
         db.add(QueueEntry(address=addr, round_id=round_.id, key=key.hex()))
         await db.commit()

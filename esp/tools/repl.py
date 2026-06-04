@@ -62,6 +62,15 @@ def send(ser: serial.Serial, frame: dict) -> None:
 def main(port: str) -> int:
     print(f"Opening {port} @ {BAUD} 8N1 …")
     ser = serial.Serial(port, BAUD, timeout=0.2)
+    # On most ESP32 dev boards, the USB-serial bridge's DTR/RTS lines drive
+    # EN (reset) and IO0 (boot) through two transistors. pyserial's default
+    # opens with both lines asserted, which can hold the chip stuck in
+    # download mode. Drive a clean reset pulse the way esptool does it:
+    # RTS deasserted (no boot), DTR pulsed (reset asserted then released).
+    ser.setRTS(False)
+    ser.setDTR(True);  time.sleep(0.1)
+    ser.setDTR(False); time.sleep(0.1)
+
     threading.Thread(target=rx_loop, args=(ser,), daemon=True).start()
 
     seq = 0

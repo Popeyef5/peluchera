@@ -7,12 +7,11 @@
 // CLEARING phases (see src/fsm.h).
 
 #include <Arduino.h>
-#include <SPI.h>
 
+#include "fdxb_reader.h"
 #include "fsm.h"
 #include "ota.h"
 #include "protocol.h"
-#include "rfid_pool.h"
 #include "sensors.h"
 
 static constexpr const char *FW_VERSION = "garra-chute-0.1.0";
@@ -22,14 +21,11 @@ void setup() {
     delay(50);
     Serial.println("{\"type\":\"log\",\"msg\":\"boot: serial up\"}");
 
-    SPI.begin();           // VSPI defaults: SCK=18, MISO=19, MOSI=23.
-    Serial.println("{\"type\":\"log\",\"msg\":\"boot: spi up\"}");
-
     sensors::install();
     Serial.println("{\"type\":\"log\",\"msg\":\"boot: sensors up\"}");
 
-    rfid::install();
-    Serial.println("{\"type\":\"log\",\"msg\":\"boot: rfid up\"}");
+    fdxb::install();
+    Serial.println("{\"type\":\"log\",\"msg\":\"boot: fdxb up\"}");
 
     fsm::install();
     Serial.println("{\"type\":\"log\",\"msg\":\"boot: fsm up\"}");
@@ -53,7 +49,7 @@ void loop() {
 
     fsm::tick();
 
-    // Yield to WiFi/BLE tasks. Don't delay() heavily — RFID inventory
-    // already takes ~20ms per reader and would starve the loop otherwise.
+    // Yield to WiFi + parser task. The FDX-B parser runs on Core 0; this
+    // delay just lets Core 1's idle/WiFi tasks breathe.
     delay(1);
 }

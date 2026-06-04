@@ -11,24 +11,19 @@
 #pragma once
 
 // --- Break beams (active-low, falling edge = beam broken) -----------------
-constexpr int PIN_ENTRY_BB = 32;
-constexpr int PIN_EXIT_BB  = 33;
+constexpr int PIN_ENTRY_BB = 33;
+constexpr int PIN_EXIT_BB  = 32;
 
 // --- Solenoid (LOW = blocking, HIGH = path clear) -------------------------
 constexpr int PIN_SOLENOID = 25;
 
-// --- PN5180 RFID pool -----------------------------------------------------
-// SPI bus: VSPI (Arduino default on ESP32: SCK=18, MISO=19, MOSI=23).
-//
-// For incremental hardware bring-up, override the count from platformio.ini
-// (e.g. `build_flags = -DRFID_COUNT=1`). Whatever count you build with,
-// readers 0..count-1 from the pin tables below are initialized.
-#ifndef RFID_COUNT
-#define RFID_COUNT 4
-#endif
-constexpr int PIN_RFID_NSS [4] = {16, 17, 21, 22};
-constexpr int PIN_RFID_BUSY[4] = {27, 14, 13,  4};
-constexpr int PIN_RFID_RST     = 26;  // shared, active-low
+// --- FDX-B RFID reader (single custom antenna) ----------------------------
+// PWM-driven 134.2 kHz carrier on PIN_FDXB_PWM; demodulated tag response
+// returns on PIN_FDXB_INPUT (pin-change ISR). One antenna replaces the
+// four-PN5180 pool — VSPI bus + the various NSS/BUSY/RST pins are now free
+// for future use.
+constexpr int PIN_FDXB_PWM   = 4;    // D4 — drives the carrier transistor
+constexpr int PIN_FDXB_INPUT = 18;   // D18 — demodulated edges in
 
 // --- Onboard LED (debug; many esp32dev boards wire it to GPIO 2) ----------
 constexpr int PIN_STATUS_LED = 2;

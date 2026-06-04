@@ -3,11 +3,8 @@ services:
     build: ./server
     devices:
       - /dev/gpiochip0:/dev/gpiochip0
-      # Chute ESP32 over USB. Override ESP_PORT if your adapter enumerates
-      # as /dev/ttyACM0 instead.
-      - ${ESP_PORT:-/dev/ttyUSB0}:${ESP_PORT:-/dev/ttyUSB0}
-    environment:
-      - ESP_PORT=${ESP_PORT:-/dev/ttyUSB0}
+    # ESP32 chute USB is opt-in via docker-compose.esp.yml so the Pi can
+    # boot the server without the board attached (claw-only bring-up).
     expose:
       - '5000'
     network_mode: "host"

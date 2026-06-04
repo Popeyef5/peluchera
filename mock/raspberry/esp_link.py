@@ -73,6 +73,9 @@ class EspLink:
         elif type_ == "ping":
             seq = (data or {}).get("seq", 0)
             await self._queue_message(EspMessage(type="pong", seq=seq))
+        elif type_ == "enroll":
+            timeout_ms = (data or {}).get("timeout_ms", 10000)
+            asyncio.create_task(self._simulate_enroll(timeout_ms / 1000.0))
         return True
 
     async def events(self) -> AsyncIterator[EspMessage]:
@@ -134,5 +137,16 @@ class EspLink:
 
         await asyncio.sleep(EXIT_DELAY_SEC)
         await self._queue_message(EspMessage(
-            type="prize_won", data={"tag_uid": uid},
+            type="prize_won", data={"ball_serial": uid},
+        ))
+
+    async def _simulate_enroll(self, timeout_s: float) -> None:
+        """Pretend the admin waves a tag in front of the antenna. Returns a
+        UID from the mock pool after a short delay; /scenarios/next-tag/<uid>
+        overrides flow through state.next_uid() so admin tests can use the
+        same scenario hooks as gameplay tests."""
+        await asyncio.sleep(min(1.5, timeout_s * 0.5))
+        uid = self.state.next_uid()
+        await self._queue_message(EspMessage(
+            type="tag_scanned", data={"ball_serial": uid},
         ))

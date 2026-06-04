@@ -15,6 +15,7 @@ services:
       - '443:443'
     depends_on:
       - next
+      - next-admin
       - fastapi
       - db
     volumes:
@@ -25,7 +26,7 @@ services:
       - claw_network
     extra_hosts:
       - "host.docker.internal:host-gateway"
-  
+
   next:
     container_name: claw_next
     build: ./next
@@ -36,6 +37,22 @@ services:
     depends_on:
       - db
     env_file: .env
+    networks:
+      - claw_network
+
+  next-admin:
+    container_name: claw_next_admin
+    build: ./next-admin
+    expose:
+      - '3001'
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - db
+    env_file:
+      - .env
+      - path: .env.admin
+        required: false
     networks:
       - claw_network
 
@@ -59,7 +76,10 @@ services:
     build: ./fastapi
     expose:
       - '5000'
-    env_file: .env
+    env_file:
+      - .env
+      - path: .env.admin
+        required: false
     networks:
       - claw_network
 

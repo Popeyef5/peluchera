@@ -1,7 +1,7 @@
 #include "fsm.h"
+#include "fdxb_reader.h"
 #include "pins.h"
 #include "sensors.h"
-#include "rfid_pool.h"
 
 #include <Arduino.h>
 
@@ -56,7 +56,7 @@ void on_inbound(const proto::Parsed &m) {
                 return;
             }
             if (s_state != State::IDLE) {
-                // Stray arm during an active turn — drop, defense-in-depth.
+                // Stray arm during an active turn or enroll — drop, defense-in-depth.
                 return;
             }
             // Clear any sensor edges that landed before arming.
@@ -64,6 +64,20 @@ void on_inbound(const proto::Parsed &m) {
             (void)sensors::take_exit();
             s_state = State::AWAITING_FALL;
             s_deadline_ms = millis() + T_FALL_MS;
+            return;
+
+        case proto::Inbound::ENROLL:
+            // Only enterable from IDLE — refuse silently mid-turn / mid-fault.
+            // Central gates this against current_player/queue, so reaching
+            // here mid-turn would already be a backend bug.
+            if (s_state != State::IDLE) return;
+            // Drain any stale tag the reader may have parsed before now.
+            {
+                char dummy[17];
+                (void)fdxb::try_read_once(dummy);
+            }
+            s_state = State::ENROLL;
+            s_deadline_ms = millis() + (m.timeout_ms ? m.timeout_ms : 10000U);
             return;
 
         case proto::Inbound::UNKNOWN:
@@ -94,7 +108,7 @@ void tick() {
 
         case State::IDENTIFYING: {
             char uid_hex[17];
-            if (rfid::try_read_once(uid_hex)) {
+            if (fdxb::try_read_once(uid_hex)) {
                 memcpy(s_pending_uid, uid_hex, sizeof(s_pending_uid));
                 solenoid_engage();
                 s_state = State::CLEARING;
@@ -119,6 +133,20 @@ void tick() {
                 enter_blocked(proto::FAULT_EXIT_TIMEOUT);
             }
             return;
+
+        case State::ENROLL: {
+            char uid_hex[17];
+            if (fdxb::try_read_once(uid_hex)) {
+                s_state = State::IDLE;
+                proto::emit_tag_scanned(uid_hex);
+                return;
+            }
+            if ((int32_t)(now - s_deadline_ms) >= 0) {
+                s_state = State::IDLE;
+                proto::emit_enroll_timeout();
+            }
+            return;
+        }
     }
 }
 

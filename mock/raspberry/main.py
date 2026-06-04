@@ -12,7 +12,7 @@ Inbound (central → mock):
 
 Outbound (mock → central):
     {"type": "turn_end"}
-    {"type": "prize_won", "data": {"tag_uid": "<hex>"}}
+    {"type": "prize_won", "data": {"ball_serial": "<hex>"}}
     {"type": "fault",     "data": {"kind": "...", "reason"?: "..."}}
 
 Scenario HTTP controls (curl-friendly):
@@ -87,8 +87,13 @@ manager = ConnectionManager()
 
 
 async def _esp_pump() -> None:
+    """Dispatch ESP events: admin-flow events (tag_scanned / enroll_timeout)
+    go straight to central; everything else queues into the FSM."""
     async for msg in esp.events():
-        await esp_events.put(msg)
+        if msg.type in ("tag_scanned", "enroll_timeout"):
+            await manager.broadcast({"type": msg.type, "data": msg.data})
+        else:
+            await esp_events.put(msg)
 
 
 @asynccontextmanager
@@ -130,10 +135,17 @@ async def on_fault_clear(_ws, _message):
     events.put_nowait(EV_FAULT_CLEAR)
 
 
+async def on_enroll(_ws, message):
+    timeout_ms = (message or {}).get("timeout_ms", 10000)
+    log.info("enroll received (timeout_ms=%d)", timeout_ms)
+    await esp.send("enroll", {"timeout_ms": timeout_ms})
+
+
 MESSAGE_HANDLERS = {
     "move": on_move,
     "turn_start": on_turn_start,
     "fault_clear": on_fault_clear,
+    "enroll": on_enroll,
 }
 
 

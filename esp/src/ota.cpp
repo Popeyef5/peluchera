@@ -35,6 +35,13 @@ void install() {
         });
         ArduinoOTA.begin();
         ota_started = true;
+    } else {
+        // Initial connect failed. The WiFi driver would otherwise keep
+        // rescanning and spam NO_AP_FOUND every few seconds. Shut the radio
+        // down — OTA wasn't going to work anyway, and the FSM runs fine
+        // without it. Power-cycle is the way to retry OTA.
+        WiFi.disconnect(true, true);
+        WiFi.mode(WIFI_OFF);
     }
 }
 
