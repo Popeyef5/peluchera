@@ -3,8 +3,13 @@ services:
     build: ./server
     devices:
       - /dev/gpiochip0:/dev/gpiochip0
-    # ESP32 chute USB is opt-in via docker-compose.esp.yml so the Pi can
-    # boot the server without the board attached (claw-only bring-up).
+      # Chute ESP32 over USB. by-id symlink survives /dev/ttyUSB* reshuffles
+      # on reboot. Container always sees it as /dev/garra-esp. Container
+      # WILL refuse to start if the ESP isn't plugged in — by design: a
+      # missing ESP is a hard failure for the cabinet, not a soft warning.
+      - ${ESP_PORT:-/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0}:/dev/garra-esp
+    environment:
+      - ESP_PORT=/dev/garra-esp
     expose:
       - '5000'
     network_mode: "host"
