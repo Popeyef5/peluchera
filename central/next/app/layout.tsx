@@ -47,7 +47,10 @@ export default async function RootLayout({
         {/* Persistent invisible bitmap: keeps iOS Safari's GPU compositing
             layer for the card back warm across page reloads. Without this,
             a refresh loses the prior layer and the first auto-shuffle paints
-            a transparent frame while the bitmap is uploaded to GPU. */}
+            a transparent frame while the bitmap is uploaded to GPU.
+            next/image would defer the load + add wrappers — we specifically
+            need the raw <img> with decoding="sync" + loading="eager". */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/cards/back.png"
           alt=""

@@ -1036,7 +1036,7 @@ const HUD = ({ logoSrc }: { logoSrc: string }) => {
 	);
 };
 
-const Mobile = ({ logoSrc, rootRef }: { logoSrc: string; rootRef: React.RefObject<HTMLDivElement | null> }) => {
+const Mobile = ({ logoSrc }: { logoSrc: string }) => {
 	// Drawer host: viewport-sized positioning context for portaled drawers. On
 	// mobile the Shell Box (rootRef) is the scrollable page-content column —
 	// taller than the viewport — so a Drawer.Content with `position: absolute;
@@ -1102,7 +1102,7 @@ function Shell() {
 			minH="100vh"
 		>
 			<Styles accent={accent} />
-			{!isMobile ? <HUD logoSrc={logoSrc} /> : <Mobile logoSrc={logoSrc} rootRef={rootRef} />}
+			{!isMobile ? <HUD logoSrc={logoSrc} /> : <Mobile logoSrc={logoSrc} />}
 			<WinChoiceModal />
 			<MotionPermissionModal containerRef={rootRef} />
 		</Box>

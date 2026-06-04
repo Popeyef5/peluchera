@@ -110,6 +110,9 @@ const WinChoiceModal = () => {
 			clearTimeout(t1);
 			clearTimeout(t2);
 		};
+		// ENTRY_DELAY_MS / MESH_WAIT_TIMEOUT_MS are module-level constants — not
+		// stateful, no value to include in deps.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open]);
 
 	// Rise starts when both gates are open: dialog-enter delay elapsed AND
@@ -335,12 +338,14 @@ const WinChoiceModal = () => {
 											<ambientLight intensity={8.45} />
 											<directionalLight position={[2, 3, 4]} intensity={1.2} />
 											<Suspense fallback={null}>
+												{/* `config` is a real drei prop (spring config) but isn't in
+												    PresentationControlProps. Cast to bypass — runtime is fine. */}
 												<PresentationControls
 													global
 													snap
 													polar={phase === "pack" ? [-Math.PI / 4, Math.PI / 4] : [0, 0]}
 													azimuth={phase === "pack" ? [-Math.PI, Math.PI] : [0, 0]}
-													config={{ mass: 1, tension: 170, friction: 26 }}
+													{...({ config: { mass: 1, tension: 170, friction: 26 } } as object)}
 												>
 													<Float
 														speed={phase === "pack" ? 1.2 : 0}

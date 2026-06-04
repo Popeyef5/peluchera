@@ -26,7 +26,6 @@ type Props = {
 };
 
 const MAX_TILT_DEG = TILT.maxDeg;
-const TILT_FALLOFF_PX = TILT.falloffPx;
 
 // Module-level shared rest calibration for mobile orientation tilt. All
 // HoloCards on the page read from these so every card uses the SAME zero
@@ -323,7 +322,9 @@ export default function HoloCard({
 					{/* <img> with decoding="sync" forces iOS Safari to decode the
 					    bitmap before paint, avoiding the "transparent ghost" frame
 					    that appears when a freshly-mounted card animates while its
-					    background-image is still being decoded into a GPU layer. */}
+					    background-image is still being decoded into a GPU layer.
+					    next/image's wrapper + lazy decode defeats the point. */}
+					{/* eslint-disable-next-line @next/next/no-img-element */}
 					<img
 						className="holo-card__back"
 						src={CARD_BACK_IMAGE}

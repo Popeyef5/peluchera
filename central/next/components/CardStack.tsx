@@ -51,6 +51,11 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 	const deckRef = React.useRef(deck);
 	React.useEffect(() => { deckRef.current = deck; }, [deck]);
 
+	// Stable ref for the completion callback so the shuffle effect's deps
+	// don't change whenever the parent passes a new closure each render.
+	const onCompleteRef = React.useRef(onAutoShuffleComplete);
+	React.useEffect(() => { onCompleteRef.current = onAutoShuffleComplete; }, [onAutoShuffleComplete]);
+
 	React.useEffect(() => {
 		console.log('[CardStack] flipFirst prop ->', flipFirst);
 	}, [flipFirst]);
@@ -82,7 +87,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 		const tick = () => {
 			if (cancelled) return;
 			if (i >= autoShuffles) {
-				onAutoShuffleComplete?.();
+				onCompleteRef.current?.();
 				return;
 			}
 			doOne();
