@@ -28,7 +28,7 @@ const Wallet = () => <button className="tm-chip">[$] connect</button>;
 
 const PrizePanel = () => (
 	<div className="tm-panel">
-		<div className="tm-tag">// odds</div>
+		<div className="tm-tag">{"// odds"}</div>
 		<pre className="tm-manifest">
 {`KIND     PROB
 ${TIERS.map((t) => `${t.key.toUpperCase().padEnd(7)}  ${(t.odds * 100).toFixed(1).padStart(4)}%  ${bar(t.odds)}`).join("\n")}`}
