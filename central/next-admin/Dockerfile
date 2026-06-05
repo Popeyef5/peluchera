@@ -25,9 +25,12 @@ EXPOSE 3001
 CMD ["pnpm", "dev"]
 
 # Prod: standalone server bundle, same shape as central/next.
+# PORT is read by the standalone server.js — without it, Next defaults to
+# 3000 and nginx (which targets 3001) returns 502.
 FROM base AS runner
 WORKDIR /code
 ENV NODE_ENV=production
+ENV PORT=3001
 COPY --from=builder /code/public ./public
 COPY --from=builder /code/.next/standalone ./
 COPY --from=builder /code/.next/static ./.next/static
