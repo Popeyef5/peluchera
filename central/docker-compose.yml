@@ -42,7 +42,15 @@ services:
 
   next-admin:
     container_name: claw_next_admin
-    build: ./next-admin
+    build:
+      context: ./next-admin
+      # NEXT_PUBLIC_* must be inlined at build time. Compose interpolates
+      # these from its own env (which it loads from .env by default — pass
+      # --env-file .env.admin too on build to layer the admin creds in).
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_ADMIN_API_BASE: ${NEXT_PUBLIC_ADMIN_API_BASE:-}
     expose:
       - '3001'
     environment:

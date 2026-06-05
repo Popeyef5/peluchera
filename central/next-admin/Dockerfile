@@ -8,7 +8,16 @@ RUN npm install -g pnpm
 RUN pnpm install --no-frozen-lockfile
 
 # Stage 2: build
+# NEXT_PUBLIC_* are inlined into the client bundle at `pnpm build` time —
+# runtime env vars cannot fix a build that ran without them. Pass via
+# docker-compose build args (see docker-compose.yml: next-admin.build.args).
 FROM base AS builder
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_ADMIN_API_BASE
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_ADMIN_API_BASE=$NEXT_PUBLIC_ADMIN_API_BASE
 RUN npm install -g pnpm
 WORKDIR /code
 COPY . .
