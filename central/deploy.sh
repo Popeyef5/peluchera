@@ -74,12 +74,19 @@ docker volume inspect "$CERTBOT_ETC_VOL" >/dev/null 2>&1 || docker volume create
 docker volume inspect "$CERTBOT_WWW_VOL" >/dev/null 2>&1 || docker volume create "$CERTBOT_WWW_VOL"
 
 echo "Creating TLS certificates..."
-docker run --rm --network host \
-  -v "$CERTBOT_ETC_VOL:/etc/letsencrypt" \
-  certbot/certbot certonly \
-    --standalone \
-    -d "$DOMAIN_NAME" \
-    -m "$EMAIL" --agree-tos --no-eff-email --preferred-challenges http --quiet
+# Two separate certs so each lands in its own /etc/letsencrypt/live/<domain>/
+# directory — that's what nginx.conf references. A combined SAN cert would
+# only create one directory (under the first -d name) and the admin server
+# block would fail to load.
+# Renewal cron below picks both up automatically — it's a blanket `certbot renew`.
+for d in "$DOMAIN_NAME" "admin.$DOMAIN_NAME"; do
+  docker run --rm --network host \
+    -v "$CERTBOT_ETC_VOL:/etc/letsencrypt" \
+    certbot/certbot certonly \
+      --standalone \
+      -d "$d" \
+      -m "$EMAIL" --agree-tos --no-eff-email --preferred-challenges http --quiet
+done
 
 # Pull strong-crypto snippets into the volume
 docker run --rm -v "$CERTBOT_ETC_VOL:/etc/letsencrypt" \
