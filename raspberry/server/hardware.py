@@ -80,6 +80,7 @@ class Sensors:
         if self.loop is None:
             log.warning("sensor edge %s before loop bound — dropped", kind)
             return
+        log.info("claw opto RISING edge on GPIO %d -> %s", CLAW_OPTO, kind)
         self.loop.call_soon_threadsafe(self.events.put_nowait, kind)
 
 

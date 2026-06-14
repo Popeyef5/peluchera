@@ -123,10 +123,12 @@ class FSM:
 
         # Opto rising edge can take as long as the player wants — no timeout.
         await self._await_opto()
+        log.info("opto fired -> broadcasting turn_end, arming chute ESP")
         await self.hooks.broadcast({"type": "turn_end"})
 
         self.state = State.AWAITING
-        await self.esp.send("arm")
+        armed = await self.esp.send("arm")
+        log.info("arm sent to chute ESP (delivered=%s); awaiting verdict", armed)
         await self._await_verdict()
 
     async def _await_opto(self) -> None:
@@ -152,6 +154,7 @@ class FSM:
             })
             return
 
+        log.info("chute verdict: %s %s", msg.type, msg.data or "")
         if msg.type == "prize_won":
             await self.hooks.broadcast({
                 "type": "prize_won",

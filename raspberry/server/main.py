@@ -205,6 +205,15 @@ MESSAGE_HANDLERS = {
 async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
     log.info("WS connected (active=%d)", len(manager.active_connections))
+    # Tell the new client the chute's current latch so its mirror is correct
+    # even when the latch predates this connection (e.g. the ESP latched across
+    # a Pi restart and re-announced it via `ready`).
+    try:
+        await ws.send_text(json.dumps(
+            {"type": "esp_status", "data": {"latched_fault": esp.latched_fault}}
+        ))
+    except Exception as e:
+        log.warning("esp_status send failed: %s", e)
     try:
         while True:
             data = await ws.receive_text()

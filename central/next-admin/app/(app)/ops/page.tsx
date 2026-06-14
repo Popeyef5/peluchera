@@ -274,8 +274,11 @@ export default function OpsPage() {
         <CardContent className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={busy !== null || !faulted}
-            onClick={() => action("/admin/cabinet/clear_fault", "Clear fault")}
+            disabled={busy !== null || (!faulted && !esp?.esp.latched_fault)}
+            onClick={async () => {
+              await action("/admin/cabinet/clear_fault", "Clear fault");
+              checkEsp();
+            }}
           >
             {busy === "Clear fault" ? "Clearing…" : "Clear fault"}
           </Button>

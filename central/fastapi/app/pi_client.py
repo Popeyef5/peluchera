@@ -70,6 +70,8 @@ async def handle_pi_messages():
                     on_enroll_timeout()
                 elif message_type == "test_result":
                     on_test_result(data.get("data") or {})
+                elif message_type == "esp_status":
+                    on_esp_status(data.get("data") or {})
                 else:
                     log.warning(f"Unknown message type from Pi: {message_type}")
                     
@@ -143,6 +145,16 @@ async def request_test_arm(timeout: float = 20.0) -> dict:
         raise RuntimeError("no test_result from the Pi within the window")
     finally:
         _test_future = None
+
+
+def on_esp_status(data: Optional[dict] = None):
+    """Authoritative chute-latch sync sent by the Pi on every (re)connect, so
+    the central mirror is correct even when the latch predates the connection
+    (the bug where a latch arrived via the ESP `ready` frame and central's
+    `cabinet_fault` stayed None). Sets or clears the mirror to match the ESP."""
+    kind = (data or {}).get("latched_fault")
+    state.cabinet_fault = {"kind": kind, "reason": "latched"} if kind else None
+    log.info("ESP status sync: latched_fault=%s", kind)
 
 
 def on_test_result(data: Optional[dict] = None):

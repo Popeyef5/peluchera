@@ -1,3 +1,6 @@
-pio/
+# Build output — was previously committed by accident (this line read "pio/",
+# which never matched ".pio/"). The flasher writes here as root, so a tracked
+# .pio also broke `git pull` on the Pi.
+.pio/
 .vscode/
 include/secrets.h
