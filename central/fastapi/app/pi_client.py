@@ -68,6 +68,8 @@ async def handle_pi_messages():
                     on_tag_scanned(data.get("data") or {})
                 elif message_type == "enroll_timeout":
                     on_enroll_timeout()
+                elif message_type == "test_result":
+                    on_test_result(data.get("data") or {})
                 else:
                     log.warning(f"Unknown message type from Pi: {message_type}")
                     
@@ -120,6 +122,37 @@ async def safe_pi_emit(event, data=None):
     return False
 
  
+_test_future: Optional[asyncio.Future] = None
+
+
+async def request_test_arm(timeout: float = 20.0) -> dict:
+    """Trigger a chute drop-test on the Pi and await its verdict. Diagnostic
+    only — the Pi runs the real ESP sequence but reports via `test_result`, so
+    no Win is created."""
+    global _test_future
+    if not state.pi_connected:
+        raise RuntimeError("cabinet offline")
+    _test_future = asyncio.get_event_loop().create_future()
+    ok = await safe_pi_emit("test_arm")
+    if not ok:
+        _test_future = None
+        raise RuntimeError("cabinet offline")
+    try:
+        return await asyncio.wait_for(_test_future, timeout)
+    except asyncio.TimeoutError:
+        raise RuntimeError("no test_result from the Pi within the window")
+    finally:
+        _test_future = None
+
+
+def on_test_result(data: Optional[dict] = None):
+    global _test_future
+    if _test_future is not None and not _test_future.done():
+        _test_future.set_result(data or {})
+    else:
+        log.info("test_result with no pending request: %s", data)
+
+
 async def turn_end(*_):
   log.info("Pi informed turn end")
   async with _turn_lock:         # prevent overlapping turn transitions

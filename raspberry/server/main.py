@@ -27,7 +27,7 @@ from typing import Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException
 
 from esp_link import EspLink
-from fsm import FSM, FSMHooks, EV_TURN_START, EV_FAULT_CLEAR
+from fsm import FSM, FSMHooks, State, EV_TURN_START, EV_FAULT_CLEAR
 from hardware import ClawOutputs, Sensors, open_gpiochip
 
 logging.basicConfig(level=logging.INFO)
@@ -113,6 +113,25 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+@app.get("/health")
+async def health():
+    """Status of the chute ESP + this Pi server. Curl it on the Pi, or via the
+    admin Cabinet page (central proxies it). Does a live ping, so it reflects
+    actual ESP responsiveness, not just that the serial port is open."""
+    ping_ok = await esp.ping(timeout=2.0)
+    esp_ok = esp.connected and ping_ok and esp.latched_fault is None
+    return {
+        "ok": esp_ok,
+        "esp": {
+            "connected": esp.connected,
+            "fw": esp.fw,
+            "latched_fault": esp.latched_fault,
+            "ping_ok": ping_ok,
+        },
+        "central_connected": len(manager.active_connections) > 0,
+    }
+
+
 async def on_move(_ws, message):
     claw.apply_move_bitmask((message or {}).get("bitmask", 0))
 
@@ -133,11 +152,52 @@ async def on_enroll(_ws, message):
     await esp.send("enroll", {"timeout_ms": timeout_ms})
 
 
+def _interpret_verdict(msg) -> dict:
+    """Map a chute verdict frame to an operator-readable drop-test result."""
+    if msg is None:
+        return {"outcome": "timeout",
+                "detail": "No verdict within the window — no ball dropped, or the ESP is unresponsive."}
+    if msg.type == "prize_won":
+        return {"outcome": "prize_won", "ball_serial": (msg.data or {}).get("ball_serial"),
+                "detail": "Full sequence OK — entry beam, RFID read, solenoid fired, exit beam."}
+    if msg.type == "no_fall":
+        return {"outcome": "no_fall",
+                "detail": "No ball detected at the entry break-beam."}
+    if msg.type == "fault":
+        kind = (msg.data or {}).get("kind")
+        detail = {
+            "rfid_failed": "Ball fell (entry beam broke) but the RFID tag didn't read.",
+            "exit_timeout": "Ball fell and RFID read, but it didn't clear the exit (solenoid / exit beam).",
+            "internal_error": "ESP internal error or reset during the sequence.",
+        }.get(kind, "Chute fault.")
+        return {"outcome": kind or "fault", "fault_kind": kind, "detail": detail}
+    return {"outcome": msg.type, "detail": "Unrecognized verdict."}
+
+
+async def on_test_arm(_ws, _message):
+    """Diagnostic 'test win': arm the chute outside a turn so an operator can
+    drop a ball and see the real ESP sequence (break-beams, RFID, solenoid).
+    Does NOT create a Win. Refuses unless idle and unlatched."""
+    if fsm is None or fsm.state != State.IDLE:
+        await manager.broadcast({"type": "test_result",
+            "data": {"outcome": "busy", "detail": "Cabinet is not idle (a turn is running)."}})
+        return
+    if esp.latched_fault:
+        await manager.broadcast({"type": "test_result",
+            "data": {"outcome": "blocked", "fault_kind": esp.latched_fault,
+                     "detail": "Chute is latched — clear the fault first."}})
+        return
+    log.info("test_arm: arming chute for a drop test")
+    msg = await esp.arm_and_wait(timeout=15.0)
+    await manager.broadcast({"type": "test_result", "data": _interpret_verdict(msg)})
+
+
 MESSAGE_HANDLERS = {
     "move": on_move,
     "turn_start": on_turn_start,
     "fault_clear": on_fault_clear,
     "enroll": on_enroll,
+    "test_arm": on_test_arm,
 }
 
 

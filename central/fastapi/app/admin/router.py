@@ -18,10 +18,13 @@ from sqlalchemy import select, exists, and_, func
 
 from .. import state as _state
 from .. import win_transitions as wt
-from ..pi_client import safe_pi_emit, turn_end
+from ..pi_client import safe_pi_emit, turn_end, request_test_arm
 from .auth import AdminIdentity, RequireAdmin
 from ..deps import async_session
+import httpx
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from ..config import PI_SERVER_URL
 
 from ..models import (
 	Ball, OpenedBooster, ClosedBoosterStock, Card, CommitmentBatch, QueueEntry, Win,
@@ -785,6 +788,34 @@ async def cabinet_status(_: AdminIdentity = RequireAdmin):
 		"queue_length": int(queue_length or 0),
 		"cabinet_fault": _state.cabinet_fault,
 	}
+
+
+@router.post("/cabinet/test-arm")
+async def cabinet_test_arm(_: AdminIdentity = RequireAdmin):
+	"""Diagnostic 'test win': arm the chute so an operator can drop a ball and
+	see the real ESP sequence (break-beams, RFID, solenoid). Blocks until the
+	verdict or timeout. Does NOT create a Win. Refuses if a turn is in progress."""
+	if _state.current_player is not None:
+		raise HTTPException(status_code=409, detail="A turn is in progress")
+	try:
+		result = await request_test_arm(timeout=20.0)
+	except Exception as e:
+		raise HTTPException(status_code=503, detail=str(e))
+	return {"ok": True, "result": result}
+
+
+@router.get("/cabinet/esp")
+async def cabinet_esp(_: AdminIdentity = RequireAdmin):
+	"""On-demand chute-ESP status — proxies the Pi server's /health (ESP link,
+	firmware, latched fault, live ping). 503 if the Pi is unreachable."""
+	url = PI_SERVER_URL.rstrip("/") + "/health"
+	try:
+		async with httpx.AsyncClient(timeout=4.0) as client:
+			r = await client.get(url)
+		r.raise_for_status()
+		return r.json()
+	except Exception as e:
+		raise HTTPException(status_code=503, detail=f"Pi /health unreachable: {e}")
 
 
 @router.post("/cabinet/clear_fault")

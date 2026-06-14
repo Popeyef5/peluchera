@@ -26,12 +26,36 @@ type CabinetStatus = {
   cabinet_fault: { kind: string; reason: string | null } | null;
 };
 
+type EspHealth = {
+  ok: boolean;
+  esp: {
+    connected: boolean;
+    fw: string | null;
+    latched_fault: string | null;
+    ping_ok: boolean;
+  };
+  central_connected: boolean;
+};
+
+type TestResult = {
+  outcome: string;
+  ball_serial?: string | null;
+  fault_kind?: string | null;
+  detail?: string;
+};
+
 export default function OpsPage() {
   const [status, setStatus] = useState<CabinetStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [voidOpen, setVoidOpen] = useState(false);
+  const [esp, setEsp] = useState<EspHealth | null>(null);
+  const [espMsg, setEspMsg] = useState<string | null>(null);
+  const [checkingEsp, setCheckingEsp] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -62,6 +86,36 @@ export default function OpsPage() {
       setError(e instanceof ApiError ? e.message : String(e));
     } finally {
       setBusy(null);
+    }
+  };
+
+  const checkEsp = async () => {
+    setCheckingEsp(true);
+    setEspMsg(null);
+    try {
+      setEsp(await apiFetch<EspHealth>("/admin/cabinet/esp"));
+    } catch (e) {
+      setEsp(null);
+      setEspMsg(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setCheckingEsp(false);
+    }
+  };
+
+  const runTestWin = async () => {
+    setTesting(true);
+    setTestResult(null);
+    setTestMsg(null);
+    try {
+      const r = await apiFetch<{ ok: boolean; result: TestResult }>(
+        "/admin/cabinet/test-arm",
+        { method: "POST" },
+      );
+      setTestResult(r.result);
+    } catch (e) {
+      setTestMsg(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -111,6 +165,98 @@ export default function OpsPage() {
               )}
             </Stat>
           </dl>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Chute ESP</CardTitle>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={checkingEsp || testing}
+                onClick={checkEsp}
+              >
+                {checkingEsp ? "Checking…" : "Check status"}
+              </Button>
+              <Button
+                size="sm"
+                disabled={testing || checkingEsp}
+                onClick={runTestWin}
+              >
+                {testing ? "Arming — drop now…" : "Test win (drop a ball)"}
+              </Button>
+            </div>
+          </div>
+          {espMsg && (
+            <CardDescription className="text-destructive">
+              {espMsg}
+            </CardDescription>
+          )}
+        </CardHeader>
+        <CardContent>
+          {testMsg && (
+            <p className="mb-3 text-sm text-destructive">{testMsg}</p>
+          )}
+          {testing && (
+            <p className="mb-3 text-sm">
+              Chute armed —{" "}
+              <span className="font-medium text-foreground">
+                drop a ball into the chute now
+              </span>
+              . Waiting for the ESP (entry → RFID → solenoid → exit)…
+            </p>
+          )}
+          {testResult && !testing && (
+            <div className="mb-3 rounded-md border p-3">
+              <div className="flex items-center gap-2">
+                <TestOutcomePill outcome={testResult.outcome} />
+                {testResult.ball_serial && (
+                  <span className="font-mono text-xs">
+                    {testResult.ball_serial}
+                  </span>
+                )}
+              </div>
+              {testResult.detail && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {testResult.detail}
+                </p>
+              )}
+            </div>
+          )}
+          {esp === null ? (
+            <p className="text-sm text-muted-foreground">
+              Probe the firmware over the serial link (live ping) — link state,
+              version, and any latched fault.
+            </p>
+          ) : (
+            <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Stat label="ESP link">
+                <Dot ok={esp.esp.connected} />
+                {esp.esp.connected ? "connected" : "offline"}
+              </Stat>
+              <Stat label="Ping">
+                <Dot ok={esp.esp.ping_ok} />
+                {esp.esp.ping_ok ? "responsive" : "no reply"}
+              </Stat>
+              <Stat label="Firmware">
+                <span className="font-mono text-xs">{esp.esp.fw ?? "—"}</span>
+              </Stat>
+              <Stat label="Latched fault">
+                {esp.esp.latched_fault ? (
+                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-900">
+                    {esp.esp.latched_fault}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-900">
+                    none
+                  </span>
+                )}
+              </Stat>
+            </dl>
+          )}
         </CardContent>
       </Card>
 
@@ -186,6 +332,28 @@ function Dot({ ok }: { ok: boolean }) {
     <span
       className={`inline-block h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-red-500"}`}
     />
+  );
+}
+
+function TestOutcomePill({ outcome }: { outcome: string }) {
+  const style =
+    outcome === "prize_won"
+      ? "bg-green-100 text-green-900"
+      : outcome === "no_fall"
+        ? "bg-secondary text-secondary-foreground"
+        : "bg-red-100 text-red-900";
+  const label =
+    outcome === "prize_won"
+      ? "WIN — grabbed"
+      : outcome === "no_fall"
+        ? "no ball detected"
+        : outcome;
+  return (
+    <span
+      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${style}`}
+    >
+      {label}
+    </span>
   );
 }
 

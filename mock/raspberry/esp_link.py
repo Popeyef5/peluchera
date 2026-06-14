@@ -55,8 +55,10 @@ class EspLink:
         self._queue: "asyncio.Queue[EspMessage]" = asyncio.Queue()
         self.connected = True
         self.latched_fault: Optional[str] = None
+        self.fw = "garra-chute-mock-0.1.0"   # mirrors the real ESP's `ready.fw`
         self._ready_event = asyncio.Event()
         self._ready_event.set()
+        self._verdict_waiter: Optional["asyncio.Future"] = None
 
     async def run(self) -> None:
         # Real impl manages a reconnect loop here; nothing to do for the mock.
@@ -82,10 +84,30 @@ class EspLink:
         while True:
             yield await self._queue.get()
 
+    async def ping(self, timeout: float = 2.0) -> bool:
+        # The in-process mock is always responsive while "connected".
+        return self.connected
+
     async def wait_ready(self, timeout: Optional[float] = None) -> bool:
         return True
 
+    async def arm_and_wait(self, timeout: float = 15.0) -> Optional[EspMessage]:
+        """Mirror of the real EspLink.arm_and_wait: run one simulated chute
+        sequence (per the active scenario) and capture its verdict."""
+        self._verdict_waiter = asyncio.get_event_loop().create_future()
+        asyncio.create_task(self._simulate_arm())
+        try:
+            return await asyncio.wait_for(self._verdict_waiter, timeout)
+        except asyncio.TimeoutError:
+            return None
+        finally:
+            self._verdict_waiter = None
+
     async def _queue_message(self, msg: EspMessage) -> None:
+        w = self._verdict_waiter
+        if w is not None and not w.done() and msg.type in ("prize_won", "no_fall", "fault"):
+            w.set_result(msg)
+            return
         await self._queue.put(msg)
 
     def _draw_outcome(self) -> str:

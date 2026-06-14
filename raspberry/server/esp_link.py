@@ -58,7 +58,13 @@ class EspLink:
         self._queue: "asyncio.Queue[EspMessage]" = asyncio.Queue()
         self.connected = False
         self.latched_fault: Optional[str] = None
+        self.fw: Optional[str] = None          # firmware version from the last `ready`
         self._ready_event = asyncio.Event()
+        self._ping_seq = 0
+        self._pong_waiters: "dict[int, asyncio.Future]" = {}
+        # When set (by arm_and_wait), the next verdict frame resolves it and is
+        # NOT forwarded to the turn FSM — used by the admin "test win" probe.
+        self._verdict_waiter: Optional["asyncio.Future"] = None
 
     async def run(self) -> None:
         """Reconnect loop. Run as a background task."""
@@ -99,15 +105,29 @@ class EspLink:
             # `latched_fault` see consistent state.
             if msg.type == "ready":
                 self.latched_fault = payload.get("fault")
+                self.fw = payload.get("fw")
                 self._ready_event.set()
             elif msg.type == "fault":
                 # ESP only emits `fault` for new latches; still_blocked
                 # (a re-emit on arm during latch) does NOT change state.
                 if msg.data.get("reason") != "still_blocked":
                     self.latched_fault = msg.data.get("kind")
+            elif msg.type == "pong":
+                # Liveness reply — resolve the matching ping() waiter and don't
+                # surface it to the FSM (it'd be an unexpected verdict).
+                fut = self._pong_waiters.get(payload.get("seq"))
+                if fut is not None and not fut.done():
+                    fut.set_result(True)
+                continue
             elif msg.type == "log":
                 log.info("ESP log: %s", payload.get("msg"))
                 continue  # do not surface log frames to consumers
+            # Diagnostic test-arm: capture the verdict instead of routing it to
+            # the FSM. Only active during arm_and_wait() (gated on idle).
+            if self._verdict_waiter is not None and not self._verdict_waiter.done() \
+                    and msg.type in ("prize_won", "no_fall", "fault"):
+                self._verdict_waiter.set_result(msg)
+                continue
             await self._queue.put(msg)
 
     async def send(self, type_: str, data: Optional[dict] = None) -> bool:
@@ -131,6 +151,43 @@ class EspLink:
     async def events(self) -> AsyncIterator[EspMessage]:
         while True:
             yield await self._queue.get()
+
+    async def ping(self, timeout: float = 2.0) -> bool:
+        """Liveness probe: send a ping and wait for the matching pong. False if
+        the link is down or the ESP doesn't answer in time (port-open alone
+        doesn't mean the firmware is responsive)."""
+        if not self.connected or self._writer is None:
+            return False
+        self._ping_seq += 1
+        seq = self._ping_seq
+        fut: "asyncio.Future" = asyncio.get_event_loop().create_future()
+        self._pong_waiters[seq] = fut
+        try:
+            if not await self.send("ping", {"seq": seq}):
+                return False
+            await asyncio.wait_for(fut, timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
+        finally:
+            self._pong_waiters.pop(seq, None)
+
+    async def arm_and_wait(self, timeout: float = 15.0) -> Optional[EspMessage]:
+        """Arm the chute and wait for one verdict (prize_won | no_fall | fault).
+        Runs the real ESP sequence (break-beams, RFID, solenoid). Returns the
+        verdict frame, or None on timeout / link down. Caller MUST ensure the
+        cabinet is idle — the verdict is captured here, not given to the FSM."""
+        if not self.connected or self._writer is None:
+            return None
+        self._verdict_waiter = asyncio.get_event_loop().create_future()
+        try:
+            if not await self.send("arm"):
+                return None
+            return await asyncio.wait_for(self._verdict_waiter, timeout)
+        except asyncio.TimeoutError:
+            return None
+        finally:
+            self._verdict_waiter = None
 
     async def wait_ready(self, timeout: Optional[float] = None) -> bool:
         try:
