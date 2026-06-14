@@ -13,12 +13,12 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, TypedDict, Literal
 
-from sqlalchemy import select, update, text
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .config import RESELL_PRICE_BY_RARITY_CENTS, RESELL_PRICE_BY_BOOSTER_SKU_CENTS
 from .models import (
-    User, Win, Ball, ClosedBooster, OpenedBooster, Card, Shipment, LedgerEntry,
+    User, Win, Ball, ClosedBoosterStock, OpenedBooster, Card, Shipment, LedgerEntry,
     QueueEntry,
     WinStatus, BallStatus, InventoryStatus, CardStatus, PrizeKind,
     SettlementKind, ShipmentStatus, LedgerKind,
@@ -90,8 +90,9 @@ async def reserve_win(
 
     Atomically:
     - Marks the ball GRABBED.
-    - For BOOSTER_PAIR: reserves the bound OpenedBooster (single-row) plus
-      a fungible ClosedBooster of the same SKU (FOR UPDATE SKIP LOCKED).
+    - For BOOSTER_PAIR: reserves the bound OpenedBooster (single-row) and
+      confirms a sealed pack of the same SKU is in stock (ClosedBoosterStock
+      is a per-SKU availability flag — fungible, nothing to decrement).
     - For SINGLE_CARD: reserves the bound Card.
     - Creates the Win row in PENDING with a 30d expiry, snapshotting the
       resell price computed from the ball's bound prize.
@@ -130,24 +131,14 @@ async def reserve_win(
             select(OpenedBooster.sku).where(OpenedBooster.id == opened_id)
         )).scalar_one()
 
-        # Atomically claim a fungible ClosedBooster of same SKU. SKIP LOCKED
-        # so concurrent winners of the same SKU don't serialize on the lock;
-        # ORDER BY id keeps allocation deterministic for replay/tests.
-        claimed = await session.execute(text("""
-            UPDATE closed_booster
-            SET status = 'RESERVED'
-            WHERE id = (
-                SELECT id FROM closed_booster
-                WHERE sku = :sku AND status = 'AVAILABLE'
-                ORDER BY id
-                FOR UPDATE SKIP LOCKED
-                LIMIT 1
-            )
-            RETURNING id;
-        """), {"sku": sku})
-        row = claimed.first()
-        if row is None:
-            raise PoolExhausted(f"No ClosedBooster for SKU {sku}")
+        # Sealed packs are fungible-by-SKU: just confirm we still have one of
+        # this SKU to ship. No per-unit reservation — ClosedBoosterStock is an
+        # availability flag the operator manages by hand.
+        in_stock = await session.scalar(
+            select(ClosedBoosterStock.in_stock).where(ClosedBoosterStock.sku == sku)
+        )
+        if not in_stock:
+            raise PoolExhausted(f"No sealed pack in stock for SKU {sku}")
 
         win = Win(
             user_id=user.id,
@@ -163,11 +154,6 @@ async def reserve_win(
         await session.execute(
             update(OpenedBooster)
             .where(OpenedBooster.id == opened_id)
-            .values(reserved_by_win_id=win.id)
-        )
-        await session.execute(
-            update(ClosedBooster)
-            .where(ClosedBooster.id == row.id)
             .values(reserved_by_win_id=win.id)
         )
         return win
@@ -214,15 +200,11 @@ def _card_resell_price(card: Card) -> int:
 # ─── Booster-pair settlements ───────────────────────────────────────────
 
 async def open_booster_win(session: AsyncSession, win_id: uuid.UUID) -> None:
-    """User opens a booster digitally — release closed, consume opened,
-    transfer the filmed cards to the user's collection."""
+    """User opens a booster digitally — consume the opened (filmed) booster and
+    transfer its cards to the user's collection. The sealed pack stays in the
+    SKU pool (nothing to release — availability is operator-managed)."""
     win = await _load_pending_booster_win(session, win_id)
 
-    await session.execute(
-        update(ClosedBooster)
-        .where(ClosedBooster.id == win.closed_booster.id)
-        .values(status=InventoryStatus.AVAILABLE, reserved_by_win_id=None)
-    )
     await session.execute(
         update(OpenedBooster)
         .where(OpenedBooster.id == win.opened_booster.id)
@@ -252,6 +234,9 @@ async def ship_booster_win(
     address: ShippingAddress,
 ) -> Shipment:
     win = await _load_pending_booster_win(session, win_id)
+    # Capture the SKU before releasing the opened booster — it's what the
+    # operator physically pulls and mails.
+    sku = win.opened_booster.sku if win.opened_booster else None
 
     await session.execute(
         update(OpenedBooster)
@@ -259,19 +244,12 @@ async def ship_booster_win(
         .values(status=InventoryStatus.AVAILABLE, reserved_by_win_id=None)
     )
 
-    shipment = Shipment(user_id=win.user_id, shipping_address=dict(address))
+    shipment = Shipment(
+        user_id=win.user_id, shipping_address=dict(address), sku=sku,
+    )
     session.add(shipment)
     await session.flush()
 
-    await session.execute(
-        update(ClosedBooster)
-        .where(ClosedBooster.id == win.closed_booster.id)
-        .values(
-            status=InventoryStatus.SHIPPED,
-            reserved_by_win_id=None,
-            shipment_id=shipment.id,
-        )
-    )
     win.status = WinStatus.SETTLED_SHIP
     win.settled_at = datetime.utcnow()
     win.settled_by = SettlementKind.USER_SHIP
@@ -285,11 +263,6 @@ async def _settle_booster_as_resell(
 ) -> None:
     win = await _load_pending_booster_win(session, win_id)
 
-    await session.execute(
-        update(ClosedBooster)
-        .where(ClosedBooster.id == win.closed_booster.id)
-        .values(status=InventoryStatus.AVAILABLE, reserved_by_win_id=None)
-    )
     await session.execute(
         update(OpenedBooster)
         .where(OpenedBooster.id == win.opened_booster.id)

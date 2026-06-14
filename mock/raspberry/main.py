@@ -19,12 +19,20 @@ Scenario HTTP controls (curl-friendly):
     POST /scenarios/always-win
     POST /scenarios/always-lose
     POST /scenarios/random            (default)
+    POST /scenarios/odds              (set win/fault rates; body below)
     POST /scenarios/rfid-fail
     POST /scenarios/exit-stuck
     POST /scenarios/disconnect        (closes all WS clients)
     POST /scenarios/fault-clear       (simulates the Telegram bot clearing a fault)
     POST /scenarios/next-tag/{uid}    (force next prize_won UID)
     GET  /scenarios/state
+
+Full-turn end-to-end loop (drives a real Win in the central backend):
+    1. enroll a ball in next-admin -> capture the scanned serial
+    2. create + bind the ball to an OpenedBooster / Card
+    3. POST /scenarios/next-tag/<that-serial>
+    4. POST /scenarios/odds {"win_rate": 1}
+    5. queue up / start a turn -> prize_won(<serial>) -> central reserve_win
 """
 
 import asyncio
@@ -34,7 +42,10 @@ import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException
+from fastapi import (
+    Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect,
+    WebSocketException,
+)
 
 from esp_link import EspLink
 from fsm import FSM, FSMHooks, EV_TURN_START, EV_FAULT_CLEAR
@@ -195,7 +206,51 @@ async def scenario_always_lose():
 @app.post("/scenarios/random")
 async def scenario_random():
     state.mode = Scenario.RANDOM
-    return {"mode": state.mode, "win_rate": state.win_rate}
+    return {
+        "mode": state.mode,
+        "win_rate": state.win_rate,
+        "rfid_fail_rate": state.rfid_fail_rate,
+        "exit_stuck_rate": state.exit_stuck_rate,
+    }
+
+
+@app.post("/scenarios/odds")
+async def scenario_odds(body: Optional[dict] = Body(default=None)):
+    """Set RANDOM-mode outcome odds and switch to RANDOM mode. Body keys are
+    all optional; omitted ones keep their current value:
+
+        {"win_rate": 0.5, "rfid_fail_rate": 0.2, "exit_stuck_rate": 0.1}
+
+    Each must be in [0, 1] and win + rfid + exit must be <= 1 (the remainder
+    is a clean lose / no_fall)."""
+    body = body or {}
+    new = {
+        "win_rate": state.win_rate,
+        "rfid_fail_rate": state.rfid_fail_rate,
+        "exit_stuck_rate": state.exit_stuck_rate,
+    }
+    for key in new:
+        if key in body and body[key] is not None:
+            try:
+                val = float(body[key])
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"{key} must be a number")
+            if not 0.0 <= val <= 1.0:
+                raise HTTPException(status_code=400, detail=f"{key} must be in [0, 1]")
+            new[key] = val
+
+    total = new["win_rate"] + new["rfid_fail_rate"] + new["exit_stuck_rate"]
+    if total > 1.0 + 1e-9:
+        raise HTTPException(
+            status_code=400,
+            detail=f"win_rate + rfid_fail_rate + exit_stuck_rate must be <= 1 (got {total:.3f})",
+        )
+
+    state.win_rate = new["win_rate"]
+    state.rfid_fail_rate = new["rfid_fail_rate"]
+    state.exit_stuck_rate = new["exit_stuck_rate"]
+    state.mode = Scenario.RANDOM
+    return {"mode": state.mode, **new}
 
 
 @app.post("/scenarios/rfid-fail")
@@ -240,6 +295,8 @@ async def scenario_state():
     return {
         "mode": state.mode,
         "win_rate": state.win_rate,
+        "rfid_fail_rate": state.rfid_fail_rate,
+        "exit_stuck_rate": state.exit_stuck_rate,
         "active_connections": len(manager.active_connections),
         "turn_duration_range": [TURN_DURATION_MIN, TURN_DURATION_MAX],
         "tag_pool": TAG_UIDS,

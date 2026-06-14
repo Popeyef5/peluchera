@@ -191,6 +191,10 @@ async def on_pi_fault(data: Optional[dict] = None):
     kind = data.get("kind") or "unknown"
     reason = data.get("reason")
     log.warning("Pi reported cabinet fault: kind=%s reason=%s", kind, reason)
+    # Mirror the latch for the admin ops page. `still_blocked` is a re-emit on
+    # arm while already latched, so it doesn't change the stored kind.
+    if reason != "still_blocked":
+        state.cabinet_fault = {"kind": kind, "reason": reason}
     if state.current_player:
         await sio.emit("cabinet_fault", data, room=state.current_player)
 

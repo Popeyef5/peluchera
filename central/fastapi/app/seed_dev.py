@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from .db import async_session, engine, Base
 from .models import (
-    CommitmentBatch, Ball, OpenedBooster, ClosedBooster, Card,
+    CommitmentBatch, Ball, OpenedBooster, ClosedBoosterStock, Card,
     BallStatus, CardStatus, CardOrigin, CardRarity, PrizeKind,
 )
 
@@ -76,9 +76,8 @@ async def seed():
                     status=CardStatus.IN_POOL,
                 ))
 
-        # 12 ClosedBoosters of the same SKU — fungible pool with surplus.
-        for _ in range(12):
-            db.add(ClosedBooster(sku=SKU))
+        # Sealed-pack availability for this SKU (fungible, tracked per-SKU).
+        db.add(ClosedBoosterStock(sku=SKU, in_stock=True))
 
         # 6 standalone single-prize Cards.
         single_cards = []

@@ -22,6 +22,12 @@ pi_connected = False
 # Shape: {"expires_at": float, "scanned_ball_serial": Optional[str], "timed_out": bool}
 enroll_pending: Optional[dict] = None
 
+# Mirror of the chute ESP32's latched fault, surfaced to the admin ops page.
+# Set by pi_client.on_pi_fault when the Pi forwards a `fault`, cleared by the
+# admin /cabinet/clear_fault endpoint once the Pi acks the clear. None == healthy.
+# Shape: {"kind": str, "reason": Optional[str]}
+cabinet_fault: Optional[dict] = None
+
 def set_pi_status(connected: bool) -> None:
     """Update global flags that reflect the Pi‑side socket health."""
     global pi_connected

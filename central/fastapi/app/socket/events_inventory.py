@@ -28,7 +28,7 @@ from ..state import sid_to_addr
 from ..logging import log
 from ..config import RESELL_PRICE_BY_RARITY_CENTS
 from ..models import (
-	User, Win, Card, ClosedBooster, OpenedBooster, Shipment,
+	User, Win, Card, OpenedBooster, Shipment,
 	WinStatus, CardStatus, PrizeKind,
 )
 from .. import win_transitions as wt
@@ -81,10 +81,8 @@ def _serialize_pending_win(w: Win) -> dict:
 		"ball_serial": w.ball.serial if w.ball else None,
 	}
 	if w.prize_kind == PrizeKind.BOOSTER_PAIR:
-		base["closed_booster"] = {
-			"id": str(w.closed_booster.id),
-			"sku": w.closed_booster.sku,
-		} if w.closed_booster else None
+		# The sealed pack is fungible-by-SKU (ClosedBoosterStock); its SKU is
+		# the opened booster's SKU, surfaced below.
 		base["opened_booster"] = {
 			"id": str(w.opened_booster.id),
 			"sku": w.opened_booster.sku,

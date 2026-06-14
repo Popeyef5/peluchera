@@ -104,7 +104,7 @@ class InventoryStatus(str, enum.Enum):
     AVAILABLE = "AVAILABLE"
     RESERVED  = "RESERVED"
     CONSUMED  = "CONSUMED"   # OpenedBooster whose cards moved to a user
-    SHIPPED   = "SHIPPED"    # ClosedBooster
+    SHIPPED   = "SHIPPED"    # (legacy; sealed packs now tracked by ClosedBoosterStock)
     RETIRED   = "RETIRED"
 
 
@@ -208,21 +208,19 @@ class Ball(Base):
     win                 = relationship("Win", back_populates="ball", uselist=False)
 
 
-class ClosedBooster(Base):
-    __tablename__ = "closed_booster"
-    id                = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    sku               = Column(String, nullable=False)
-    status            = Column(Enum(InventoryStatus, name="inventory_status"), default=InventoryStatus.AVAILABLE, nullable=False)
+class ClosedBoosterStock(Base):
+    """Sealed-pack availability, tracked per SKU rather than per unit.
 
-    reserved_by_win_id = Column(UUID(as_uuid=True), ForeignKey("win.id"), unique=True)
-    shipment_id       = Column(UUID(as_uuid=True), ForeignKey("shipment.id"), unique=True)
-
-    reserved_by_win   = relationship("Win", foreign_keys=[reserved_by_win_id], back_populates="closed_booster")
-    shipment          = relationship("Shipment", foreign_keys=[shipment_id], back_populates="closed_booster")
-
-    __table_args__ = (
-        Index("ix_closed_booster_sku_status", "sku", "status"),
-    )
+    Sealed packs are fungible — at fulfillment time the only thing that matters
+    is whether we still have one of this SKU to ship. `in_stock` is a flag the
+    operator flips as they restock / run out (admin inventory). No quantity is
+    tracked, so a booster-pair win only checks that its SKU is in stock; it
+    does not decrement anything.
+    """
+    __tablename__ = "closed_booster_stock"
+    id        = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sku       = Column(String, unique=True, index=True, nullable=False)
+    in_stock  = Column(Boolean, default=True, nullable=False)
 
 
 class OpenedBooster(Base):
@@ -285,7 +283,8 @@ class Win(Base):
     status            = Column(Enum(WinStatus, name="win_status"), default=WinStatus.PENDING, nullable=False)
     expires_at        = Column(DateTime, nullable=False)
 
-    # Single-card wins set this; booster-pair wins use closed/opened relationships.
+    # Single-card wins set this; booster-pair wins use the opened-booster
+    # relationship (the sealed pack is fungible-by-SKU — see ClosedBoosterStock).
     prize_card_id     = Column(UUID(as_uuid=True), ForeignKey("card.id"), unique=True)
 
     # Snapshotted at win time so later operator price changes don't
@@ -299,7 +298,6 @@ class Win(Base):
     user              = relationship("User", lazy="selectin")
     queue_entry       = relationship("QueueEntry", lazy="selectin")
     ball              = relationship("Ball", back_populates="win", lazy="selectin")
-    closed_booster    = relationship("ClosedBooster", back_populates="reserved_by_win", uselist=False, foreign_keys="ClosedBooster.reserved_by_win_id", lazy="selectin")
     opened_booster    = relationship("OpenedBooster", back_populates="reserved_by_win", uselist=False, foreign_keys="OpenedBooster.reserved_by_win_id", lazy="selectin")
     prize_card        = relationship("Card", back_populates="win", foreign_keys=[prize_card_id], lazy="selectin")
 
@@ -320,10 +318,14 @@ class Shipment(Base):
     delivered_at      = Column(DateTime)
     shipping_address  = Column(JSONB, nullable=False)
 
+    # For a booster-pair ship, the SKU of the sealed pack to mail. Sealed packs
+    # are tracked by availability only (ClosedBoosterStock), so this records
+    # what to physically pull. Null for card shipments.
+    sku               = Column(String)
+
     created_at        = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user              = relationship("User")
-    closed_booster    = relationship("ClosedBooster", back_populates="shipment", uselist=False, foreign_keys="ClosedBooster.shipment_id")
     cards             = relationship("Card", back_populates="shipment", foreign_keys="Card.shipment_id")
 
     __table_args__ = (

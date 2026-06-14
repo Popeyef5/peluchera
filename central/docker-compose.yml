@@ -65,7 +65,7 @@ services:
       - claw_network
 
   db:
-    image: postgres:latest
+    image: postgres:17
     container_name: claw_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER}

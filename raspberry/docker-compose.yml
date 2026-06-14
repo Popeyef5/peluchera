@@ -46,3 +46,28 @@ services:
       - AUTOHEAL_CONTAINER_LABEL=all
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+
+  # ── Chute ESP32 firmware flasher ─────────────────────────────────────────
+  # One-off, profile-gated so it NEVER starts with `up`. Drive it via
+  # ./flash.sh (--ota | --usb), which builds it and runs `pio ... -t upload`.
+  #   - host networking: espota's reverse image transfer must reach the ESP on
+  #     the LAN; mDNS resolution is done host-side by flash.sh.
+  #   - the ESP USB device is mapped for --usb mode (flash.sh stops `socket`
+  #     first to free the port). Same "ESP must be plugged in" assumption as
+  #     the socket service.
+  #   - toolchains/cache persist in garra_pio_cache so re-flashes are fast.
+  flasher:
+    profiles: ["flash"]
+    build: ./flasher
+    network_mode: "host"
+    environment:
+      - GARRA_OTA_PASSWORD=${GARRA_OTA_PASSWORD:-}
+    devices:
+      - ${ESP_PORT:-/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0}:/dev/garra-esp
+    volumes:
+      - ../esp:/project
+      - garra_pio_cache:/root/.platformio
+    working_dir: /project
+
+volumes:
+  garra_pio_cache:

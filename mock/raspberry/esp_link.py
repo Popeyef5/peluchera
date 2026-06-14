@@ -88,9 +88,42 @@ class EspLink:
     async def _queue_message(self, msg: EspMessage) -> None:
         await self._queue.put(msg)
 
-    async def _simulate_arm(self) -> None:
+    def _draw_outcome(self) -> str:
+        """Decide what the chute will do this arm. Returns one of:
+        "win" | "no_fall" | "rfid_failed" | "exit_timeout".
+
+        Deterministic scenarios map to a fixed outcome. RANDOM mode draws a
+        single uniform and partitions it: win_rate, then rfid_fail_rate, then
+        exit_stuck_rate, with the remainder a clean `no_fall` (ordinary lose).
+        The three rates are kept summing to <= 1.0 by the /scenarios/odds
+        validation, so the partition never overlaps.
+        """
         from mock_hardware import Scenario   # deferred (see top-of-file note)
 
+        mode = self.state.mode
+        if mode == Scenario.ALWAYS_WIN:
+            return "win"
+        if mode == Scenario.ALWAYS_LOSE:
+            return "no_fall"
+        if mode == Scenario.RFID_FAIL:
+            return "rfid_failed"
+        if mode == Scenario.EXIT_STUCK:
+            return "exit_timeout"
+
+        # RANDOM
+        r = random.random()
+        win = self.state.win_rate
+        rfid = self.state.rfid_fail_rate
+        exit_stuck = self.state.exit_stuck_rate
+        if r < win:
+            return "win"
+        if r < win + rfid:
+            return "rfid_failed"
+        if r < win + rfid + exit_stuck:
+            return "exit_timeout"
+        return "no_fall"
+
+    async def _simulate_arm(self) -> None:
         if self.latched_fault:
             await self._queue_message(EspMessage(
                 type="fault",
@@ -98,14 +131,9 @@ class EspLink:
             ))
             return
 
-        mode = self.state.mode
-        will_fall = mode in (
-            Scenario.ALWAYS_WIN, Scenario.RFID_FAIL, Scenario.EXIT_STUCK
-        ) or (
-            mode == Scenario.RANDOM and random.random() < self.state.win_rate
-        )
+        outcome = self._draw_outcome()
 
-        if not will_fall:
+        if outcome == "no_fall":
             # AWAITING_FALL times out without an entry edge.
             await asyncio.sleep(T_FALL_SEC)
             await self._queue_message(EspMessage(type="no_fall"))
@@ -115,7 +143,7 @@ class EspLink:
         await asyncio.sleep(ENTRY_DELAY_SEC)
 
         # IDENTIFYING phase.
-        if mode == Scenario.RFID_FAIL:
+        if outcome == "rfid_failed":
             await asyncio.sleep(T_ID_SEC)
             self.latched_fault = "rfid_failed"
             await self._queue_message(EspMessage(
@@ -127,7 +155,7 @@ class EspLink:
         uid = self.state.next_uid()
 
         # CLEARING phase.
-        if mode == Scenario.EXIT_STUCK:
+        if outcome == "exit_timeout":
             await asyncio.sleep(T_EXIT_SEC)
             self.latched_fault = "exit_timeout"
             await self._queue_message(EspMessage(

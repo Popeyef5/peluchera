@@ -26,9 +26,9 @@ app = sio_app(api)          # merged ASGI app (socket.io + FastAPI)
 
 @api.on_event("startup")
 async def on_startup():
-    # DB tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Schema is owned by Alembic now (run `alembic upgrade head` on deploy);
+    # we no longer create_all at startup so the app can't silently drift from
+    # the migration history. Fresh dev DBs: `alembic upgrade head` first.
 
     # first round
     async with async_session() as db:

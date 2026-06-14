@@ -9,20 +9,23 @@ meaningful.
 import hashlib
 import time
 import uuid
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select, exists, and_, func
 
 from .. import state as _state
-from ..pi_client import safe_pi_emit
+from .. import win_transitions as wt
+from ..pi_client import safe_pi_emit, turn_end
 from .auth import AdminIdentity, RequireAdmin
 from ..deps import async_session
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from ..models import (
-	Ball, OpenedBooster, ClosedBooster, Card, CommitmentBatch, QueueEntry,
-	BallStatus, InventoryStatus, PrizeKind,
+	Ball, OpenedBooster, ClosedBoosterStock, Card, CommitmentBatch, QueueEntry, Win,
+	BallStatus, InventoryStatus, PrizeKind, CardStatus, CardRarity, CardOrigin,
 )
 
 # Hard ceiling on the admin enrollment window — matches the ESP-side default.
@@ -139,10 +142,10 @@ async def bind_ball(
 			db.add(ball)
 			created = True
 		else:
-			if ball.status == BallStatus.LOADED:
+			if ball.status == BallStatus.LOADED and (ball.opened_booster_id or ball.prize_card_id):
 				raise HTTPException(
 					status_code=409,
-					detail=f"Ball {serial} is still LOADED — settle or void the current binding first",
+					detail=f"Ball {serial} is LOADED and already bound — void it before rebinding",
 				)
 			ball.prize_kind = PrizeKind.BOOSTER_PAIR
 			ball.opened_booster_id = ob_uuid
@@ -170,11 +173,105 @@ async def bind_ball(
 		}
 
 
+class BindCardBody(BaseModel):
+	card_id: str
+
+
+@router.post("/balls/{serial}/bind-card")
+async def bind_ball_card(
+	serial: str,
+	body: BindCardBody,
+	_: AdminIdentity = RequireAdmin,
+):
+	"""Single-card analogue of bind_ball: bind a ball to an IN_POOL Card,
+	setting prize_kind=SINGLE_CARD. Same create-or-rebind semantics and
+	guards as the booster bind."""
+	try:
+		card_uuid = uuid.UUID(body.card_id)
+	except ValueError:
+		raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="card_id is not a UUID")
+
+	async with async_session() as db:
+		card = await db.scalar(select(Card).where(Card.id == card_uuid))
+		if card is None:
+			raise HTTPException(status_code=404, detail="Card not found")
+		if card.status != CardStatus.IN_POOL:
+			raise HTTPException(status_code=409, detail=f"Card is {card.status.value}, not IN_POOL")
+
+		existing_owner = await db.scalar(
+			select(Ball).where(Ball.prize_card_id == card_uuid, Ball.serial != serial)
+		)
+		if existing_owner is not None:
+			raise HTTPException(
+				status_code=409,
+				detail=f"Card already bound to ball {existing_owner.serial}",
+			)
+
+		ball = await db.scalar(select(Ball).where(Ball.serial == serial))
+		batch = await _ensure_batch(db)
+		secret = _placeholder_hash("admin-secret", serial, str(card_uuid), str(datetime.utcnow()))
+
+		if ball is None:
+			ball = Ball(
+				serial=serial,
+				prize_kind=PrizeKind.SINGLE_CARD,
+				prize_card_id=card_uuid,
+				secret=secret,
+				commitment_hash=_placeholder_hash(secret, str(card_uuid)),
+				merkle_proof={"siblings": [], "index": 0, "note": "placeholder"},
+				batch_id=batch.id,
+				status=BallStatus.LOADED,
+			)
+			db.add(ball)
+			created = True
+		else:
+			if ball.status == BallStatus.LOADED and (ball.opened_booster_id or ball.prize_card_id):
+				raise HTTPException(
+					status_code=409,
+					detail=f"Ball {serial} is LOADED and already bound — void it before rebinding",
+				)
+			ball.prize_kind = PrizeKind.SINGLE_CARD
+			ball.prize_card_id = card_uuid
+			ball.opened_booster_id = None
+			ball.secret = secret
+			ball.commitment_hash = _placeholder_hash(secret, str(card_uuid))
+			ball.merkle_proof = {"siblings": [], "index": 0, "note": "placeholder"}
+			ball.batch_id = batch.id
+			ball.status = BallStatus.LOADED
+			ball.voided_at = None
+			created = False
+
+		await db.commit()
+		return {
+			"ok": True,
+			"created": created,
+			"ball": {
+				"id": str(ball.id),
+				"serial": ball.serial,
+				"status": ball.status.value,
+				"prize_kind": ball.prize_kind.value,
+				"prize_card_id": str(card_uuid),
+			},
+		}
+
+
 @router.post("/balls/{serial}/void")
 async def void_ball(serial: str, _: AdminIdentity = RequireAdmin):
-	"""TODO: mark a ball VOIDED — releases its bound OpenedBooster and
-	flips any open Win to expired/refund."""
-	return {"ok": False, "error": "not implemented"}
+	"""Mark a LOADED ball VOIDED, releasing its bound prize back to the pool.
+	Delegates to win_transitions.void_ball (single short transaction)."""
+	async with async_session() as db:
+		ball = await db.scalar(select(Ball).where(Ball.serial == serial))
+		if ball is None:
+			raise HTTPException(status_code=404, detail=f"Ball {serial} not found")
+		try:
+			await wt.void_ball(db, ball.id)
+		except wt.BallNotAvailable as e:
+			raise HTTPException(status_code=409, detail=str(e))
+		await db.commit()
+		return {
+			"ok": True,
+			"ball": {"id": str(ball.id), "serial": ball.serial, "status": ball.status.value},
+		}
 
 
 # ─── Tag enrollment ─────────────────────────────────────────────────────
@@ -334,13 +431,15 @@ async def list_opened_boosters(
 
 @router.get("/inventory/closed-boosters")
 async def list_closed_boosters(_: AdminIdentity = RequireAdmin):
+	"""Sealed-pack availability per SKU. Each row is a SKU + an in_stock flag —
+	sealed packs are fungible, so we track availability, not individual units."""
 	async with async_session() as db:
 		rows = (await db.execute(
-			select(ClosedBooster).order_by(ClosedBooster.sku, ClosedBooster.id)
+			select(ClosedBoosterStock).order_by(ClosedBoosterStock.sku)
 		)).scalars().all()
 		return {
 			"closed_boosters": [
-				{"id": str(r.id), "sku": r.sku, "status": r.status.value}
+				{"sku": r.sku, "in_stock": r.in_stock}
 				for r in rows
 			]
 		}
@@ -366,18 +465,344 @@ async def list_cards(_: AdminIdentity = RequireAdmin):
 		}
 
 
-# ─── Cabinet ops (still stubs) ───────────────────────────────────────────
+# ─── Inventory create / edit / import ────────────────────────────────────
+
+def _parse_dt(value: Optional[str]) -> datetime:
+	"""Parse an ISO-8601 string into a naive-UTC datetime (the inventory
+	columns are timezone-naive). Defaults to now when empty."""
+	if not value:
+		return datetime.utcnow()
+	try:
+		dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+	except ValueError:
+		raise HTTPException(status_code=400, detail=f"invalid datetime: {value}")
+	if dt.tzinfo is not None:
+		dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+	return dt
+
+
+def _parse_rarity(value: str) -> CardRarity:
+	try:
+		return CardRarity(value)
+	except ValueError:
+		opts = [r.value for r in CardRarity]
+		raise HTTPException(status_code=400, detail=f"invalid rarity {value!r}; one of {opts}")
+
+
+def _new_opened_booster(db, data: dict) -> OpenedBooster:
+	sku = (data.get("sku") or "").strip()
+	video_url = (data.get("video_url") or "").strip()
+	if not sku or not video_url:
+		raise HTTPException(status_code=400, detail="opened booster needs sku and video_url")
+	# video_hash is UNIQUE NOT NULL; derive a placeholder from the URL when the
+	# real content hash isn't supplied yet (parity with the crypto placeholders).
+	video_hash = (data.get("video_hash") or "").strip() or _placeholder_hash(
+		"opened-booster", sku, video_url, str(datetime.utcnow())
+	)
+	ob = OpenedBooster(
+		sku=sku,
+		video_url=video_url,
+		video_hash=video_hash,
+		filmed_at=_parse_dt(data.get("filmed_at")),
+		status=InventoryStatus.AVAILABLE,
+	)
+	db.add(ob)
+	return ob
+
+
+async def _upsert_closed_stock(db, data: dict) -> str:
+	"""Upsert a per-SKU sealed-pack availability flag. Creating the same SKU
+	again just updates its in_stock flag (idempotent restock)."""
+	sku = (data.get("sku") or "").strip()
+	if not sku:
+		raise HTTPException(status_code=400, detail="closed booster needs sku")
+	in_stock = data.get("in_stock")
+	in_stock = True if in_stock is None else bool(in_stock)
+	stmt = pg_insert(ClosedBoosterStock).values(sku=sku, in_stock=in_stock)
+	stmt = stmt.on_conflict_do_update(
+		index_elements=["sku"], set_={"in_stock": in_stock},
+	)
+	await db.execute(stmt)
+	return sku
+
+
+def _new_card(db, data: dict) -> Card:
+	for f in ("set", "number", "image_url"):
+		if not (data.get(f) or "").strip():
+			raise HTTPException(status_code=400, detail=f"card needs {f}")
+	card = Card(
+		set=data["set"].strip(),
+		number=data["number"].strip(),
+		rarity=_parse_rarity(data.get("rarity") or ""),
+		image_url=data["image_url"].strip(),
+		condition=(data.get("condition") or None),
+		origin=CardOrigin.SINGLE_PRIZE,
+		status=CardStatus.IN_POOL,
+	)
+	db.add(card)
+	return card
+
+
+class CreateOpenedBoosterBody(BaseModel):
+	sku: str
+	video_url: str
+	video_hash: Optional[str] = None
+	filmed_at: Optional[str] = None
+
+
+@router.post("/inventory/opened-boosters")
+async def create_opened_booster(body: CreateOpenedBoosterBody, _: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		ob = _new_opened_booster(db, body.dict())
+		await db.commit()
+		return {"ok": True, "id": str(ob.id), "sku": ob.sku}
+
+
+class CreateClosedBoosterBody(BaseModel):
+	sku: str
+	in_stock: bool = True
+
+
+@router.post("/inventory/closed-boosters")
+async def create_closed_booster(body: CreateClosedBoosterBody, _: AdminIdentity = RequireAdmin):
+	"""Register (or restock) a sealed-pack SKU as available / not. Idempotent."""
+	async with async_session() as db:
+		sku = await _upsert_closed_stock(db, {"sku": body.sku, "in_stock": body.in_stock})
+		await db.commit()
+		return {"ok": True, "sku": sku, "in_stock": body.in_stock}
+
+
+class PatchClosedStockBody(BaseModel):
+	in_stock: bool
+
+
+@router.patch("/inventory/closed-boosters/{sku}")
+async def patch_closed_stock(sku: str, body: PatchClosedStockBody, _: AdminIdentity = RequireAdmin):
+	"""Flip a SKU's availability — what you do when you run out of / restock a
+	sealed-pack SKU."""
+	async with async_session() as db:
+		row = await db.scalar(
+			select(ClosedBoosterStock).where(ClosedBoosterStock.sku == sku)
+		)
+		if row is None:
+			raise HTTPException(status_code=404, detail=f"SKU {sku} not registered")
+		row.in_stock = body.in_stock
+		await db.commit()
+		return {"ok": True, "sku": sku, "in_stock": row.in_stock}
+
+
+class CreateCardBody(BaseModel):
+	set: str
+	number: str
+	rarity: str
+	image_url: str
+	condition: Optional[str] = None
+
+
+@router.post("/inventory/cards")
+async def create_card(body: CreateCardBody, _: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		card = _new_card(db, body.dict())
+		await db.commit()
+		return {"ok": True, "id": str(card.id)}
+
+
+class PatchCardBody(BaseModel):
+	set: Optional[str] = None
+	number: Optional[str] = None
+	rarity: Optional[str] = None
+	image_url: Optional[str] = None
+	condition: Optional[str] = None
+
+
+@router.patch("/inventory/cards/{card_id}")
+async def patch_card(card_id: str, body: PatchCardBody, _: AdminIdentity = RequireAdmin):
+	"""Edit a card's metadata. Only IN_POOL cards are editable — once a card is
+	reserved/owned/shipped its identity is locked."""
+	try:
+		cid = uuid.UUID(card_id)
+	except ValueError:
+		raise HTTPException(status_code=400, detail="card_id is not a UUID")
+	async with async_session() as db:
+		card = await db.get(Card, cid)
+		if card is None:
+			raise HTTPException(status_code=404, detail="Card not found")
+		if card.status != CardStatus.IN_POOL:
+			raise HTTPException(status_code=409, detail=f"Card is {card.status.value}, not editable")
+		if body.set is not None:
+			card.set = body.set.strip()
+		if body.number is not None:
+			card.number = body.number.strip()
+		if body.rarity is not None:
+			card.rarity = _parse_rarity(body.rarity)
+		if body.image_url is not None:
+			card.image_url = body.image_url.strip()
+		if body.condition is not None:
+			card.condition = body.condition or None
+		await db.commit()
+		return {"ok": True, "id": str(card.id)}
+
+
+class PatchOpenedBoosterBody(BaseModel):
+	sku: Optional[str] = None
+	video_url: Optional[str] = None
+	filmed_at: Optional[str] = None
+
+
+@router.patch("/inventory/opened-boosters/{ob_id}")
+async def patch_opened_booster(ob_id: str, body: PatchOpenedBoosterBody, _: AdminIdentity = RequireAdmin):
+	try:
+		oid = uuid.UUID(ob_id)
+	except ValueError:
+		raise HTTPException(status_code=400, detail="ob_id is not a UUID")
+	async with async_session() as db:
+		ob = await db.get(OpenedBooster, oid)
+		if ob is None:
+			raise HTTPException(status_code=404, detail="OpenedBooster not found")
+		if ob.status != InventoryStatus.AVAILABLE:
+			raise HTTPException(status_code=409, detail=f"OpenedBooster is {ob.status.value}, not editable")
+		if body.sku is not None:
+			ob.sku = body.sku.strip()
+		if body.video_url is not None:
+			ob.video_url = body.video_url.strip()
+		if body.filmed_at is not None:
+			ob.filmed_at = _parse_dt(body.filmed_at)
+		await db.commit()
+		return {"ok": True, "id": str(ob.id)}
+
+
+@router.post("/inventory/import")
+async def import_inventory(items: List[dict], _: AdminIdentity = RequireAdmin):
+	"""Bulk-create inventory in one transaction. Each item is a dict with a
+	`type` of "card" | "opened_booster" | "closed_booster" plus that type's
+	fields. All-or-nothing: a bad row rolls back the whole batch."""
+	counts = {"card": 0, "opened_booster": 0, "closed_booster": 0}
+	async with async_session() as db:
+		for i, item in enumerate(items):
+			kind = (item or {}).get("type")
+			if kind == "card":
+				_new_card(db, item)
+			elif kind == "opened_booster":
+				_new_opened_booster(db, item)
+			elif kind == "closed_booster":
+				await _upsert_closed_stock(db, item)
+			else:
+				raise HTTPException(status_code=400, detail=f"item {i}: unknown type {kind!r}")
+			counts[kind] += 1
+		await db.commit()
+	return {"ok": True, "counts": counts}
+
+
+# ─── Plays history ───────────────────────────────────────────────────────
+
+def _describe_prize(w: Win) -> dict:
+	"""Prize summary for a won play. Sourced from the ball's binding (stable)
+	rather than the Win's reserved_by relationships, which are cleared once the
+	player settles — so the history keeps showing what was won."""
+	info = {
+		"win_id": str(w.id),
+		"win_status": w.status.value,
+		"prize_kind": w.prize_kind.value,
+		"resell_price_cents": w.resell_price_cents,
+		"expires_at": w.expires_at.isoformat() if w.expires_at else None,
+	}
+	if w.prize_kind == PrizeKind.BOOSTER_PAIR:
+		ob = w.ball.opened_booster if w.ball else None
+		info["sku"] = ob.sku if ob else None
+		info["label"] = f"Booster pair · {ob.sku}" if ob else "Booster pair"
+	else:
+		c = w.prize_card
+		if c is not None:
+			info["label"] = f"{c.set} {c.number} · {c.rarity.value}"
+			info["card"] = {
+				"set": c.set, "number": c.number,
+				"rarity": c.rarity.value, "image_url": c.image_url,
+			}
+		else:
+			info["label"] = "Single card"
+	return info
+
+
+@router.get("/plays")
+async def list_plays(limit: int = 100, _: AdminIdentity = RequireAdmin):
+	"""Recent plays (turns). Each row is a QueueEntry; a play is 'won' iff a Win
+	row settled against it (a bound ball was grabbed), otherwise 'lost'. Wins
+	carry their prize."""
+	limit = max(1, min(limit, 500))
+	async with async_session() as db:
+		entries = (await db.execute(
+			select(QueueEntry).order_by(QueueEntry.created_at.desc()).limit(limit)
+		)).scalars().all()
+
+		win_by_q: dict = {}
+		qids = [e.id for e in entries]
+		if qids:
+			wins = (await db.execute(
+				select(Win).where(Win.queue_entry_id.in_(qids))
+			)).scalars().all()
+			win_by_q = {w.queue_entry_id: w for w in wins}
+
+		plays = []
+		for e in entries:
+			w = win_by_q.get(e.id)
+			if w is not None:
+				outcome = "won"
+			elif e.status == "played":
+				outcome = "lost"
+			elif e.status == "cancelled":
+				outcome = "cancelled"
+			else:
+				outcome = "in_progress"
+			plays.append({
+				"id": e.id,
+				"address": e.address,
+				"status": e.status,
+				"created_at": e.created_at.isoformat() if e.created_at else None,
+				"played_at": e.played_at.isoformat() if e.played_at else None,
+				"ended_at": e.ended_at.isoformat() if e.ended_at else None,
+				"onchain_win": bool(e.win),
+				"outcome": outcome,
+				"prize": _describe_prize(w) if w is not None else None,
+			})
+		return {"plays": plays}
+
+
+# ─── Cabinet ops ─────────────────────────────────────────────────────────
 
 @router.get("/cabinet/status")
 async def cabinet_status(_: AdminIdentity = RequireAdmin):
-	return {"claw_on": False, "current_player": None, "queue_length": 0}
+	"""Live snapshot for the ops page: Pi link health, who's playing, how many
+	are queued, and the mirrored chute fault (None == healthy)."""
+	async with async_session() as db:
+		queue_length = await db.scalar(
+			select(func.count()).select_from(QueueEntry).where(
+				QueueEntry.status == "queued"
+			)
+		)
+	return {
+		"pi_connected": _state.pi_connected,
+		"current_player": _state.current_player,
+		"queue_length": int(queue_length or 0),
+		"cabinet_fault": _state.cabinet_fault,
+	}
 
 
 @router.post("/cabinet/clear_fault")
 async def clear_fault(_: AdminIdentity = RequireAdmin):
-	return {"ok": False, "error": "not implemented"}
+	"""Relay a fault_clear to the Pi (which forwards it to the chute ESP32,
+	releasing the latch) and clear the local mirror."""
+	ok = await safe_pi_emit("fault_clear")
+	if not ok:
+		raise HTTPException(status_code=503, detail="Cabinet is offline")
+	_state.cabinet_fault = None
+	return {"ok": True}
 
 
 @router.post("/queue/force_turn_end")
 async def force_turn_end(_: AdminIdentity = RequireAdmin):
-	return {"ok": False, "error": "not implemented"}
+	"""Operator override to unstick the queue: run the same transition the Pi's
+	`turn_end` triggers — settle the active entry and advance to the next."""
+	if _state.current_player is None:
+		raise HTTPException(status_code=409, detail="No turn is in progress")
+	await turn_end()
+	return {"ok": True}

@@ -45,11 +45,22 @@ type OpenedBooster = {
   filmed_at: string | null;
 };
 
+type CardRow = {
+  id: string;
+  set: string;
+  number: string;
+  rarity: string;
+  status: string;
+};
+
 export default function BallsPage() {
   const [balls, setBalls] = useState<Ball[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bindOpen, setBindOpen] = useState(false);
+  const [bindCardOpen, setBindCardOpen] = useState(false);
   const [enrollOpen, setEnrollOpen] = useState(false);
+  const [voiding, setVoiding] = useState<string | null>(null);
+  const [hideVoided, setHideVoided] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
@@ -66,28 +77,68 @@ export default function BallsPage() {
     refresh();
   }, [refresh]);
 
+  const voidBall = async (serial: string) => {
+    setVoiding(serial);
+    setError(null);
+    try {
+      await apiFetch(`/admin/balls/${encodeURIComponent(serial)}/void`, {
+        method: "POST",
+      });
+      await refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setVoiding(null);
+    }
+  };
+
+  const voidedCount = balls?.filter((b) => b.status === "VOIDED").length ?? 0;
+  const visible = (balls ?? []).filter(
+    (b) => !hideVoided || b.status !== "VOIDED",
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Balls</h1>
           <p className="text-sm text-muted-foreground">
-            Physical tags and their current OpenedBooster binding.
+            Physical tags and their current prize binding.
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setEnrollOpen(true)}>
             Add ball physically
           </Button>
-          <Button onClick={() => setBindOpen(true)}>Bind tag</Button>
+          <Button variant="outline" onClick={() => setBindCardOpen(true)}>
+            Bind card
+          </Button>
+          <Button onClick={() => setBindOpen(true)}>Bind booster</Button>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            {balls === null ? "Loading…" : `${balls.length} balls`}
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">
+              {balls === null
+                ? "Loading…"
+                : `${visible.length} balls${
+                    hideVoided && voidedCount
+                      ? ` · ${voidedCount} voided hidden`
+                      : ""
+                  }`}
+            </CardTitle>
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-normal text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={hideVoided}
+                onChange={(e) => setHideVoided(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              Hide voided
+            </label>
+          </div>
           {error && (
             <CardDescription className="text-destructive">
               {error}
@@ -109,10 +160,11 @@ export default function BallsPage() {
                     <TableHead>Status</TableHead>
                     <TableHead>Prize</TableHead>
                     <TableHead>Bound SKU</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {balls.map((b) => (
+                  {visible.map((b) => (
                     <TableRow key={b.id}>
                       <TableCell className="font-mono">{b.serial}</TableCell>
                       <TableCell>
@@ -121,7 +173,17 @@ export default function BallsPage() {
                       <TableCell>{b.prize_kind}</TableCell>
                       <TableCell className="font-mono text-xs">
                         {b.opened_booster_sku ??
-                          (b.prize_card_id ? "—" : "(unbound)")}
+                          (b.prize_card_id ? "(card)" : "(unbound)")}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={b.status !== "LOADED" || voiding === b.serial}
+                          onClick={() => voidBall(b.serial)}
+                        >
+                          {voiding === b.serial ? "Voiding…" : "Void"}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -137,6 +199,15 @@ export default function BallsPage() {
         onClose={() => setBindOpen(false)}
         onBound={() => {
           setBindOpen(false);
+          refresh();
+        }}
+      />
+
+      <BindCardDialog
+        open={bindCardOpen}
+        onClose={() => setBindCardOpen(false)}
+        onBound={() => {
+          setBindCardOpen(false);
           refresh();
         }}
       />
@@ -468,6 +539,115 @@ function BindDialog({
             Cancel
           </Button>
           <Button type="submit" disabled={submitting || !serial || !obId}>
+            {submitting ? "Binding…" : "Bind"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
+  );
+}
+
+function BindCardDialog({
+  open,
+  onClose,
+  onBound,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onBound: () => void;
+}) {
+  const [serial, setSerial] = useState("");
+  const [cardId, setCardId] = useState("");
+  const [cards, setCards] = useState<CardRow[] | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch IN_POOL cards when the dialog opens. The cards endpoint returns the
+  // whole pool (capped); filter to bindable ones client-side.
+  useEffect(() => {
+    if (!open) {
+      setSerial("");
+      setCardId("");
+      setError(null);
+      return;
+    }
+    apiFetch<{ cards: CardRow[] }>("/admin/inventory/cards")
+      .then((r) => setCards(r.cards.filter((c) => c.status === "IN_POOL")))
+      .catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
+  }, [open]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await apiFetch(`/admin/balls/${encodeURIComponent(serial)}/bind-card`, {
+        method: "POST",
+        body: JSON.stringify({ card_id: cardId }),
+      });
+      onBound();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <form onSubmit={submit}>
+        <DialogHeader>
+          <DialogTitle>Bind card</DialogTitle>
+          <DialogDescription>
+            Scan or type a tag UID, then pick an IN_POOL card to bind as a
+            single-card prize. Creates a new Ball if the serial is new, or
+            rebinds a settled / voided one.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Tag UID</label>
+            <Input
+              value={serial}
+              onChange={(e) => setSerial(e.target.value)}
+              placeholder="E007000012345601"
+              autoFocus
+              required
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Card</label>
+            <select
+              value={cardId}
+              onChange={(e) => setCardId(e.target.value)}
+              required
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="" disabled>
+                {cards === null
+                  ? "Loading…"
+                  : cards.length === 0
+                    ? "(no IN_POOL cards)"
+                    : "Choose one…"}
+              </option>
+              {cards?.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.set} {c.number} — {c.rarity}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting || !serial || !cardId}>
             {submitting ? "Binding…" : "Bind"}
           </Button>
         </DialogFooter>

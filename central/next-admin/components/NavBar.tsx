@@ -9,6 +9,7 @@ import { Button } from "./ui/button";
 const TABS = [
   { href: "/balls", label: "Balls" },
   { href: "/inventory", label: "Inventory" },
+  { href: "/plays", label: "Plays" },
   { href: "/ops", label: "Cabinet" },
 ];
 

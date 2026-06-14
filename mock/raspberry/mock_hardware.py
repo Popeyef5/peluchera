@@ -18,6 +18,13 @@ from fsm import EV_OPTO
 log = logging.getLogger("mock-rpi.hw")
 
 DEFAULT_WIN_RATE = float(os.getenv("MOCK_WIN_RATE", "1.0"))
+# Fault-injection rates for RANDOM mode. They carve probability mass out of
+# `win_rate`: on each arm we draw win / rfid_failed / exit_timeout / clean-lose
+# in that order. Sum of the three rates must stay <= 1.0; the remainder is a
+# clean `no_fall`. Default 0.0 so existing setups keep their old behavior
+# (win vs. clean-lose only).
+DEFAULT_RFID_FAIL_RATE = float(os.getenv("MOCK_RFID_FAIL_RATE", "0.0"))
+DEFAULT_EXIT_STUCK_RATE = float(os.getenv("MOCK_EXIT_STUCK_RATE", "0.0"))
 TURN_DURATION_MIN = float(os.getenv("MOCK_TURN_MIN_SEC", "2.0"))
 TURN_DURATION_MAX = float(os.getenv("MOCK_TURN_MAX_SEC", "4.0"))
 
@@ -40,6 +47,8 @@ class MockState:
     def __init__(self):
         self.mode: str = Scenario.RANDOM
         self.win_rate: float = DEFAULT_WIN_RATE
+        self.rfid_fail_rate: float = DEFAULT_RFID_FAIL_RATE
+        self.exit_stuck_rate: float = DEFAULT_EXIT_STUCK_RATE
         self._uid_cycle = itertools.cycle(TAG_UIDS) if TAG_UIDS else None
         self.next_uid_override: Optional[str] = None
 

@@ -7,6 +7,7 @@ python-socketio
 python-telegram-bot>=20,<22
 requests
 sqlalchemy
+alembic
 web3
 eth-abi
 eth-utils
