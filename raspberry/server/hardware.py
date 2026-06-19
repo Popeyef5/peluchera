@@ -92,10 +92,14 @@ class Sensors:
         self.loop = loop
 
     def install(self) -> None:
-        lgpio.gpio_claim_input(self.h, CLAW_OPTO, CLAW_OPTO_PULL)
+        # MUST be claim_alert (not claim_input): lgpio only delivers edge
+        # callbacks on a pin claimed for alerts. claim_input supports gpio_read
+        # (polling) only — which is exactly the trap that made the opto look
+        # "dead" to the app while a multimeter and gpio_test (polling) saw it.
+        lgpio.gpio_claim_alert(self.h, CLAW_OPTO, CLAW_OPTO_EDGE, CLAW_OPTO_PULL)
         lgpio.gpio_set_debounce_micros(self.h, CLAW_OPTO, GLITCH_US_CLAW)
         log.info(
-            "claw opto: GPIO %d, edge=%s, pull=%s",
+            "claw opto: GPIO %d, edge=%s, pull=%s (alert)",
             CLAW_OPTO, CLAW_OPTO_EDGE_NAME, CLAW_OPTO_PULL_NAME,
         )
         self._claw_cb = lgpio.callback(
