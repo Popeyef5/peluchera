@@ -10,6 +10,7 @@ Targets the Pi 5 (BCM numbering), via lgpio.
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -18,12 +19,14 @@ import lgpio
 log = logging.getLogger("rpi.hw")
 
 # --- Cabinet outputs --------------------------------------------------------
-COIN = 16
-GRAB = 26
-W = 12
-A = 5
-S = 6
-D = 13
+# Custom PCB hat (BCM). Outputs have 15kΩ external pulldowns so they idle low
+# even on boot-HIGH pins (5, 6). d moved off BCM 0 (HAT-ID EEPROM pin) to 5.
+COIN = 19
+GRAB = 6
+W = 22
+A = 10
+S = 11
+D = 5
 
 OUTPUT_PINS = {
     1 << 0: A,   # Left
@@ -35,7 +38,26 @@ OUTPUT_PINS = {
 }
 
 # --- Claw optocoupler -------------------------------------------------------
-CLAW_OPTO = 27   # rising edge = end-of-turn
+# Pin / edge / pull are env-overridable so a polarity change (e.g. after a PSU
+# swap) can be fixed without a code change: set CLAW_OPTO_EDGE=falling (or
+# `both` to confirm edges happen at all) and restart `socket`. Defaults are the
+# historical rising-edge / pull-up.
+CLAW_OPTO = int(os.getenv("CLAW_OPTO_PIN", "3"))   # BCM 3 (custom hat); 1.8k on-board pull-up
+
+_EDGES = {
+    "rising": lgpio.RISING_EDGE,
+    "falling": lgpio.FALLING_EDGE,
+    "both": lgpio.BOTH_EDGES,
+}
+_PULLS = {
+    "up": lgpio.SET_PULL_UP,
+    "down": lgpio.SET_PULL_DOWN,
+    "none": lgpio.SET_PULL_NONE,
+}
+CLAW_OPTO_EDGE_NAME = os.getenv("CLAW_OPTO_EDGE", "rising").lower()
+CLAW_OPTO_PULL_NAME = os.getenv("CLAW_OPTO_PULL", "up").lower()
+CLAW_OPTO_EDGE = _EDGES.get(CLAW_OPTO_EDGE_NAME, lgpio.RISING_EDGE)
+CLAW_OPTO_PULL = _PULLS.get(CLAW_OPTO_PULL_NAME, lgpio.SET_PULL_UP)
 
 # Glitch filter preserved from the legacy driver: longer than the BBs since
 # the inductor decay is slow.
@@ -70,10 +92,14 @@ class Sensors:
         self.loop = loop
 
     def install(self) -> None:
-        lgpio.gpio_claim_input(self.h, CLAW_OPTO, lgpio.SET_PULL_UP)
+        lgpio.gpio_claim_input(self.h, CLAW_OPTO, CLAW_OPTO_PULL)
         lgpio.gpio_set_debounce_micros(self.h, CLAW_OPTO, GLITCH_US_CLAW)
+        log.info(
+            "claw opto: GPIO %d, edge=%s, pull=%s",
+            CLAW_OPTO, CLAW_OPTO_EDGE_NAME, CLAW_OPTO_PULL_NAME,
+        )
         self._claw_cb = lgpio.callback(
-            self.h, CLAW_OPTO, lgpio.RISING_EDGE,
+            self.h, CLAW_OPTO, CLAW_OPTO_EDGE,
             lambda *_: self._push("opto"))
 
     def _push(self, kind: str) -> None:
