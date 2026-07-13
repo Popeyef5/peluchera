@@ -128,8 +128,15 @@ async def withdraw(sid, data=None):
             debit_id = debit.id
 
         # 2) Pay out from the treasury.
-        loop = asyncio.get_running_loop()
-        ok, tx_hash = await safe_send_usdc(loop, addr, cents_to_usdc_base_units(balance_cents))
+        if BYPASS_PAYMENT:
+            # Demo mode: `addr` is a synthetic guest address nobody holds the key
+            # to, so a real transfer would burn treasury funds. Record a
+            # synthetic tx hash and keep the ledger flow intact.
+            ok, tx_hash = True, "0x" + secrets.token_hex(32)
+            log.info("BYPASS_PAYMENT: skipped USDC payout to %s, synthetic tx %s", addr, tx_hash)
+        else:
+            loop = asyncio.get_running_loop()
+            ok, tx_hash = await safe_send_usdc(loop, addr, cents_to_usdc_base_units(balance_cents))
 
         # 3) Finalize or reverse.
         async with async_session() as db:
