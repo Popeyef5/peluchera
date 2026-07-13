@@ -55,6 +55,8 @@ class EspLink:
         self._queue: "asyncio.Queue[EspMessage]" = asyncio.Queue()
         self.connected = True
         self.latched_fault: Optional[str] = None
+        self._arm_gen = 0
+        self._arm_task: Optional[asyncio.Task] = None
         self.fw = "garra-chute-mock-0.1.0"   # mirrors the real ESP's `ready.fw`
         self._ready_event = asyncio.Event()
         self._ready_event.set()
@@ -69,7 +71,15 @@ class EspLink:
 
     async def send(self, type_: str, data: Optional[dict] = None) -> bool:
         if type_ == "arm":
-            asyncio.create_task(self._simulate_arm())
+            # This is the path the turn FSM actually uses. Supersede any arm
+            # still running from a previous turn: without the generation bump
+            # its late verdict would be emitted into the shared queue and the
+            # next turn would pop it as its own outcome.
+            prev = self._arm_task
+            if prev is not None and not prev.done():
+                prev.cancel()
+            self._arm_gen += 1
+            self._arm_task = asyncio.create_task(self._simulate_arm())
         elif type_ == "fault_clear":
             self.latched_fault = None
         elif type_ == "ping":
@@ -93,9 +103,23 @@ class EspLink:
 
     async def arm_and_wait(self, timeout: float = 15.0) -> Optional[EspMessage]:
         """Mirror of the real EspLink.arm_and_wait: run one simulated chute
-        sequence (per the active scenario) and capture its verdict."""
+        sequence (per the active scenario) and capture its verdict.
+
+        Each arm gets a generation number. A previous arm can still be sleeping
+        out its chute timings when the next turn arms (the no_fall path alone
+        waits T_FALL_SEC), and without this its late verdict would satisfy the
+        NEW arm's waiter — an always-win turn would mysteriously report no_fall,
+        and the ball chosen via /scenarios/next-tag would be handed to the wrong
+        turn. Stale arms are cancelled, and any verdict they still emit is
+        dropped by the generation check in `_simulate_arm`.
+        """
+        prev = self._arm_task
+        if prev is not None and not prev.done():
+            prev.cancel()
+
+        self._arm_gen += 1
         self._verdict_waiter = asyncio.get_event_loop().create_future()
-        asyncio.create_task(self._simulate_arm())
+        self._arm_task = asyncio.create_task(self._simulate_arm())
         try:
             return await asyncio.wait_for(self._verdict_waiter, timeout)
         except asyncio.TimeoutError:
@@ -146,8 +170,17 @@ class EspLink:
         return "no_fall"
 
     async def _simulate_arm(self) -> None:
+        gen = self._arm_gen
+
+        async def emit(msg: EspMessage) -> None:
+            # A verdict only counts for the arm that produced it.
+            if gen != self._arm_gen:
+                log.info("dropping stale chute verdict from a superseded arm: %s", msg.type)
+                return
+            await self._queue_message(msg)
+
         if self.latched_fault:
-            await self._queue_message(EspMessage(
+            await emit(EspMessage(
                 type="fault",
                 data={"kind": self.latched_fault, "reason": "still_blocked"},
             ))
@@ -158,7 +191,7 @@ class EspLink:
         if outcome == "no_fall":
             # AWAITING_FALL times out without an entry edge.
             await asyncio.sleep(T_FALL_SEC)
-            await self._queue_message(EspMessage(type="no_fall"))
+            await emit(EspMessage(type="no_fall"))
             return
 
         # Entry edge after a short delay (well inside T_FALL).
@@ -168,7 +201,7 @@ class EspLink:
         if outcome == "rfid_failed":
             await asyncio.sleep(T_ID_SEC)
             self.latched_fault = "rfid_failed"
-            await self._queue_message(EspMessage(
+            await emit(EspMessage(
                 type="fault", data={"kind": "rfid_failed"},
             ))
             return
@@ -180,13 +213,13 @@ class EspLink:
         if outcome == "exit_timeout":
             await asyncio.sleep(T_EXIT_SEC)
             self.latched_fault = "exit_timeout"
-            await self._queue_message(EspMessage(
+            await emit(EspMessage(
                 type="fault", data={"kind": "exit_timeout"},
             ))
             return
 
         await asyncio.sleep(EXIT_DELAY_SEC)
-        await self._queue_message(EspMessage(
+        await emit(EspMessage(
             type="prize_won", data={"ball_serial": uid},
         ))
 

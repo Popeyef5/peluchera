@@ -10,6 +10,18 @@ sid_to_addr = {}
 current_player = None
 last_start = datetime.min
 current_key = None
+
+# The turn that has ended and is awaiting a chute verdict.
+#
+# The Pi broadcasts `turn_end` as soon as the ball drops past the opto, and only
+# THEN arms the chute and waits for the RFID verdict — so `prize_won` always
+# arrives after the turn ended, and possibly after the next turn has begun
+# (INTER_TURN_DELAY is only a few seconds; a slow ball or an RFID retry can
+# outlast it). Attributing the prize to `current_key` would therefore credit it
+# to whoever is playing *now*. These hold the turn that actually fired the arm.
+# Set on turn_end, consumed once by on_turn_win.
+awaiting_verdict_key = None
+awaiting_verdict_player = None
 game_state = [0, 0]  # list so it’s mutable in-place
 round_info = [DEFAULT_MAX_FEE, DEFAULT_FEE_GROWTH]
 changing_round = False

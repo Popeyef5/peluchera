@@ -118,6 +118,14 @@ class FSM:
         await self.hooks.broadcast({"type": "turn_end"})
 
         self.state = State.AWAITING
+
+        # Discard any verdict left over from an earlier arm (one that timed out
+        # or was abandoned mid-turn). Otherwise _await_verdict would pop it off
+        # the queue and report a previous turn's outcome as this turn's.
+        while not self.esp_events.empty():
+            stale = self.esp_events.get_nowait()
+            log.info("dropping stale ESP message before arming: %s", stale.type)
+
         armed = await self.esp.send("arm")
         log.info("arm sent to chute ESP (delivered=%s); awaiting verdict", armed)
         await self._await_verdict()

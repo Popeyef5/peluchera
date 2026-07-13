@@ -167,13 +167,20 @@ def on_test_result(data: Optional[dict] = None):
 
 async def turn_end(*_):
   log.info("Pi informed turn end")
+
+  # The chute verdict (prize_won) is still to come, and it belongs to THIS turn
+  # — not to whoever we're about to hand the machine to. Stash the turn's
+  # identity before current_* gets reassigned below; on_turn_win consumes it.
+  state.awaiting_verdict_key = state.current_key
+  state.awaiting_verdict_player = state.current_player
+
   async with _turn_lock:         # prevent overlapping turn transitions
     async with async_session() as db:
       old_entry = await db.scalar(
           select(QueueEntry)
           .where(QueueEntry.status == "active")
           .where(QueueEntry.address == state.current_player)
-      ) 
+      )
       
       new_entry = await db.scalar(
           select(QueueEntry)
@@ -282,12 +289,20 @@ async def on_turn_win(data: Optional[dict] = None):
     data = data or {}
     ball_serial = data.get("ball_serial")
 
-    key_str = state.current_key
+    # Attribute the prize to the turn that fired the arm (stashed at turn_end),
+    # NOT to whoever happens to be playing now — the verdict routinely arrives
+    # after the next turn has started. Consume it, so a late/duplicate verdict
+    # can't be credited a second time.
+    key_str = state.awaiting_verdict_key
+    winner = state.awaiting_verdict_player
+    state.awaiting_verdict_key = None
+    state.awaiting_verdict_player = None
+
     if not key_str:
-        log.info("No current key, win is not from game")
+        log.info("No turn awaiting a verdict — win is not from a game turn")
         return
 
-    log.info(f"Pi emitted player win. Player: {state.current_player}. Turn key: 0x{key_str}. Ball: {ball_serial}")
+    log.info(f"Pi emitted player win. Player: {winner}. Turn key: 0x{key_str}. Ball: {ball_serial}")
 
     # Mark the win off-chain. This replaces the old on-chain round-trip
     # (notifyWin -> PlayerWin event -> listeners._player_win set entry.win):
@@ -304,13 +319,13 @@ async def on_turn_win(data: Optional[dict] = None):
     # Reserve the actual prize in its own session so a reserve_win failure
     # (ball not available / pool exhausted) can't roll back the win mark.
     win_payload: Optional[dict] = None
-    if entry_id is not None and ball_serial and state.current_player:
+    if entry_id is not None and ball_serial and winner:
         try:
             async with async_session() as db:
                 win = await wt.reserve_win(
                     db,
                     ball_serial=ball_serial,
-                    wallet_address=state.current_player,
+                    wallet_address=winner,
                     queue_entry_id=entry_id,
                 )
                 await db.commit()
@@ -333,7 +348,7 @@ async def on_turn_win(data: Optional[dict] = None):
 
     # Notify the winning client. Payload is optional; old listeners ignore
     # extra fields. Targeted to the player's room (set up at wallet_connected).
-    await sio.emit("player_win", win_payload, room=state.current_player)
+    await sio.emit("player_win", win_payload, room=winner)
     
     
 # @pi_client.event
