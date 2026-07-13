@@ -34,8 +34,9 @@ class VirtualPlayer:
 
         for name_ in (
             "player_queued", "turn_start", "turn_end", "player_win",
-            "personal_sync", "global_sync", "balance", "payment_confirmed",
-            "payment_failed", "claw_connection_change", "cabinet_fault",
+            "turn_result", "personal_sync", "global_sync", "balance",
+            "payment_confirmed", "payment_failed", "claw_connection_change",
+            "cabinet_fault",
         ):
             self.sio.on(name_, self._recorder(name_))
 

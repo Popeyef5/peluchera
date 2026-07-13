@@ -5,7 +5,7 @@ central↔Pi websocket so debugging is uniform — a stray `cat /dev/ttyUSB0`
 on the Pi shows the same shape of frames you'd see in the central log.
 
 Pi  → ESP:  arm | fault_clear | ping
-ESP → Pi :  ready | prize_won | fault | no_fall | pong | log
+ESP → Pi :  ready | verdict | fault | pong | log
 
 The chute sub-FSM (T_FALL/T_ID/T_EXIT, CHUTE_BLOCKED latch) lives entirely
 on the ESP32. This module is a transport with reconnect — it does not
@@ -125,7 +125,7 @@ class EspLink:
             # Diagnostic test-arm: capture the verdict instead of routing it to
             # the FSM. Only active during arm_and_wait() (gated on idle).
             if self._verdict_waiter is not None and not self._verdict_waiter.done() \
-                    and msg.type in ("prize_won", "no_fall", "fault"):
+                    and msg.type in ("verdict", "fault"):
                 self._verdict_waiter.set_result(msg)
                 continue
             await self._queue.put(msg)
@@ -173,7 +173,7 @@ class EspLink:
             self._pong_waiters.pop(seq, None)
 
     async def arm_and_wait(self, timeout: float = 15.0) -> Optional[EspMessage]:
-        """Arm the chute and wait for one verdict (prize_won | no_fall | fault).
+        """Arm the chute and wait for the single verdict frame (or a fault).
         Runs the real ESP sequence (break-beams, RFID, solenoid). Returns the
         verdict frame, or None on timeout / link down. Caller MUST ensure the
         cabinet is idle — the verdict is captured here, not given to the FSM."""

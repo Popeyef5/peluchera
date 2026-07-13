@@ -20,11 +20,14 @@ static char        s_pending_uid[17] = {0};  // captured in IDENTIFYING, emitted
 static void solenoid_release() { digitalWrite(PIN_SOLENOID, LOW);  }
 static void solenoid_engage()  { digitalWrite(PIN_SOLENOID, HIGH); }
 
-static void enter_blocked(const char *kind) {
+// Latch the chute as blocked WITHOUT emitting anything. The caller emits the
+// single verdict for this arm, which reports the outcome (and the tag, if we
+// managed to read one) — emitting a fault here as well would put two messages
+// on the wire for one arm.
+static void latch_blocked(const char *kind) {
     s_state = State::BLOCKED;
     s_fault = kind;
     solenoid_release();   // never leave the chute open on fault
-    proto::emit_fault(kind, nullptr);
 }
 
 void install() {
@@ -62,6 +65,9 @@ void on_inbound(const proto::Parsed &m) {
             // Clear any sensor edges that landed before arming.
             (void)sensors::take_entry();
             (void)sensors::take_exit();
+            // Drop the previous arm's tag — a verdict must never report a stale
+            // ball_serial from an earlier turn.
+            s_pending_uid[0] = '\0';
             s_state = State::AWAITING_FALL;
             s_deadline_ms = millis() + T_FALL_MS;
             return;
@@ -101,8 +107,9 @@ void tick() {
                 return;
             }
             if ((int32_t)(now - s_deadline_ms) >= 0) {
+                // Nothing came down the chute: an ordinary loss, chute healthy.
                 s_state = State::IDLE;
-                proto::emit_no_fall();
+                proto::emit_verdict(proto::VERDICT_NO_FALL, nullptr);
             }
             return;
 
@@ -116,7 +123,10 @@ void tick() {
                 return;
             }
             if ((int32_t)(now - s_deadline_ms) >= 0) {
-                enter_blocked(proto::FAULT_RFID_FAILED);
+                // Something fell but we never read a tag — we cannot say what
+                // they won, and the chute needs a human.
+                latch_blocked(proto::FAULT_RFID_FAILED);
+                proto::emit_verdict(proto::VERDICT_NO_READ, nullptr);
             }
             return;
         }
@@ -125,12 +135,14 @@ void tick() {
             if (sensors::take_exit()) {
                 solenoid_release();
                 s_state = State::IDLE;
-                proto::emit_prize_won(s_pending_uid);
+                proto::emit_verdict(proto::VERDICT_OK, s_pending_uid);
                 return;
             }
             if ((int32_t)(now - s_deadline_ms) >= 0) {
-                solenoid_release();
-                enter_blocked(proto::FAULT_EXIT_TIMEOUT);
+                // Jammed on the way out — but we DID read the tag, so report it.
+                // The queue has to stop, yet the player still learns what they won.
+                latch_blocked(proto::FAULT_EXIT_TIMEOUT);
+                proto::emit_verdict(proto::VERDICT_NO_EXIT, s_pending_uid);
             }
             return;
 

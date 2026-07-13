@@ -59,9 +59,10 @@ CLAW_OPTO_PULL_NAME = os.getenv("CLAW_OPTO_PULL", "up").lower()
 CLAW_OPTO_EDGE = _EDGES.get(CLAW_OPTO_EDGE_NAME, lgpio.RISING_EDGE)
 CLAW_OPTO_PULL = _PULLS.get(CLAW_OPTO_PULL_NAME, lgpio.SET_PULL_UP)
 
-# Glitch filter preserved from the legacy driver: longer than the BBs since
-# the inductor decay is slow.
-GLITCH_US_CLAW = 10_000
+# Glitch/debounce filter: lgpio only reports the edge after the level has been
+# stable this long, so it rejects jitter shorter than this. Env-tunable — bump
+# CLAW_OPTO_DEBOUNCE_US (e.g. 50000 = 50ms) if noise is still triggering it.
+GLITCH_US_CLAW = int(os.getenv("CLAW_OPTO_DEBOUNCE_US", "10000"))
 
 
 def open_gpiochip() -> int:
@@ -99,8 +100,8 @@ class Sensors:
         lgpio.gpio_claim_alert(self.h, CLAW_OPTO, CLAW_OPTO_EDGE, CLAW_OPTO_PULL)
         lgpio.gpio_set_debounce_micros(self.h, CLAW_OPTO, GLITCH_US_CLAW)
         log.info(
-            "claw opto: GPIO %d, edge=%s, pull=%s (alert)",
-            CLAW_OPTO, CLAW_OPTO_EDGE_NAME, CLAW_OPTO_PULL_NAME,
+            "claw opto: GPIO %d, edge=%s, pull=%s, debounce=%dus (alert)",
+            CLAW_OPTO, CLAW_OPTO_EDGE_NAME, CLAW_OPTO_PULL_NAME, GLITCH_US_CLAW,
         )
         self._claw_cb = lgpio.callback(
             self.h, CLAW_OPTO, CLAW_OPTO_EDGE,

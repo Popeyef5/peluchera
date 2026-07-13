@@ -60,8 +60,8 @@ async def handle_pi_messages():
                 
                 if message_type == "turn_end":
                     asyncio.create_task(turn_end())
-                elif message_type == "prize_won":
-                    asyncio.create_task(on_turn_win(data.get("data") or {}))
+                elif message_type == "verdict":
+                    asyncio.create_task(on_chute_verdict(data.get("data") or {}))
                 elif message_type == "fault":
                     asyncio.create_task(on_pi_fault(data.get("data") or {}))
                 elif message_type == "tag_scanned":
@@ -165,14 +165,118 @@ def on_test_result(data: Optional[dict] = None):
         log.info("test_result with no pending request: %s", data)
 
 
+# Set by on_chute_verdict; awaited by turn_end. This is what makes the dead time
+# between turns *the chute sequence* rather than a fixed guess.
+_verdict_ready = asyncio.Event()
+
+# Ceiling on the verification window. Must exceed the Pi's ESP_VERDICT_TIMEOUT
+# (15s) so the Pi gets to report an internal_error itself before we give up.
+VERDICT_GRACE = 20.0
+
+# outcome -> (player won?, chute still usable?)
+_VERDICT_TABLE = {
+    "no_fall": (False, True),    # nothing fell — ordinary loss
+    "no_read": (False, False),   # fell, tag unreadable — we can't say what it was
+    "no_exit": (True,  False),   # read, then jammed — we DO know what they won
+    "ok":      (True,  True),
+}
+
+# outcome -> the fault kind the operator sees
+_VERDICT_FAULT = {"no_read": "rfid_failed", "no_exit": "exit_timeout"}
+
+
+async def on_chute_verdict(data: Optional[dict] = None):
+    """The chute's single verdict for the turn that just ended.
+
+    One message answers both questions: did the player win, and can we keep
+    playing. Notably `no_exit` is both — the chute is jammed AND the tag was
+    read, so the queue stops but the player still learns what they won.
+    """
+    data = data or {}
+    outcome = data.get("outcome")
+    ball_serial = data.get("ball_serial")
+
+    key_str = state.awaiting_verdict_key
+    winner = state.awaiting_verdict_player
+    state.awaiting_verdict_key = None
+    state.awaiting_verdict_player = None
+
+    won, healthy = _VERDICT_TABLE.get(outcome, (False, False))
+    log.info("Chute verdict %s (ball=%s) for %s — won=%s healthy=%s",
+             outcome, ball_serial, winner, won, healthy)
+
+    try:
+        if not key_str:
+            log.info("Verdict with no turn awaiting it — ignoring")
+            return
+
+        if won and ball_serial:
+            await _record_win(key_str, winner, ball_serial)
+        else:
+            # A loss is now REPORTED, not inferred from a timeout downstream.
+            await sio.emit(
+                "turn_result",
+                {"won": False, "outcome": outcome},
+                room=winner,
+            )
+
+        if not healthy:
+            kind = _VERDICT_FAULT.get(outcome, "internal_error")
+            state.cabinet_fault = {"kind": kind, "reason": outcome}
+            await sio.emit("cabinet_fault", state.cabinet_fault)
+            log.warning("Chute blocked (%s) — queue paused until operator clears it", kind)
+    finally:
+        # Always release turn_end, even if handling blew up — otherwise the
+        # machine would hang for the full grace period.
+        _verdict_ready.set()
+
+
+async def _start_next_turn():
+    """Hand the machine to the next player in the queue, if there is one."""
+    async with async_session() as db:
+        new_entry = await db.scalar(
+            select(QueueEntry)
+            .where(QueueEntry.status == "queued")
+            .order_by(QueueEntry.created_at.asc())
+        )
+        if not new_entry:
+            log.info("No pending turn")
+            return
+
+        new_entry.status = "active"
+        await db.commit()
+
+        state.current_player = new_entry.address
+        state.current_key = new_entry.key
+        state.last_start = datetime.utcnow()
+
+        await sio.emit("turn_start")
+        await safe_pi_emit("turn_start")
+
+        new_entry.played_at = datetime.utcnow()
+        await db.commit()
+        log.info(f"Started turn {state.current_key} by player {state.current_player}")
+
+
 async def turn_end(*_):
+  """The claw let go. The turn is over, but the OUTCOME is not known yet.
+
+  The Pi broadcasts turn_end the moment the ball passes the opto, and only then
+  arms the chute. So this is the start of the verification window, not the end
+  of the play: we must not hand the machine to the next player until the chute
+  has reported, or its verdict would land mid-turn and be credited to the wrong
+  person (and a jammed chute would swallow the next ball too).
+
+  So the dead time IS the chute sequence — we wait for the verdict, then decide
+  whether the machine is fit to keep going.
+  """
   log.info("Pi informed turn end")
 
-  # The chute verdict (prize_won) is still to come, and it belongs to THIS turn
-  # — not to whoever we're about to hand the machine to. Stash the turn's
-  # identity before current_* gets reassigned below; on_turn_win consumes it.
+  # The verdict belongs to THIS turn. Stash its identity before current_* is
+  # reassigned; on_chute_verdict consumes it.
   state.awaiting_verdict_key = state.current_key
   state.awaiting_verdict_player = state.current_player
+  _verdict_ready.clear()
 
   async with _turn_lock:         # prevent overlapping turn transitions
     async with async_session() as db:
@@ -181,46 +285,43 @@ async def turn_end(*_):
           .where(QueueEntry.status == "active")
           .where(QueueEntry.address == state.current_player)
       )
-      
-      new_entry = await db.scalar(
-          select(QueueEntry)
-          .where(QueueEntry.status == "queued")
-          .order_by(QueueEntry.created_at.asc())
-      )
-      
       if not old_entry:
-          state.current_key = None
-          state.current_player = None
-          log.warning("This should not happen, turn ended reported by pi and no player was playing. Maybe someone is playing live.")
+          log.warning("turn_end reported by pi but no player was active. Maybe someone is playing live.")
       else:
           old_entry.ended_at = datetime.utcnow()
           old_entry.status = "played"
           await db.commit()
-   
-      if not new_entry:
-          await sio.emit("turn_end")
-          await asyncio.sleep(INTER_TURN_DELAY)
-          state.current_player = None
-          state.current_key = None
-          log.info("No pending turn")
-          return
-  
-      new_entry.status = "active"
-      await db.commit()
-      await sio.emit("turn_end")
-      
-      await asyncio.sleep(INTER_TURN_DELAY)
-      state.current_player = new_entry.address
-      state.current_key = new_entry.key
-      state.last_start = datetime.utcnow()
-       
-      await sio.emit("turn_start")
-      await safe_pi_emit("turn_start")
-      new_entry.played_at = datetime.utcnow()
-      await db.commit()
-      log.info(f"Started turn {state.current_key} by player {state.current_player} from turn_end callback")
-    
-  
+
+    # Clients update the queue; the player who just played sees "analysing…"
+    # until the verdict resolves it.
+    await sio.emit("turn_end")
+
+    # --- the verification window ---
+    try:
+        await asyncio.wait_for(_verdict_ready.wait(), timeout=VERDICT_GRACE)
+    except asyncio.TimeoutError:
+        # The Pi should have sent an internal_error fault by now; if we're here
+        # the cabinet is silent. Treat as unsafe rather than blindly continuing.
+        log.warning("No chute verdict within %ss — pausing the queue", VERDICT_GRACE)
+        if not state.cabinet_fault:
+            state.cabinet_fault = {"kind": "internal_error", "reason": "verdict_timeout"}
+            await sio.emit("cabinet_fault", state.cabinet_fault)
+
+    state.current_player = None
+    state.current_key = None
+
+    # A blocked chute must not be handed another ball. The queue stays paused
+    # until an operator clears the fault (admin /cabinet/clear_fault), which is
+    # also what the turn scheduler now honours.
+    if state.cabinet_fault:
+        log.warning("Cabinet faulted (%s) — queue paused", state.cabinet_fault)
+        return
+
+    # Brief settle so the player sees the result before the next turn begins.
+    await asyncio.sleep(INTER_TURN_DELAY)
+    await _start_next_turn()
+
+
 async def on_pi_fault(data: Optional[dict] = None):
     """Handler for Pi's `fault` message (forwarded from the chute ESP32).
 
@@ -274,35 +375,13 @@ def on_enroll_timeout():
     log.info("Enrollment timed out")
 
 
-async def on_turn_win(data: Optional[dict] = None):
-    """Handler for Pi's `prize_won` message.
+async def _record_win(key_str: str, winner: Optional[str], ball_serial: str):
+    """Credit a won prize to the turn that produced it.
 
-    Expected payload (from the RFID reader on the claw):
-        { "ball_serial": "<unique ball id>", ... }
-
-    The ball_serial is required to look up the bound prize and create a
-    Win row via win_transitions.reserve_win. If the Pi sends nothing (the
-    legacy contract), we fall back to the old behaviour: emit player_win
-    and notify the chain, but no Win row is created. Once Pi firmware is
-    updated to include ball_serial, this fallback can be removed.
+    Called only from on_chute_verdict, which owns attribution — the key/winner
+    are the turn that fired the arm, not whoever is playing now.
     """
-    data = data or {}
-    ball_serial = data.get("ball_serial")
-
-    # Attribute the prize to the turn that fired the arm (stashed at turn_end),
-    # NOT to whoever happens to be playing now — the verdict routinely arrives
-    # after the next turn has started. Consume it, so a late/duplicate verdict
-    # can't be credited a second time.
-    key_str = state.awaiting_verdict_key
-    winner = state.awaiting_verdict_player
-    state.awaiting_verdict_key = None
-    state.awaiting_verdict_player = None
-
-    if not key_str:
-        log.info("No turn awaiting a verdict — win is not from a game turn")
-        return
-
-    log.info(f"Pi emitted player win. Player: {winner}. Turn key: 0x{key_str}. Ball: {ball_serial}")
+    log.info(f"Prize won by {winner}. Turn key: 0x{key_str}. Ball: {ball_serial}")
 
     # Mark the win off-chain. This replaces the old on-chain round-trip
     # (notifyWin -> PlayerWin event -> listeners._player_win set entry.win):
@@ -310,7 +389,7 @@ async def on_turn_win(data: Optional[dict] = None):
     async with async_session() as db:
         entry = await db.scalar(select(QueueEntry).where(QueueEntry.key == key_str))
         if entry is None:
-            log.warning("on_turn_win: no QueueEntry for key %s — cannot mark win", key_str)
+            log.warning("_record_win: no QueueEntry for key %s — cannot mark win", key_str)
         else:
             entry.win = True
             await db.commit()
@@ -337,14 +416,14 @@ async def on_turn_win(data: Optional[dict] = None):
                 }
                 log.info(f"reserve_win OK: win_id={win.id} prize_kind={win.prize_kind.value}")
         except wt.BallNotAvailable as e:
-            log.warning("on_turn_win: ball not available: %s", e)
+            log.warning("_record_win: ball not available: %s", e)
         except wt.PoolExhausted as e:
             # The play was paid for but no inventory remains. The user still
             # needs to be made whole — refund handling lives in the payment
             # flow, not here. TODO: emit a refund event.
-            log.error("on_turn_win: pool exhausted: %s", e)
+            log.error("_record_win: pool exhausted: %s", e)
         except Exception:
-            log.exception("on_turn_win: reserve_win failed")
+            log.exception("_record_win: reserve_win failed")
 
     # Notify the winning client. Payload is optional; old listeners ignore
     # extra fields. Targeted to the player's room (set up at wallet_connected).

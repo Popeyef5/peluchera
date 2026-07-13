@@ -16,11 +16,11 @@ States
   PLAYING  - turn_start received, COIN+UP pulsed; waiting for the claw
              optocoupler rising edge.
   AWAITING - opto fired, turn_end broadcast, ESP32 armed; waiting for the
-             ESP32 to report the outcome (prize_won | fault | no_fall).
+             ESP32 to report its single verdict (no_fall | no_read | no_exit | ok).
 
 Outbound protocol (Pi → central):
   {"type": "turn_end"}
-  {"type": "prize_won", "data": {"ball_serial": "<hex>"}}
+  {"type": "verdict",   "data": {"outcome": "...", "ball_serial": "<hex>"|null}}
   {"type": "fault",     "data": {"kind": "...", "reason"?: "..."}}
 
 Inbound protocol (central → Pi):
@@ -95,6 +95,12 @@ class FSM:
             ev = await self.events.get()
             if ev == EV_FAULT_CLEAR:
                 await self.esp.send("fault_clear")
+                # Mirror the (now cleared) latch back to central — a fault
+                # pauses the queue, so central must learn it's been cleared.
+                await self.hooks.broadcast({
+                    "type": "esp_status",
+                    "data": {"latched_fault": self.esp.latched_fault},
+                })
                 continue
             if ev == EV_TURN_START:
                 if self.esp.latched_fault:
@@ -138,6 +144,19 @@ class FSM:
             log.debug("drop %s in PLAYING", ev)
 
     async def _await_verdict(self) -> None:
+        """Block until the ESP32 reports its single verdict for this arm, or the
+        ceiling elapses.
+
+        The ESP emits exactly one `verdict` per arm, carrying the outcome and —
+        whenever a tag was actually read — the ball_serial. Central needs two
+        facts (did the player win, is the chute still usable) and derives both
+        from that one message, so we forward it untouched.
+
+        Note a loss is now *reported* (outcome=no_fall) rather than left to be
+        inferred downstream from a timeout, and outcome=no_exit carries the
+        ball_serial: the chute is jammed and the queue must stop, but the player
+        still finds out what they won.
+        """
         try:
             msg: EspMessage = await asyncio.wait_for(
                 self.esp_events.get(), timeout=ESP_VERDICT_TIMEOUT
@@ -151,19 +170,20 @@ class FSM:
             return
 
         log.info("chute verdict: %s %s", msg.type, msg.data or "")
-        if msg.type == "prize_won":
+        if msg.type == "verdict":
             await self.hooks.broadcast({
-                "type": "prize_won",
+                "type": "verdict",
                 "data": msg.data,
             })
         elif msg.type == "fault":
+            # Not the outcome of an arm (still_blocked / internal_error).
             await self.hooks.broadcast({
                 "type": "fault",
                 "data": msg.data,
             })
-        elif msg.type == "no_fall":
-            return
         elif msg.type == "ready":
+            # ESP reset mid-turn. Surface as a fault so the operator can
+            # investigate; the prize (if any) is now unaccounted for.
             await self.hooks.broadcast({
                 "type": "fault",
                 "data": {"kind": "internal_error", "reason": "esp_reset"},

@@ -129,7 +129,7 @@ class EspLink:
 
     async def _queue_message(self, msg: EspMessage) -> None:
         w = self._verdict_waiter
-        if w is not None and not w.done() and msg.type in ("prize_won", "no_fall", "fault"):
+        if w is not None and not w.done() and msg.type in ("verdict", "fault"):
             w.set_result(msg)
             return
         await self._queue.put(msg)
@@ -180,6 +180,7 @@ class EspLink:
             await self._queue_message(msg)
 
         if self.latched_fault:
+            # Refusing to arm is not the outcome of an arm — still a `fault`.
             await emit(EspMessage(
                 type="fault",
                 data={"kind": self.latched_fault, "reason": "still_blocked"},
@@ -189,9 +190,12 @@ class EspLink:
         outcome = self._draw_outcome()
 
         if outcome == "no_fall":
-            # AWAITING_FALL times out without an entry edge.
+            # AWAITING_FALL times out without an entry edge: an ordinary loss,
+            # chute healthy. Reported explicitly — never inferred from silence.
             await asyncio.sleep(T_FALL_SEC)
-            await emit(EspMessage(type="no_fall"))
+            await emit(EspMessage(
+                type="verdict", data={"outcome": "no_fall", "ball_serial": None},
+            ))
             return
 
         # Entry edge after a short delay (well inside T_FALL).
@@ -202,7 +206,7 @@ class EspLink:
             await asyncio.sleep(T_ID_SEC)
             self.latched_fault = "rfid_failed"
             await emit(EspMessage(
-                type="fault", data={"kind": "rfid_failed"},
+                type="verdict", data={"outcome": "no_read", "ball_serial": None},
             ))
             return
 
@@ -213,14 +217,17 @@ class EspLink:
         if outcome == "exit_timeout":
             await asyncio.sleep(T_EXIT_SEC)
             self.latched_fault = "exit_timeout"
+            # Jammed on the way out — the chute is blocked and the queue has to
+            # stop, but we DID read the tag, so report it: the player still finds
+            # out what they won.
             await emit(EspMessage(
-                type="fault", data={"kind": "exit_timeout"},
+                type="verdict", data={"outcome": "no_exit", "ball_serial": uid},
             ))
             return
 
         await asyncio.sleep(EXIT_DELAY_SEC)
         await emit(EspMessage(
-            type="prize_won", data={"ball_serial": uid},
+            type="verdict", data={"outcome": "ok", "ball_serial": uid},
         ))
 
     async def _simulate_enroll(self, timeout_s: float) -> None:

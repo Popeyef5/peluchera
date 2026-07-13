@@ -28,7 +28,15 @@ from .state import global_sync
 
 async def _turn_scheduler_loop():
 
-    # If a turn is being played or the round is being ended, rest
+    # Rest while a turn is in flight, a round is changing, or the chute is
+    # blocked. The fault gate is what pauses the queue: a jammed chute must not
+    # be handed another ball, and turn_end won't start the next turn either, so
+    # the machine stays idle until an operator clears the fault
+    # (admin /cabinet/clear_fault).
+    if state.cabinet_fault:
+        await asyncio.sleep(1)
+        return
+
     if (
         datetime.utcnow() - state.last_start
     ).total_seconds() < TURN_DURATION + INTER_TURN_DELAY or state.changing_round:

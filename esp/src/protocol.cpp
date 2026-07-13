@@ -47,10 +47,15 @@ void emit_ready(const char *fw_version, const char *latched_fault_or_null) {
     writeln(d);
 }
 
-void emit_prize_won(const char *uid_hex) {
+void emit_verdict(const char *outcome, const char *uid_hex_or_null) {
     JsonDocument d;
-    d["type"] = "prize_won";
-    d["data"]["ball_serial"] = uid_hex;
+    d["type"] = "verdict";
+    d["data"]["outcome"] = outcome;
+    if (uid_hex_or_null && uid_hex_or_null[0]) {
+        d["data"]["ball_serial"] = uid_hex_or_null;
+    } else {
+        d["data"]["ball_serial"] = nullptr;   // explicit null, never omitted
+    }
     writeln(d);
 }
 
@@ -59,12 +64,6 @@ void emit_fault(const char *kind, const char *reason_or_null) {
     d["type"] = "fault";
     d["data"]["kind"] = kind;
     if (reason_or_null) d["data"]["reason"] = reason_or_null;
-    writeln(d);
-}
-
-void emit_no_fall() {
-    JsonDocument d;
-    d["type"] = "no_fall";
     writeln(d);
 }
 

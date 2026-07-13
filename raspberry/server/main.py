@@ -9,7 +9,7 @@ Inbound (central → Pi):
 
 Outbound (Pi → central):
   {"type": "turn_end"}
-  {"type": "prize_won",   "data": {"ball_serial": "<hex>"}}
+  {"type": "verdict",     "data": {"outcome": "no_fall|no_read|no_exit|ok", "ball_serial": "<hex>"|null}}
   {"type": "fault",       "data": {"kind": "...", "reason"?: "..."}}
 
 The chute identification subsystem (entry/exit break-beams, PN5180 pool,
@@ -153,22 +153,31 @@ async def on_enroll(_ws, message):
 
 
 def _interpret_verdict(msg) -> dict:
-    """Map a chute verdict frame to an operator-readable drop-test result."""
+    """Map the chute's single verdict frame to an operator-readable drop-test result."""
     if msg is None:
         return {"outcome": "timeout",
                 "detail": "No verdict within the window — no ball dropped, or the ESP is unresponsive."}
-    if msg.type == "prize_won":
-        return {"outcome": "prize_won", "ball_serial": (msg.data or {}).get("ball_serial"),
-                "detail": "Full sequence OK — entry beam, RFID read, solenoid fired, exit beam."}
-    if msg.type == "no_fall":
-        return {"outcome": "no_fall",
-                "detail": "No ball detected at the entry break-beam."}
+    if msg.type == "verdict":
+        d = msg.data or {}
+        outcome = d.get("outcome")
+        serial = d.get("ball_serial")
+        detail = {
+            "ok": "Full sequence OK — entry beam, RFID read, solenoid fired, exit beam.",
+            "no_fall": "No ball detected at the entry break-beam.",
+            "no_read": "Ball fell (entry beam broke) but the RFID tag didn't read. Chute is blocked.",
+            "no_exit": "Ball fell and RFID read, but it didn't clear the exit (solenoid / exit beam). "
+                       "Chute is blocked — but the tag WAS read, so the prize is known.",
+        }.get(outcome, "Unrecognized verdict outcome.")
+        out = {"outcome": outcome, "detail": detail}
+        if serial:
+            out["ball_serial"] = serial
+        return out
     if msg.type == "fault":
         kind = (msg.data or {}).get("kind")
         detail = {
-            "rfid_failed": "Ball fell (entry beam broke) but the RFID tag didn't read.",
-            "exit_timeout": "Ball fell and RFID read, but it didn't clear the exit (solenoid / exit beam).",
             "internal_error": "ESP internal error or reset during the sequence.",
+            "rfid_failed": "Chute latched blocked (RFID failure).",
+            "exit_timeout": "Chute latched blocked (exit timeout).",
         }.get(kind, "Chute fault.")
         return {"outcome": kind or "fault", "fault_kind": kind, "detail": detail}
     return {"outcome": msg.type, "detail": "Unrecognized verdict."}

@@ -19,7 +19,7 @@ current_key = None
 # (INTER_TURN_DELAY is only a few seconds; a slow ball or an RFID retry can
 # outlast it). Attributing the prize to `current_key` would therefore credit it
 # to whoever is playing *now*. These hold the turn that actually fired the arm.
-# Set on turn_end, consumed once by on_turn_win.
+# Set on turn_end, consumed once by on_chute_verdict.
 awaiting_verdict_key = None
 awaiting_verdict_player = None
 game_state = [0, 0]  # list so it’s mutable in-place

@@ -14,6 +14,7 @@ services:
       # PSU polarity change) via raspberry/.env, then `docker compose up -d socket`.
       - CLAW_OPTO_EDGE=${CLAW_OPTO_EDGE:-rising}
       - CLAW_OPTO_PULL=${CLAW_OPTO_PULL:-up}
+      - CLAW_OPTO_DEBOUNCE_US=${CLAW_OPTO_DEBOUNCE_US:-10000}
     expose:
       - '5000'
     network_mode: "host"
