@@ -35,6 +35,38 @@ SUPABASE_JWT_AUDIENCE = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
 DEFAULT_MAX_FEE    = os.environ.get("DEFAULT_MAX_FEE", 20)
 DEFAULT_FEE_GROWTH = os.environ.get("DEFAULT_FEE_GROWTH", 50)
 
+# Price of one play ("ticket"), in cents. Both funding rails charge this; with
+# $10+ tickets, per-play card charging is viable (no prepaid balance needed).
+TICKET_PRICE_CENTS = int(os.environ.get("TICKET_PRICE_CENTS", 1000))
+
+# Card rail (Stripe). SECRET_KEY authenticates API calls; WEBHOOK_SECRET
+# verifies event signatures on /payments/stripe/webhook. If SECRET_KEY is
+# unset, card payment events answer with a "card payments disabled" error.
+STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
+
+# Crypto rail: ticket payments are a direct USDC transfer from the player's
+# (embedded) wallet to this treasury — no escrow contract. Payouts are later
+# sent FROM here (balance/withdraw rework). USDC on Base Sepolia has 6 decimals.
+TREASURY_ADDRESS   = os.environ.get("TREASURY_ADDRESS")
+# Signs USDC payouts (withdrawals) FROM the treasury. Defaults to the old
+# operator key for convenience when treasury == operator address.
+TREASURY_PRIVATE_KEY = os.environ.get("TREASURY_PRIVATE_KEY", PRIVATE_KEY)
+USDC_TOKEN_ADDRESS = os.environ.get("USDC_TOKEN_ADDRESS", "0x036CbD53842c5426634e7929541eC2318f3dCF7e")
+USDC_DECIMALS      = 6
+
+
+def ticket_usdc_base_units() -> int:
+    """The ticket price expressed in USDC base units (cents -> 6-decimal units)."""
+    return TICKET_PRICE_CENTS * (10 ** USDC_DECIMALS) // 100
+
+# Chargeback protection: card payments are reversible (a cardholder can dispute
+# a charge for weeks) but USDC withdrawals are not. So winnings traceable to a
+# CARD-funded ticket are non-withdrawable until this many days after the charge
+# confirmed. Crypto-funded winnings have no hold. Set to a value >= your card
+# processor's dispute window.
+CHARGEBACK_HOLD_DAYS = int(os.environ.get("CHARGEBACK_HOLD_DAYS", 7))
+
 # Resell prices per CardRarity, in cents. Placeholder — operator should
 # eventually drive this from an admin-config table or a per-card snapshot.
 RESELL_PRICE_BY_RARITY_CENTS = {

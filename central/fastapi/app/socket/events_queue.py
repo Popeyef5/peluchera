@@ -2,18 +2,24 @@ import asyncio
 import secrets
 
 from sqlalchemy import select, func
-from web3 import Web3
 from datetime import datetime
 
-from ..config import BASE_RPC_HTTP, CLAW_ADDRESS, PRIVATE_KEY, CHAIN_ID, BYPASS_PAYMENT
-from ..abi import claw_abi
-from ..models import QueueEntry, Round, Withdrawal
+from ..config import BYPASS_PAYMENT, TICKET_PRICE_CENTS, ticket_usdc_base_units
+from ..models import (
+    QueueEntry, Round, Withdrawal, Payment, PaymentMethod,
+    User, LedgerEntry, LedgerKind,
+)
 from ..deps import async_session
 from .sio_instance import sio
 from ..state import sid_to_addr
-from ..helpers import safe_place_bet, user_account_data
+from ..helpers import (
+    safe_verify_usdc_transfer, user_account_data,
+    off_chain_balance_cents, withdrawable_balance_cents,
+    safe_send_usdc, cents_to_usdc_base_units,
+)
+from ..payments import already_in_queue, initiate_payment, confirm_payment
+from ..win_transitions import get_or_create_user
 from ..logging import log
-from ..errors import WithdrawalError
 
 
 @sio.on("wallet_connected")
@@ -91,45 +97,54 @@ async def wallet_disconnected(sid, data):
 
 @sio.on("withdraw")
 async def withdraw(sid, data=None):
+    """Withdraw the full off-chain winnings balance as USDC to the player's
+    address. The contract is retired: we debit the ledger first (under a row
+    lock, so concurrent withdrawals can't double-spend), pay out from the
+    treasury, then reverse the debit if the payout fails.
+    """
     addr = sid_to_addr[sid]
+    if not addr:
+        return {"status": "error", "error": "not connected"}
     log.info(f"Player {addr} is issuing a withdrawal of funds")
     try:
-        w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
-        contract = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
-        owner = w3.eth.account.from_key(PRIVATE_KEY).address
-
-        # build transaction
-        txn = contract.functions.withdrawFull(addr).build_transaction(
-            {
-                "from": owner,
-                "nonce": w3.eth.get_transaction_count(owner, "pending"),
-                "chainId": CHAIN_ID,
-            }
-        )
-
-        # sign and send
-        signed = w3.eth.account.sign_transaction(txn, private_key=PRIVATE_KEY)
-        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-
-        if receipt["status"] != 1:
-            raise WithdrawalError("Withdraw tx failed")
-
-        logs = contract.events.FullWithrawal().process_receipt(receipt)
-
-        if not logs:
-            raise RuntimeError("No Withdraw event found!")
-
-        withdrawn = logs[0]["args"]["amount"]
-        log.info(f"Player {addr} withdrew ${withdrawn}")
-
+        # 1) Reserve: lock the user, compute the *withdrawable* balance (total
+        #    minus card-chargeback holds), write the WITHDRAWAL debit.
         async with async_session() as db:
-            db.add(
-                Withdrawal(address=addr, amount=withdrawn, timestamp=datetime.utcnow())
+            user = await get_or_create_user(db, addr)
+            await db.scalar(select(User).where(User.id == user.id).with_for_update())
+            total_cents = await off_chain_balance_cents(db, user.id)
+            balance_cents = await withdrawable_balance_cents(db, user.id)
+            if total_cents <= 0:
+                return {"status": "error", "error": "no funds to withdraw"}
+            if balance_cents <= 0:
+                # They have winnings, but all of it is card-funded and still
+                # inside the chargeback window.
+                return {"status": "error", "error": "funds on hold (card payment clearing)"}
+            debit = LedgerEntry(
+                user_id=user.id, kind=LedgerKind.WITHDRAWAL, amount_cents=balance_cents,
             )
+            db.add(debit)
+            await db.commit()
+            debit_id = debit.id
+
+        # 2) Pay out from the treasury.
+        loop = asyncio.get_running_loop()
+        ok, tx_hash = await safe_send_usdc(loop, addr, cents_to_usdc_base_units(balance_cents))
+
+        # 3) Finalize or reverse.
+        async with async_session() as db:
+            row = await db.scalar(select(LedgerEntry).where(LedgerEntry.id == debit_id))
+            if not ok:
+                if row:
+                    await db.delete(row)   # payout failed → un-debit
+                    await db.commit()
+                return {"status": "error", "error": "payout transaction failed"}
+            row.withdrawal_tx_hash = tx_hash
+            db.add(Withdrawal(address=addr, amount=balance_cents, timestamp=datetime.utcnow()))
             await db.commit()
 
-        return {"status": "ok", "data": {"withdrawn": withdrawn}}
+        log.info(f"Player {addr} withdrew {balance_cents}c (tx {tx_hash})")
+        return {"status": "ok", "data": {"withdrawn": balance_cents / 100}}
     except Exception as e:
         log.warning(f"Could not withdraw funds: {e}")
         return {"status": "error", "error": f"{e}"}
@@ -152,50 +167,54 @@ async def check_balance(sid, data):
         return {"status": "error", "balance": -1, "bets": None, "withdrawals": None}
 
 
-@sio.on("join_queue")
-async def join_queue(sid, data):
+# NOTE: the legacy `join_queue` handler (EIP-712 permit -> on-chain escrow
+# bet()) has been removed. The escrow contract is retired; pay-to-play is now a
+# direct USDC transfer verified in `pay_crypto` below. `helpers.place_bet`/
+# `safe_place_bet` are now dead and can be deleted in a later cleanup.
+
+
+@sio.on("pay_crypto")
+async def pay_crypto(sid, data):
+    """Crypto rail v2: pay-to-play by a direct USDC transfer to the treasury.
+
+    The frontend transfers USDC straight to the treasury (no escrow permit/bet)
+    and sends us the tx hash; we verify the on-chain receipt, then converge on
+    the same initiate/confirm seam as every other rail. The QueueEntry key is a
+    synthetic turn id — there's no contract round-trip behind it. In bypass mode
+    there's no transfer: the backend mints a synthetic key and skips the check.
+    """
     addr = sid_to_addr[sid]
 
     async with async_session() as db:
         round_ = await db.scalar(select(Round).order_by(Round.created_at.desc()))
-        in_queue = await db.scalar(
-            select(QueueEntry)
-            .where(QueueEntry.round_id == round_.id)
-            .where(QueueEntry.address == addr)
-            .where(QueueEntry.status.in_(["queued", "active"]))
-        )
-        if in_queue:
+        if await already_in_queue(db, addr, round_.id):
             log.warning("Rejected player %s for double entry" % addr)
             return {"status": "error", "position": -1, "error": "user already in queue"}
 
+        tx_hash = None
         if BYPASS_PAYMENT:
-            # Synthetic key keeps QueueEntry.key unique and the rest of the
-            # turn/win plumbing happy. There's no on-chain commit behind it —
-            # notifyWin is correspondingly skipped in pi_client.on_turn_win.
             key = secrets.token_bytes(32)
-            log.info("BYPASS_PAYMENT: skipped on-chain bet for %s, synthetic key %s", addr, key.hex())
+            log.info("BYPASS_PAYMENT: skipped USDC transfer check for %s", addr)
         else:
-            amount, deadline, signature = data["amount"], data["deadline"], data["signature"]
-            log.info("amount: %d, signature %s" % (amount, signature))
+            tx_hash = (data or {}).get("tx_hash")
+            if not tx_hash:
+                return {"status": "error", "position": -1, "error": "missing tx_hash"}
+
+            # Replay guard: a tx hash can fund exactly one play (also enforced by
+            # the unique constraint on payment.ref).
+            if await db.scalar(select(Payment).where(Payment.ref == tx_hash)):
+                log.warning("Rejected %s: tx %s already used", addr, tx_hash)
+                return {"status": "error", "position": -1, "error": "payment already used"}
+
             loop = asyncio.get_running_loop()
-            ok, key = await safe_place_bet(loop, addr, amount, deadline, signature)
+            ok = await safe_verify_usdc_transfer(loop, tx_hash, addr, ticket_usdc_base_units())
             if not ok:
-                log.warning(
-                    "Rejected entry by %s because bet placing threw an error" % addr
-                )
-                return {
-                    "status": "error",
-                    "position": -1,
-                    "error": "unexpected error while placing bet",
-                }
+                log.warning("Rejected %s: could not verify USDC payment %s", addr, tx_hash)
+                return {"status": "error", "position": -1, "error": "payment not verified"}
+            key = secrets.token_bytes(32)
 
-        db.add(QueueEntry(address=addr, round_id=round_.id, key=key.hex()))
-        await db.commit()
+        payment = await initiate_payment(db, addr, PaymentMethod.CRYPTO, TICKET_PRICE_CENTS)
+        payment.ref = tx_hash
+        position = await confirm_payment(db, payment, key)
 
-        qcount = await db.scalar(
-            select(func.count())
-            .select_from(QueueEntry)
-            .where(QueueEntry.status == "queued")
-        )
-    await sio.emit("player_queued")
-    return {"status": "ok", "position": qcount}
+    return {"status": "ok", "position": position}

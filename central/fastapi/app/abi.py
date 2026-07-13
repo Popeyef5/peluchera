@@ -561,3 +561,37 @@ claw_abi = [
         "type": "function",
     },
 ]
+
+
+# Minimal ERC-20 ABI — enough to decode the USDC `Transfer` event when verifying
+# a crypto-rail ticket payment, and to send USDC on payout. (No permit here; the
+# crypto rail is a plain transfer to the treasury, not an escrow permit/bet.)
+erc20_abi = [
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": True,  "internalType": "address", "name": "from",  "type": "address"},
+            {"indexed": True,  "internalType": "address", "name": "to",    "type": "address"},
+            {"indexed": False, "internalType": "uint256", "name": "value", "type": "uint256"},
+        ],
+        "name": "Transfer",
+        "type": "event",
+    },
+    {
+        "inputs": [
+            {"internalType": "address", "name": "to",     "type": "address"},
+            {"internalType": "uint256", "name": "amount", "type": "uint256"},
+        ],
+        "name": "transfer",
+        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"internalType": "uint8", "name": "", "type": "uint8"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]

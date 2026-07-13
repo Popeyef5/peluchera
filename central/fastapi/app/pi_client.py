@@ -287,39 +287,46 @@ async def on_turn_win(data: Optional[dict] = None):
         log.info("No current key, win is not from game")
         return
 
-    key_bytes = bytes.fromhex(key_str)
     log.info(f"Pi emitted player win. Player: {state.current_player}. Turn key: 0x{key_str}. Ball: {ball_serial}")
 
+    # Mark the win off-chain. This replaces the old on-chain round-trip
+    # (notifyWin -> PlayerWin event -> listeners._player_win set entry.win):
+    # the contract is retired, so the backend is the source of truth.
+    async with async_session() as db:
+        entry = await db.scalar(select(QueueEntry).where(QueueEntry.key == key_str))
+        if entry is None:
+            log.warning("on_turn_win: no QueueEntry for key %s — cannot mark win", key_str)
+        else:
+            entry.win = True
+            await db.commit()
+    entry_id = entry.id if entry is not None else None
+
+    # Reserve the actual prize in its own session so a reserve_win failure
+    # (ball not available / pool exhausted) can't roll back the win mark.
     win_payload: Optional[dict] = None
-    if ball_serial and state.current_player:
+    if entry_id is not None and ball_serial and state.current_player:
         try:
             async with async_session() as db:
-                entry = await db.scalar(
-                    select(QueueEntry).where(QueueEntry.key == key_str)
+                win = await wt.reserve_win(
+                    db,
+                    ball_serial=ball_serial,
+                    wallet_address=state.current_player,
+                    queue_entry_id=entry_id,
                 )
-                if entry is None:
-                    log.warning("on_turn_win: no QueueEntry for key %s — skipping reserve_win", key_str)
-                else:
-                    win = await wt.reserve_win(
-                        db,
-                        ball_serial=ball_serial,
-                        wallet_address=state.current_player,
-                        queue_entry_id=entry.id,
-                    )
-                    await db.commit()
-                    win_payload = {
-                        "win_id": str(win.id),
-                        "prize_kind": win.prize_kind.value,
-                        "expires_at": int(win.expires_at.timestamp()),
-                        "resell_price_cents": win.resell_price_cents,
-                    }
-                    log.info(f"reserve_win OK: win_id={win.id} prize_kind={win.prize_kind.value}")
+                await db.commit()
+                win_payload = {
+                    "win_id": str(win.id),
+                    "prize_kind": win.prize_kind.value,
+                    "expires_at": int(win.expires_at.timestamp()),
+                    "resell_price_cents": win.resell_price_cents,
+                }
+                log.info(f"reserve_win OK: win_id={win.id} prize_kind={win.prize_kind.value}")
         except wt.BallNotAvailable as e:
             log.warning("on_turn_win: ball not available: %s", e)
         except wt.PoolExhausted as e:
-            # The bet was placed but no inventory remains. The user still
-            # needs to be made whole — refund handling lives in the bet
-            # flow / chain settlement, not here. TODO: emit a refund event.
+            # The play was paid for but no inventory remains. The user still
+            # needs to be made whole — refund handling lives in the payment
+            # flow, not here. TODO: emit a refund event.
             log.error("on_turn_win: pool exhausted: %s", e)
         except Exception:
             log.exception("on_turn_win: reserve_win failed")
@@ -327,32 +334,6 @@ async def on_turn_win(data: Optional[dict] = None):
     # Notify the winning client. Payload is optional; old listeners ignore
     # extra fields. Targeted to the player's room (set up at wallet_connected).
     await sio.emit("player_win", win_payload, room=state.current_player)
-
-    if BYPASS_PAYMENT:
-        # The QueueEntry key is synthetic in bypass mode — the contract knows
-        # nothing about it, so notifyWin would revert.
-        log.info("BYPASS_PAYMENT: skipping notifyWin for key %s", key_str)
-        return
-
-    # Existing on-chain notification — settles the win on the contract.
-    w3 = Web3(Web3.HTTPProvider(BASE_RPC_HTTP))
-    contract = w3.eth.contract(address=CLAW_ADDRESS, abi=claw_abi)
-    owner = w3.eth.account.from_key(PRIVATE_KEY).address
-
-    txn = contract.functions.notifyWin(key_bytes).build_transaction({
-        "from": owner,
-        "nonce": w3.eth.get_transaction_count(owner, 'pending'),
-        "chainId": CHAIN_ID,
-    })
-
-    signed = w3.eth.account.sign_transaction(txn, private_key=PRIVATE_KEY)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-
-    if receipt.status == 1:
-        log.info(f"Win on {state.current_key} successfully notified!")
-    else:
-        log.info(f"Win notification transaction on turn {state.current_key} failed.")
     
     
 # @pi_client.event

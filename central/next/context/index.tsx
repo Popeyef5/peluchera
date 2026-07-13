@@ -34,8 +34,15 @@ const modal = createAppKit({
   ],
   features: {
     analytics: false, // Optional - defaults to your Cloud configuration,
-    socials: false,
-    email: false
+    // Embedded-wallet login for non-crypto users: signing in with email or a
+    // social account provisions a self-custodial smart account, so the player
+    // gets a wallet address (used as their identity AND winnings payout target)
+    // without a seed phrase. Requires email/social + the matching providers to
+    // be enabled for this projectId in the Reown Cloud dashboard, and the
+    // dashboard domain to match `metadata.url` above.
+    email: true,
+    socials: ['google', 'apple', 'x'],
+    emailShowWallets: true, // keep external wallets visible alongside email/social
   }
 })
 

@@ -165,14 +165,31 @@ class LedgerKind(str, enum.Enum):
     WITHDRAWAL  = "WITHDRAWAL"
 
 
+class PaymentMethod(str, enum.Enum):
+    CRYPTO = "CRYPTO"   # USDC transfer from the player's logged-in (embedded) address
+    CARD   = "CARD"     # Stripe card charge
+
+
+class PaymentStatus(str, enum.Enum):
+    PENDING   = "PENDING"     # initiated, awaiting confirmation (tx receipt / webhook)
+    CONFIRMED = "CONFIRMED"   # funds verified; the paid-for QueueEntry has been enqueued
+    FAILED    = "FAILED"
+    REFUNDED  = "REFUNDED"
+
+
 class User(Base):
     __tablename__ = "user_account"   # "user" is reserved in some Postgres contexts
     id               = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    wallet_address   = Column(String, unique=True, index=True, nullable=False)
+    # Nullable: card-only players still get a Reown embedded address (the payout
+    # destination for winnings), but an address is no longer required to pay.
+    # Postgres allows multiple NULLs under a UNIQUE index.
+    wallet_address   = Column(String, unique=True, index=True)
     email            = Column(String)
     shipping_name    = Column(String)
     shipping_address = Column(JSONB)
     kyc_status       = Column(Enum(KycStatus, name="kyc_status"), default=KycStatus.NONE, nullable=False)
+    # Stripe Customer for saved-card ("remember card") off-session charging.
+    stripe_customer_id = Column(String, unique=True, index=True)
     created_at       = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -351,4 +368,45 @@ class LedgerEntry(Base):
 
     __table_args__ = (
         Index("ix_ledger_user_created", "user_id", "created_at"),
+    )
+
+
+class Payment(Base):
+    """A single pay-to-play ticket payment, via either rail (crypto or card).
+
+    The payment is the seam where the two funding rails converge: each rail
+    creates a PENDING Payment, and a single confirm step (verified tx receipt
+    for crypto, Stripe webhook for card) flips it to CONFIRMED and enqueues the
+    paid-for QueueEntry. There is no deposit/stored balance — every Payment buys
+    exactly one play.
+    """
+    __tablename__ = "payment"
+    id             = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # User row may be created lazily, so user_id is nullable; `address` records
+    # the wallet that initiated (used by the crypto rail to match the on-chain
+    # transfer's sender, and to bridge the legacy address-keyed flow).
+    user_id        = Column(UUID(as_uuid=True), ForeignKey("user_account.id"), index=True)
+    address        = Column(String, index=True)
+
+    # Set on confirm — one play per payment.
+    queue_entry_id = Column(Integer, ForeignKey("queue.id"), unique=True)
+
+    method         = Column(Enum(PaymentMethod, name="payment_method"), nullable=False)
+    amount_cents   = Column(Integer, nullable=False)
+    status         = Column(Enum(PaymentStatus, name="payment_status"), default=PaymentStatus.PENDING, nullable=False)
+
+    # On-chain tx hash (crypto) or Stripe PaymentIntent id (card). Unique so a
+    # tx / PaymentIntent can't be replayed into two confirmations; NULL while
+    # PENDING (Postgres allows multiple NULLs under a UNIQUE index).
+    ref            = Column(String, unique=True)
+
+    created_at     = Column(DateTime, default=datetime.utcnow, nullable=False)
+    confirmed_at   = Column(DateTime)
+
+    user           = relationship("User")
+    queue_entry    = relationship("QueueEntry")
+
+    __table_args__ = (
+        Index("ix_payment_status_created", "status", "created_at"),
     )

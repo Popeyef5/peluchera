@@ -46,3 +46,7 @@ test/
 todo.md
 
 __pycache__
+
+# pre-migration DB dumps written by central/update.sh (kept on the VPS only —
+# they must stay untracked or update.sh's dirty-tree guard would block deploys)
+backups/

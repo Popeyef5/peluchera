@@ -4,6 +4,16 @@ export const clawAddress = (process.env.NEXT_PUBLIC_CLAW_CONTRACT_ADDRESS ||
   "0x64cb07E871C6aAd8Ef6E2Fe2654735AA4eab6E04") as `0x${string}`;
 export const USDCAddress = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
+// Crypto-rail pay-to-play: USDC is transferred straight to this treasury (no
+// escrow contract). Must match the backend's TREASURY_ADDRESS.
+export const treasuryAddress = (process.env.NEXT_PUBLIC_TREASURY_ADDRESS ||
+  "0x0000000000000000000000000000000000000000") as `0x${string}`;
+
+// Ticket price in USDC base units (6 decimals). Kept in sync with the backend
+// TICKET_PRICE_CENTS (default $10). cents * 1e6 / 100.
+const ticketPriceCents = BigInt(process.env.NEXT_PUBLIC_TICKET_PRICE_CENTS || "1000");
+export const ticketUsdcBaseUnits = (ticketPriceCents * 10n ** 6n) / 100n;
+
 export const clawABI = [
   {
     inputs: [

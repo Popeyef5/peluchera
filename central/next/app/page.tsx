@@ -17,6 +17,7 @@ import { subscribeOrientation } from "@/lib/orientationTilt";
 
 const WinChoiceModal = dynamic(() => import("@/components/WinChoiceModal"), { ssr: false });
 const MotionPermissionModal = dynamic(() => import("@/components/MotionPermissionModal"), { ssr: false });
+const PaymentPicker = dynamic(() => import("@/components/PaymentPicker"), { ssr: false });
 
 const display = Bricolage_Grotesque({
 	weight: ["400", "500", "700", "800"],
@@ -114,7 +115,7 @@ const ThemeToggle = () => {
 };
 
 const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | "radial"; mobile?: boolean }) => {
-	const { isPlaying, position, loading, approveAndBet, queueCount, clawSocketOn } = useClaw();
+	const { isPlaying, position, loading, approveAndBet, openPaymentPicker, queueCount, clawSocketOn } = useClaw();
 	const { isConnected } = useAppKitAccount();
 	const { open } = useAppKit();
 	const [userText, setUserText] = useState("");
@@ -185,7 +186,9 @@ const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | 
 		glossMode === "linear" ? "play--gloss-linear" : glossMode === "radial" ? "play--gloss-radial" : "";
 	// In bypass mode there's no wallet step — Play is the entry point.
 	const ready = BYPASS_PAYMENT || isConnected;
-	const onClick = ready ? approveAndBet : () => open();
+	// Bypass: straight to the (fake) crypto play. Otherwise open the method
+	// picker so the player can choose crypto or card.
+	const onClick = ready ? (BYPASS_PAYMENT ? approveAndBet : openPaymentPicker) : () => open();
 	const disabled = loading || (ready && !clawSocketOn);
 	const label = ready ? "PLAY" : "CONNECT WALLET";
 
@@ -1105,6 +1108,7 @@ function Shell() {
 			{!isMobile ? <HUD logoSrc={logoSrc} /> : <Mobile logoSrc={logoSrc} />}
 			<WinChoiceModal />
 			<MotionPermissionModal containerRef={rootRef} />
+			<PaymentPicker containerRef={rootRef} />
 		</Box>
 	);
 }

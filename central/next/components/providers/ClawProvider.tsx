@@ -28,10 +28,10 @@ function getOrCreateGuestAddress(): `0x${string}` {
 	return addr;
 }
 import { toaster } from "@/components/ui/toaster"
-import { USDCAddress, erc20WithPermitAbi, clawAddress } from '@/lib/crypto/contracts';
-import { readContract, signTypedData } from 'wagmi/actions';
+import { erc20Abi } from 'viem';
+import { USDCAddress, treasuryAddress, ticketUsdcBaseUnits } from '@/lib/crypto/contracts';
+import { writeContract, waitForTransactionReceipt } from 'wagmi/actions';
 import { config } from '@/config';
-import { types } from '@/lib/crypto/permit';
 import celebrate from '@/components/confetti';
 
 /* bit‑mask helpers */
@@ -135,6 +135,19 @@ export interface InventoryWin extends PendingWin {
 	card_preview?: WinCard;
 }
 
+export interface SavedCard {
+	id: string;
+	brand: string | null;
+	last4: string | null;
+}
+
+export interface CardSetupResult {
+	status: string;
+	client_secret?: string;
+	saved_card?: SavedCard | null;
+	error?: string;
+}
+
 interface ClawCtx {
 	queueCount: number;
 	position: number;
@@ -156,6 +169,12 @@ interface ClawCtx {
 	press: (a: keyof typeof ACTION_TO_KEY) => void;
 	release: (a: keyof typeof ACTION_TO_KEY) => void;
 	approveAndBet: () => void;
+	// Payment method picker (crypto vs card) + card rail.
+	paymentPickerOpen: boolean;
+	openPaymentPicker: () => void;
+	closePaymentPicker: () => void;
+	cardSetup: () => Promise<CardSetupResult>;
+	payCard: () => void;
 	withdraw: () => void;
 	openBoosterWin: () => Promise<SettleResult<{ cards: WinCard[] }>>;
 	resellPendingWin: () => Promise<SettleResult<{ credited_cents: number }>>;
@@ -225,6 +244,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [roundPlayed, setRoundPlayed] = useState(0);
 	const [roundWon, setRoundWon] = useState(0);
 	const [pendingWin, setPendingWin] = useState<PendingWin | null>(null);
+	const [paymentPickerOpen, setPaymentPickerOpen] = useState(false);
 	const [secondsLeft, updateSeconds] = useCountdown(0);
 
 	/* wallet — in bypass mode, identity is a per-session synthetic guest
@@ -373,6 +393,22 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			celebrate();
 		};
 
+		// Card rail: when a charge confirms via the Stripe webhook rather than
+		// synchronously (processing status / 3DS), the backend targets these to
+		// the player's room. The synchronous pay_card ack handles the fast path.
+		const onPaymentConfirmed = (data: { position: number }) => {
+			setPosition(data.position);
+			setLoading(false);
+		};
+		const onPaymentFailed = (data: { error?: string }) => {
+			toaster.create({
+				description: `Card payment failed${data?.error ? `: ${data.error}` : ''}`,
+				type: 'error',
+				duration: 2500,
+			});
+			setLoading(false);
+		};
+
 		socket.on('player_win', onPlayerWin);
 		socket.on('player_queued', onPlayerQueued);
 		socket.on('turn_start', onTurnStart);
@@ -382,6 +418,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		socket.on('personal_sync', onPersonalSync);
 		socket.on('balance', onAccountBalance);
 		socket.on('round_start', onRoundStart);
+		socket.on('payment_confirmed', onPaymentConfirmed);
+		socket.on('payment_failed', onPaymentFailed);
 
 		return () => {
 			socket.off('player_win', onPlayerWin);
@@ -393,6 +431,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			socket.off('personal_sync', onPersonalSync);
 			socket.off('balance', onAccountBalance);
 			socket.off('round_start', onRoundStart);
+			socket.off('payment_confirmed', onPaymentConfirmed);
+			socket.off('payment_failed', onPaymentFailed);
 		};
 	}, [socket, updateSeconds]);
 
@@ -422,30 +462,24 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		});
 	}, [emitMovement]);
 
-	/* approve + bet */
+	/* pay-to-play (crypto rail) */
+	const onPayAck = useCallback((r: { status: string; position: number; error?: string }) => {
+		if (r.status === 'ok') {
+			setPosition(r.position);
+		} else {
+			toaster.create({ description: `Error: ${r.error}`, type: 'error', duration: 2500 });
+		}
+		setLoading(false);
+	}, []);
+
 	const approveAndBet = useCallback(async () => {
 		if (!address) return;
 		setLoading(true);
 
 		if (BYPASS_PAYMENT) {
-			// Skip permit signing entirely. Backend ignores amount/deadline/
-			// signature in bypass mode but the event still has its shape.
-			socket.emit(
-				'join_queue',
-				{ address, amount: 0, deadline: 0, signature: '0x' },
-				(r: { status: string; position: number; error?: string }) => {
-					if (r.status === 'ok') {
-						setPosition(r.position);
-					} else {
-						toaster.create({
-							description: `Error: ${r.error}`,
-							type: 'error',
-							duration: 2500,
-						});
-					}
-					setLoading(false);
-				},
-			);
+			// No wallet/transfer in bypass mode — the backend mints a synthetic
+			// key and skips payment verification.
+			socket.emit('pay_crypto', { address }, onPayAck);
 			return;
 		}
 
@@ -454,52 +488,57 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			return;
 		}
 		try {
-			const userAddr = address as `0x${string}`;
-			const amount = BigInt(betAmount);
-			const USDC = { address: USDCAddress, abi: erc20WithPermitAbi } as const;
-
-			const [name, nonce, version] = await Promise.all([
-				readContract(config, { ...USDC, functionName: 'name' }),
-				readContract(config, { ...USDC, functionName: 'nonces', args: [userAddr] }),
-				readContract(config, { ...USDC, functionName: 'version' }),
-			]);
-
-			const deadline = BigInt(Math.floor(Date.now() / 1000 + 86_400));
-
-			const signature = await signTypedData(config, {
-				account: userAddr,
-				types,
-				primaryType: 'Permit',
-				domain: { name, chainId: BigInt(chainId), version, verifyingContract: USDCAddress },
-				message: { owner: userAddr, spender: clawAddress, value: amount, nonce, deadline },
+			// Pay-to-play is a direct USDC transfer to the treasury — no escrow
+			// permit/bet. The backend verifies the tx receipt in `pay_crypto`.
+			const hash = await writeContract(config, {
+				address: USDCAddress as `0x${string}`,
+				abi: erc20Abi,
+				functionName: 'transfer',
+				args: [treasuryAddress, ticketUsdcBaseUnits],
 			});
+			await waitForTransactionReceipt(config, { hash });
 
-			socket.emit(
-				'join_queue',
-				{ address, amount: Number(betAmount), deadline: Number(deadline), signature },
-				(r: { status: string; position: number, error?: string }) => {
-					if (r.status === 'ok') {
-						setPosition(r.position);
-					} else {
-						toaster.create({
-							description: `Error: ${r.error}`,
-							type: "error",
-							duration: 2500
-						})
-					}
-					setLoading(false);
-				},
-			);
+			socket.emit('pay_crypto', { address, tx_hash: hash }, onPayAck);
 		} catch (err) {
 			console.error(err);
-			toaster.create({
-				description: `Error: ${err}`,
-				type: "error",
-				duration: 2500
-			})
+			toaster.create({ description: `Error: ${err}`, type: 'error', duration: 2500 });
 			setLoading(false);
 		}
-	}, [address, chainId, betAmount, socket]);
+	}, [address, chainId, socket, onPayAck]);
+
+	/* pay-to-play (card rail) */
+	const openPaymentPicker = useCallback(() => setPaymentPickerOpen(true), []);
+	const closePaymentPicker = useCallback(() => setPaymentPickerOpen(false), []);
+
+	// Ask the backend for a SetupIntent client_secret (to add a card) and the
+	// existing saved card, if any. See stripe_rail.card_setup.
+	const cardSetup = useCallback((): Promise<CardSetupResult> => {
+		return new Promise((resolve) => {
+			socket.emit('card_setup', {}, (r: CardSetupResult) => resolve(r));
+		});
+	}, [socket]);
+
+	// Charge the saved card for one play. Fast path: ack carries the position.
+	// Slow path: ack is {status:'processing'} and payment_confirmed/_failed
+	// (room events, wired in the effect above) resolve it.
+	const payCard = useCallback(() => {
+		setLoading(true);
+		socket.emit('pay_card', {}, (r: { status: string; position?: number; error?: string }) => {
+			if (r.status === 'ok' && typeof r.position === 'number') {
+				setPosition(r.position);
+				setLoading(false);
+			} else if (r.status === 'processing') {
+				// leave loading; a room event will resolve it.
+			} else {
+				toaster.create({
+					description: `Error: ${r.error ?? 'card payment failed'}`,
+					type: 'error',
+					duration: 2500,
+				});
+				setLoading(false);
+			}
+		});
+	}, [socket]);
 
 	/* win actions — param-based primitives + modal-bound wrappers */
 
@@ -648,6 +687,11 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		press,
 		release,
 		approveAndBet,
+		paymentPickerOpen,
+		openPaymentPicker,
+		closePaymentPicker,
+		cardSetup,
+		payCard,
 		withdraw,
 		openBoosterWin,
 		resellPendingWin,
