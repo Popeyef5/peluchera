@@ -29,9 +29,22 @@ async def fresh_world(world):
     # Park the machine FIRST, so any turn still running from the previous test
     # loses harmlessly: always-lose neither latches a fault nor consumes the
     # next-tag override the upcoming test is about to set.
-    await c.clear_fault()
     await c.always_lose()
     await c.chute_delay(0)     # a test that slowed the chute must not leak it
+
+    # Then actually WAIT for the fault to clear, don't just ask for it. The Pi
+    # FSM only handles fault_clear when it's idle, so if the previous test left
+    # it mid-turn the clear lands late — and the backend's cabinet_fault (which
+    # pauses the queue) only clears on the esp_status that follows. Starting a
+    # test against a stale fault makes it hang.
+    for _ in range(60):
+        await c.clear_fault()
+        st = await c.state()
+        if not st.get("fault_kind"):
+            break
+        await asyncio.sleep(0.25)
+    else:
+        raise AssertionError("cabinet fault would not clear — machine stuck")
     await c.aclose()
 
     # Then let any in-flight turn finish before we wipe the tables underneath it.

@@ -377,8 +377,16 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		// onTurnEnd, and increments roundWon to trigger the win modal.
 		const onPlayerWin = (payload: PendingWin | null) => {
 			console.log('[claw] player_win', payload);
+			// Never celebrate a prize that isn't there. `player_win` means "here
+			// is a prize" — without one there is nothing to open, and throwing
+			// confetti while handing the player nothing is the worst way to fail.
+			// The backend reports that case as turn_result/prize_unavailable.
+			if (!payload?.win_id) {
+				console.warn('[claw] player_win with no prize — ignoring');
+				return;
+			}
 			if (timerId.current) clearTimeout(timerId.current);
-			if (payload?.win_id) setPendingWin(payload);
+			setPendingWin(payload);
 
 			if (toastId.current) {
 				toaster.update(toastId.current, {
@@ -401,12 +409,15 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		const onTurnResult = (data: { won: boolean; outcome: string } | null) => {
 			console.log('[claw] turn_result', data);
 			if (data?.won) return;   // player_win resolves the toast instead
-			resolveResult(
+			const message =
 				data?.outcome === 'no_read'
 					? "We couldn't identify your prize — the machine is being checked."
-					: "Better luck next time!",
-				'error',
-			);
+					: data?.outcome === 'prize_unavailable'
+						// We read the tag but couldn't hand over the prize. Their
+						// fault it is not — own it and promise to fix it.
+						? "Something went wrong claiming your prize. We've been notified and will make this right."
+						: "Better luck next time!";
+			resolveResult(message, 'error', data?.outcome === 'no_fall' ? 4000 : 8000);
 		};
 
 		// A jam can arrive *alongside* a win (the tag was read, then the ball

@@ -70,6 +70,25 @@ class World:
     def ball(self, serial: str) -> Optional[dict]:
         return self._one("SELECT * FROM ball WHERE serial = %s", (serial,))
 
+    def ball_sku(self, serial: str) -> Optional[str]:
+        row = self._one(
+            """SELECT ob.sku FROM ball b
+               JOIN opened_booster ob ON ob.id = b.opened_booster_id
+               WHERE b.serial = %s""",
+            (serial,),
+        )
+        return row["sku"] if row else None
+
+    def set_sku_in_stock(self, sku: str, in_stock: bool) -> None:
+        """Flip a sealed-pack SKU's availability — what an operator does when a
+        set goes out of print."""
+        with psycopg.connect(self.dsn, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE closed_booster_stock SET in_stock = %s WHERE sku = %s",
+                    (in_stock, sku),
+                )
+
     def loaded_balls(self) -> List[dict]:
         """Balls still in the machine. A win GRABs one permanently, so this is a
         hard ceiling on how many wins a populate run can produce."""

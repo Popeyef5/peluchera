@@ -112,7 +112,22 @@ async def reserve_win(
         raise BallNotAvailable(f"Ball {ball_serial} is not LOADED")
 
     user = await get_or_create_user(session, wallet_address)
+
+    # The ball has physically fallen down the chute — that is a fact about the
+    # world, not a consequence of the prize bookkeeping working out. Commit it
+    # on its own, BEFORE we try to reserve the prize.
+    #
+    # Otherwise any failure below (PoolExhausted, a constraint violation, a
+    # transient DB error — everything the caller's `except Exception` catches)
+    # rolls the whole transaction back and returns the ball to LOADED. The
+    # database would then insist a ball is in the machine that is sitting in the
+    # prize bin: it gets counted as available, and could be awarded a second
+    # time if its serial is ever read again.
+    #
+    # Committing here also strengthens the double-grab guard: a concurrent
+    # reserve_win for the same serial now sees GRABBED and raises BallNotAvailable.
     ball.status = BallStatus.GRABBED
+    await session.commit()
 
     if ball.prize_kind == PrizeKind.BOOSTER_PAIR:
         opened_id = ball.opened_booster_id

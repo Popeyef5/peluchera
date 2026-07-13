@@ -418,16 +418,30 @@ async def _record_win(key_str: str, winner: Optional[str], ball_serial: str):
         except wt.BallNotAvailable as e:
             log.warning("_record_win: ball not available: %s", e)
         except wt.PoolExhausted as e:
-            # The play was paid for but no inventory remains. The user still
-            # needs to be made whole — refund handling lives in the payment
-            # flow, not here. TODO: emit a refund event.
+            # Should be unreachable: a turn must not start while any loaded ball
+            # has an unclaimable prize. If we're here, that invariant is broken.
+            # TODO: refund the ticket (LedgerKind.BET_REFUND) and alert the operator.
             log.error("_record_win: pool exhausted: %s", e)
         except Exception:
             log.exception("_record_win: reserve_win failed")
 
-    # Notify the winning client. Payload is optional; old listeners ignore
-    # extra fields. Targeted to the player's room (set up at wallet_connected).
-    await sio.emit("player_win", win_payload, room=winner)
+    if win_payload:
+        # Targeted to the player's room (set up at wallet_connected).
+        await sio.emit("player_win", win_payload, room=winner)
+    else:
+        # The ball dropped and we read its tag, but we could not hand over a
+        # prize. Never announce this as a win: emitting `player_win` with a null
+        # payload made the UI celebrate — confetti and "🎉 You won!" — while
+        # giving the player nothing. Report it as the failure it is.
+        log.error(
+            "No prize for a winning grab (ball=%s, player=%s) — player owed a refund",
+            ball_serial, winner,
+        )
+        await sio.emit(
+            "turn_result",
+            {"won": False, "outcome": "prize_unavailable"},
+            room=winner,
+        )
     
     
 # @pi_client.event
