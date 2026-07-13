@@ -173,6 +173,9 @@ class EspLink:
         gen = self._arm_gen
 
         async def emit(msg: EspMessage) -> None:
+            # Simulated chute latency (slow ball / RFID retry).
+            if self.state.chute_delay_sec:
+                await asyncio.sleep(self.state.chute_delay_sec)
             # A verdict only counts for the arm that produced it.
             if gen != self._arm_gen:
                 log.info("dropping stale chute verdict from a superseded arm: %s", msg.type)

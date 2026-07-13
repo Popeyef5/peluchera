@@ -340,6 +340,14 @@ async def scenario_disconnect():
     return {"closed": n}
 
 
+@app.post("/scenarios/chute-delay/{seconds}")
+async def scenario_chute_delay(seconds: float):
+    """Add latency before the chute reports. Models a slow ball or an RFID
+    retry — the thing that used to push a verdict past the inter-turn gap."""
+    state.chute_delay_sec = max(0.0, float(seconds))
+    return {"chute_delay_sec": state.chute_delay_sec}
+
+
 @app.post("/scenarios/next-tag/{uid}")
 async def scenario_next_tag(uid: str):
     state.next_uid_override = uid
@@ -374,6 +382,7 @@ async def scenario_state():
         "turn_duration_range": [TURN_DURATION_MIN, TURN_DURATION_MAX],
         "tag_pool": TAG_UIDS,
         "next_uid_override": state.next_uid_override,
+        "chute_delay_sec": state.chute_delay_sec,
         "fsm_state": fsm.state.value if fsm else None,
         "fault_kind": esp.latched_fault,
     }

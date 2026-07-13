@@ -58,6 +58,14 @@ class Cabinet:
         await self.always_win()
         await self.next_ball(serial)
 
+    async def chute_delay(self, seconds: float) -> dict:
+        """Make the chute slow to report (a sticky ball, an RFID retry).
+
+        This is the condition the old code got wrong: the verdict lands after
+        the next turn has already begun.
+        """
+        return await self._post(f"/scenarios/chute-delay/{seconds}")
+
     # --- fault handling -------------------------------------------------
     async def clear_fault(self) -> dict:
         """Clear a latched fault. Essential between tests: once the chute latches

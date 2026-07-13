@@ -31,6 +31,7 @@ async def fresh_world(world):
     # next-tag override the upcoming test is about to set.
     await c.clear_fault()
     await c.always_lose()
+    await c.chute_delay(0)     # a test that slowed the chute must not leak it
     await c.aclose()
 
     # Then let any in-flight turn finish before we wipe the tables underneath it.

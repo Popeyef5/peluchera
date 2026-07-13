@@ -51,6 +51,11 @@ class MockState:
         self.exit_stuck_rate: float = DEFAULT_EXIT_STUCK_RATE
         self._uid_cycle = itertools.cycle(TAG_UIDS) if TAG_UIDS else None
         self.next_uid_override: Optional[str] = None
+        # Extra latency before the chute reports its verdict. Real hardware is
+        # not instant: a slow ball or an RFID retry can push the verdict past
+        # the inter-turn gap. Used to prove the verdict is credited to the turn
+        # that produced it, not to whoever is playing when it lands.
+        self.chute_delay_sec: float = 0.0
 
     def next_uid(self) -> Optional[str]:
         if self.next_uid_override is not None:

@@ -293,42 +293,43 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		// const onYourTurn = () => {
 		// 	setIsPlaying(true);
 		// };
+		// Resolve the "Checking result…" toast, whatever the outcome turned out
+		// to be. No-ops if we weren't waiting on one.
+		const resolveResult = (
+			description: string,
+			type: 'error' | 'success' | 'info',
+			duration = 4000,
+		) => {
+			if (timerId.current) { clearTimeout(timerId.current); timerId.current = null; }
+			if (!toastId.current) return;
+			toaster.update(toastId.current, { description, type, duration, closable: true });
+			toastId.current = null;
+		};
+
 		const onTurnStart = () => {
 			console.log('[claw] turn_start', { position: positionRef.current });
 			setIsPlaying(positionRef.current === 0);
-			if (toastId.current) {
-				toaster.update(toastId.current, {
-					description: "Better luck next time!",
-					type: "error",
-					duration: 1000
-				})
-
-				toastId.current = null;
-			}
 		}
 		const onTurnEnd = () => {
 			console.log('[claw] turn_end', { isPlaying: isPlayingRef.current });
 			if (isPlayingRef.current) {
 				setRoundPlayed((p) => p + 1);
 
+				// The ball has dropped; the chute is now identifying the prize.
+				// The backend REPORTS the outcome (turn_result for a loss,
+				// player_win for a prize) — we no longer guess it from a timer.
 				toastId.current = toaster.create({
 					description: "Checking result…",
 					type: "loading",      // shows spinner & neutral colour
 				});
 
-				// Fallback — go red if no player_win arrives. The always-on
-				// player_win listener below cancels this timer if the win
-				// event lands first.
+				// Backstop only. The backend gives up on the chute after
+				// VERDICT_GRACE (20s) and emits cabinet_fault, so in practice
+				// something always resolves this first — this just guarantees
+				// the spinner can't hang forever if the server goes away.
 				timerId.current = setTimeout(() => {
-					if (!toastId.current) return;
-					toaster.update(toastId.current, {
-						description: "Better luck next time...",
-						type: "error",
-						duration: 6000,
-						closable: true,
-					});
-					toastId.current = null;
-				}, 6000);
+					resolveResult("Couldn't read the result. The machine is being checked.", "error", 6000);
+				}, 25_000);
 			}
 			setQueueCount((q) => Math.max(q - 1, 0));
 			setIsPlaying(false);
@@ -393,6 +394,29 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			celebrate();
 		};
 
+		// The chute's verdict for our turn. A loss is now told to us, not
+		// inferred: `no_fall` is an ordinary miss, `no_read` means something
+		// fell but the tag couldn't be identified (the machine is faulted, and
+		// we must not pretend they simply lost). A win arrives as player_win.
+		const onTurnResult = (data: { won: boolean; outcome: string } | null) => {
+			console.log('[claw] turn_result', data);
+			if (data?.won) return;   // player_win resolves the toast instead
+			resolveResult(
+				data?.outcome === 'no_read'
+					? "We couldn't identify your prize — the machine is being checked."
+					: "Better luck next time!",
+				'error',
+			);
+		};
+
+		// A jam can arrive *alongside* a win (the tag was read, then the ball
+		// stuck). If a prize already resolved the toast this no-ops, so the
+		// player still sees what they won — they just also learn the machine is
+		// being seen to.
+		const onCabinetFault = () => {
+			resolveResult("The machine needs attention. We're on it.", 'error', 6000);
+		};
+
 		// Card rail: when a charge confirms via the Stripe webhook rather than
 		// synchronously (processing status / 3DS), the backend targets these to
 		// the player's room. The synchronous pay_card ack handles the fast path.
@@ -418,6 +442,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		socket.on('personal_sync', onPersonalSync);
 		socket.on('balance', onAccountBalance);
 		socket.on('round_start', onRoundStart);
+		socket.on('turn_result', onTurnResult);
+		socket.on('cabinet_fault', onCabinetFault);
 		socket.on('payment_confirmed', onPaymentConfirmed);
 		socket.on('payment_failed', onPaymentFailed);
 
@@ -431,6 +457,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			socket.off('personal_sync', onPersonalSync);
 			socket.off('balance', onAccountBalance);
 			socket.off('round_start', onRoundStart);
+			socket.off('turn_result', onTurnResult);
+			socket.off('cabinet_fault', onCabinetFault);
 			socket.off('payment_confirmed', onPaymentConfirmed);
 			socket.off('payment_failed', onPaymentFailed);
 		};
