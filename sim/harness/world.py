@@ -70,6 +70,13 @@ class World:
     def ball(self, serial: str) -> Optional[dict]:
         return self._one("SELECT * FROM ball WHERE serial = %s", (serial,))
 
+    def loaded_balls(self) -> List[dict]:
+        """Balls still in the machine. A win GRABs one permanently, so this is a
+        hard ceiling on how many wins a populate run can produce."""
+        return self._q(
+            "SELECT serial, prize_kind FROM ball WHERE status = 'LOADED' ORDER BY serial"
+        )
+
     def balance_cents(self, address: str) -> int:
         row = self._one(
             """SELECT COALESCE(SUM(CASE WHEN kind = ANY(%s) THEN amount_cents ELSE 0 END), 0)
