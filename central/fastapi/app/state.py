@@ -34,6 +34,12 @@ pi_connected = False
 # Shape: {"expires_at": float, "scanned_ball_serial": Optional[str], "timed_out": bool}
 enroll_pending: Optional[dict] = None
 
+# The machine has a ball whose prize can't be handed over, so it must not take
+# another turn (see app/machine.py). Same pause semantics as cabinet_fault:
+# nobody can pay for a play we cannot honour. Shape:
+#   {"kind": "unclaimable_prizes", "reason": str, "balls": [{serial, reason}]}
+inventory_fault: Optional[dict] = None
+
 # Mirror of the chute ESP32's latched fault, surfaced to the admin ops page.
 # Set by pi_client.on_pi_fault when the Pi forwards a `fault`, cleared by the
 # admin /cabinet/clear_fault endpoint once the Pi acks the clear. None == healthy.

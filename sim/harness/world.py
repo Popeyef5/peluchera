@@ -132,10 +132,10 @@ class World:
         """
         self.wait_until(
             lambda w: not w._q(
-                "SELECT 1 FROM queue WHERE status IN ('queued','active') LIMIT 1"
+                "SELECT 1 FROM queue WHERE status = 'active' LIMIT 1"
             ),
             timeout=timeout,
-            what="the machine to go idle (no queued/active turns)",
+            what="the in-flight turn to finish",
         )
 
     def entry_played(self, address: str):
@@ -166,6 +166,18 @@ class World:
                 cur.execute("UPDATE opened_booster SET status='AVAILABLE', "
                             "reserved_by_win_id=NULL")
                 cur.execute("UPDATE ball SET status='LOADED', voided_at=NULL")
+                # A ball with no prize bound to it can never be claimed, so the
+                # machine (rightly) refuses to run with one loaded. Real dev DBs
+                # accumulate these from manual testing — void them, which is what
+                # an operator would do.
+                cur.execute("""
+                    UPDATE ball SET status='VOIDED', voided_at=now()
+                    WHERE (prize_kind='BOOSTER_PAIR' AND opened_booster_id IS NULL)
+                       OR (prize_kind='SINGLE_CARD'  AND prize_card_id     IS NULL)
+                """)
+                # Restock every SKU — a test that took one out of stock must not
+                # leave the machine unfit (and therefore paused) for the next one.
+                cur.execute("UPDATE closed_booster_stock SET in_stock = true")
                 # Then the transactional rows, children first.
                 for table in ("ledger_entry", "payment", "win", "shipment",
                               "withdrawal", "queue", "user_account"):

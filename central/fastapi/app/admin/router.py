@@ -591,7 +591,24 @@ async def patch_closed_stock(sku: str, body: PatchClosedStockBody, _: AdminIdent
 			raise HTTPException(status_code=404, detail=f"SKU {sku} not registered")
 		row.in_stock = body.in_stock
 		await db.commit()
-		return {"ok": True, "sku": sku, "in_stock": row.in_stock}
+
+		# Don't block the operator — a set can go out of print and they have no
+		# choice. Block the MACHINE, and tell them exactly what they just
+		# orphaned so they can void or rebind those balls.
+		orphaned = [
+			b for b in await wt.unclaimable_loaded_balls(db)
+			if b["reason"].endswith("is out of stock")
+		]
+
+	fault = await machine.refresh_inventory_fault()
+	return {
+		"ok": True,
+		"sku": sku,
+		"in_stock": row.in_stock,
+		# Non-empty => the queue is now PAUSED until these are voided or rebound.
+		"orphaned_balls": orphaned,
+		"queue_paused": bool(fault),
+	}
 
 
 class CreateCardBody(BaseModel):
@@ -784,6 +801,8 @@ async def cabinet_status(_: AdminIdentity = RequireAdmin):
 		)
 	return {
 		"pi_connected": _state.pi_connected,
+		# Either fault pauses the queue until an operator resolves it.
+		"inventory_fault": _state.inventory_fault,
 		"current_player": _state.current_player,
 		"queue_length": int(queue_length or 0),
 		"cabinet_fault": _state.cabinet_fault,

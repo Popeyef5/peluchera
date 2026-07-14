@@ -14,6 +14,7 @@ from .models import Round
 from .socket.sio_instance import sio
 from .logging import log
 from .pi_client import safe_pi_emit
+from . import machine
 from .config import (
     TURN_DURATION,
     INTER_TURN_DELAY,
@@ -28,12 +29,12 @@ from .state import global_sync
 
 async def _turn_scheduler_loop():
 
-    # Rest while a turn is in flight, a round is changing, or the chute is
-    # blocked. The fault gate is what pauses the queue: a jammed chute must not
-    # be handed another ball, and turn_end won't start the next turn either, so
-    # the machine stays idle until an operator clears the fault
-    # (admin /cabinet/clear_fault).
-    if state.cabinet_fault:
+    # Rest while a turn is in flight, a round is changing, or the machine isn't
+    # fit to play. "Not fit" covers a jammed chute AND a loaded ball whose prize
+    # can't be handed over — both pause the queue until an operator resolves it,
+    # so nobody can pay for a play the machine cannot honour. turn_end applies
+    # the same gate, so the machine simply stays idle.
+    if await machine.blocked():
         await asyncio.sleep(1)
         return
 

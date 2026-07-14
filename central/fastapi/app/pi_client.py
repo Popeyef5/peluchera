@@ -13,6 +13,7 @@ from sqlalchemy import select, func
 from .deps import async_session
 from .models import QueueEntry, PrizeKind
 from . import win_transitions as wt
+from . import machine
 import asyncio, websockets, json
 
 PI_WEBSOCKET_URL = PI_SERVER_URL.replace('http://', 'ws://').replace('https://', 'wss://')
@@ -233,6 +234,13 @@ async def on_chute_verdict(data: Optional[dict] = None):
 
 async def _start_next_turn():
     """Hand the machine to the next player in the queue, if there is one."""
+    # Never start a turn the machine can't honour. A jammed chute, or a loaded
+    # ball whose prize can't be handed over, both mean: don't take their money.
+    why = await machine.blocked()
+    if why:
+        log.warning("Machine not fit to play (%s) — not starting a turn", why.get("kind"))
+        return
+
     async with async_session() as db:
         new_entry = await db.scalar(
             select(QueueEntry)

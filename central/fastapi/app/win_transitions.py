@@ -72,6 +72,54 @@ async def get_or_create_user(session: AsyncSession, wallet_address: str) -> User
     return user
 
 
+# ─── Machine fitness ────────────────────────────────────────────────────
+
+async def unclaimable_loaded_balls(session: AsyncSession) -> list[dict]:
+    """LOADED balls whose bound prize could not actually be handed over.
+
+    This is the precondition for taking someone's money: every ball still in the
+    machine must be winnable. If one isn't, a player can pay, physically win, and
+    get nothing — so the machine must refuse to start a turn until an operator
+    voids or rebinds the offending balls.
+
+    Checking the STATE rather than guarding each mutation is deliberate: it
+    catches every route into the bad state (admin toggles, bulk import, a direct
+    DB edit, a future endpoint nobody has written yet), not just the ones we
+    thought to guard.
+
+    A ball is unclaimable when:
+      - BOOSTER_PAIR: its bound OpenedBooster is no longer AVAILABLE, or the
+        sealed-pack SKU it needs is out of stock (e.g. the set went out of print);
+      - SINGLE_CARD:  its bound Card has left the pool.
+    """
+    rows = (await session.execute(
+        select(Ball, OpenedBooster, Card, ClosedBoosterStock.in_stock)
+        .outerjoin(OpenedBooster, OpenedBooster.id == Ball.opened_booster_id)
+        .outerjoin(Card, Card.id == Ball.prize_card_id)
+        .outerjoin(ClosedBoosterStock, ClosedBoosterStock.sku == OpenedBooster.sku)
+        .where(Ball.status == BallStatus.LOADED)
+    )).all()
+
+    bad: list[dict] = []
+    for ball, booster, card, in_stock in rows:
+        if ball.prize_kind == PrizeKind.BOOSTER_PAIR:
+            if booster is None:
+                bad.append({"serial": ball.serial, "reason": "no bound booster"})
+            elif booster.status != InventoryStatus.AVAILABLE:
+                bad.append({"serial": ball.serial,
+                            "reason": f"booster is {booster.status.value}, not AVAILABLE"})
+            elif not in_stock:
+                bad.append({"serial": ball.serial,
+                            "reason": f"sealed pack {booster.sku} is out of stock"})
+        else:  # SINGLE_CARD
+            if card is None:
+                bad.append({"serial": ball.serial, "reason": "no bound card"})
+            elif card.status != CardStatus.IN_POOL:
+                bad.append({"serial": ball.serial,
+                            "reason": f"card is {card.status.value}, not IN_POOL"})
+    return bad
+
+
 # ─── Win creation (at grab time) ────────────────────────────────────────
 
 async def reserve_win(
