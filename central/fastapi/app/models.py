@@ -168,6 +168,7 @@ class LedgerKind(str, enum.Enum):
 class PaymentMethod(str, enum.Enum):
     CRYPTO = "CRYPTO"   # USDC transfer from the player's logged-in (embedded) address
     CARD   = "CARD"     # Stripe card charge
+    COMP   = "COMP"     # comped play (FREE_PLAY): amount_cents=0, nobody was charged
 
 
 class PaymentStatus(str, enum.Enum):

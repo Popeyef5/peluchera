@@ -115,7 +115,7 @@ const ThemeToggle = () => {
 };
 
 const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | "radial"; mobile?: boolean }) => {
-	const { isPlaying, position, loading, approveAndBet, openPaymentPicker, queueCount, clawSocketOn } = useClaw();
+	const { isPlaying, position, loading, approveAndBet, openPaymentPicker, freePlay, payFree, queueCount, clawSocketOn } = useClaw();
 	const { isConnected } = useAppKitAccount();
 	const { open } = useAppKit();
 	const [userText, setUserText] = useState("");
@@ -186,9 +186,12 @@ const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | 
 		glossMode === "linear" ? "play--gloss-linear" : glossMode === "radial" ? "play--gloss-radial" : "";
 	// In bypass mode there's no wallet step — Play is the entry point.
 	const ready = BYPASS_PAYMENT || isConnected;
-	// Bypass: straight to the (fake) crypto play. Otherwise open the method
-	// picker so the player can choose crypto or card.
-	const onClick = ready ? (BYPASS_PAYMENT ? approveAndBet : openPaymentPicker) : () => open();
+	// Bypass (demo, no wallet): straight to the fake crypto play.
+	// Free play (real login, pre-monetization): straight to the queue, no picker.
+	// Otherwise: open the picker so they can choose crypto or card.
+	const onClick = ready
+		? (BYPASS_PAYMENT ? approveAndBet : freePlay ? payFree : openPaymentPicker)
+		: () => open();
 	const disabled = loading || (ready && !clawSocketOn);
 	const label = ready ? "PLAY" : "CONNECT WALLET";
 

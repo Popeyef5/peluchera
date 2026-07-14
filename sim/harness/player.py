@@ -31,6 +31,7 @@ class VirtualPlayer:
         self.position: int = -1
         self.balance: float = 0.0
         self.pending_win: Optional[dict] = None
+        self.free_play: bool = False
 
         for name_ in (
             "player_queued", "turn_start", "turn_end", "player_win",
@@ -92,6 +93,7 @@ class VirtualPlayer:
         res = await self.sio.call("wallet_connected", {"address": self.address}, timeout=10)
         if res.get("status") == "ok":
             data = res["data"]
+            self.free_play = bool(data.get("free_play"))
             self.position = data["position"]
             self.balance = data["balance"]
         return res
@@ -108,6 +110,13 @@ class VirtualPlayer:
         if tx_hash:
             payload["tx_hash"] = tx_hash
         res = await self.sio.call("pay_crypto", payload, timeout=30)
+        if res.get("status") == "ok":
+            self.position = res["position"]
+        return res
+
+    async def pay_free(self) -> dict:
+        """Comped play (FREE_PLAY): straight to the queue, nobody is charged."""
+        res = await self.sio.call("pay_free", {}, timeout=30)
         if res.get("status") == "ok":
             self.position = res["position"]
         return res

@@ -4,7 +4,7 @@ import secrets
 from sqlalchemy import select, func
 from datetime import datetime
 
-from ..config import BYPASS_PAYMENT, TICKET_PRICE_CENTS, ticket_usdc_base_units
+from ..config import BYPASS_PAYMENT, FREE_PLAY, TICKET_PRICE_CENTS, ticket_usdc_base_units, free_play
 from ..models import (
     QueueEntry, Round, Withdrawal, Payment, PaymentMethod,
     User, LedgerEntry, LedgerKind,
@@ -77,6 +77,9 @@ async def wallet_connected(sid, data):
     return {
         "status": "ok",
         "data": {
+            # The client learns this at login, so monetization can be switched
+            # on with a backend restart — no frontend rebuild.
+            "free_play": free_play(),
             "position": position,
             "balance": balance,
             "played": played,
@@ -128,12 +131,14 @@ async def withdraw(sid, data=None):
             debit_id = debit.id
 
         # 2) Pay out from the treasury.
-        if BYPASS_PAYMENT:
-            # Demo mode: `addr` is a synthetic guest address nobody holds the key
-            # to, so a real transfer would burn treasury funds. Record a
-            # synthetic tx hash and keep the ledger flow intact.
+        if free_play():
+            # Nobody paid to play, so no real USDC leaves the treasury. The
+            # withdrawal is simulated end-to-end (balance clears, history shows
+            # it) but the transfer is not made. In demo mode `addr` is also a
+            # synthetic guest address nobody holds the key to, so a real send
+            # would burn the funds outright.
             ok, tx_hash = True, "0x" + secrets.token_hex(32)
-            log.info("BYPASS_PAYMENT: skipped USDC payout to %s, synthetic tx %s", addr, tx_hash)
+            log.info("FREE_PLAY: simulated USDC payout to %s, synthetic tx %s", addr, tx_hash)
         else:
             loop = asyncio.get_running_loop()
             ok, tx_hash = await safe_send_usdc(loop, addr, cents_to_usdc_base_units(balance_cents))
@@ -180,6 +185,38 @@ async def check_balance(sid, data):
 # `safe_place_bet` are now dead and can be deleted in a later cleanup.
 
 
+@sio.on("pay_free")
+async def pay_free(sid, data=None):
+    """A comped play (FREE_PLAY): straight to the queue, nobody is charged.
+
+    The player still logged in for real, so they have a real account, a real
+    inventory and a real payout address — everything downstream of the payment
+    is the production path, unchanged. Only the money is skipped.
+
+    Recorded as method=COMP with amount_cents=0, so a free play is never mistaken
+    for revenue and you can always see who played for free.
+    """
+    # Authorised server-side. A client cannot talk its way into a free play.
+    if not free_play():
+        return {"status": "error", "position": -1, "error": "free play is not enabled"}
+
+    addr = sid_to_addr[sid]
+    if not addr:
+        return {"status": "error", "position": -1, "error": "not connected"}
+
+    async with async_session() as db:
+        round_ = await db.scalar(select(Round).order_by(Round.created_at.desc()))
+        if await already_in_queue(db, addr, round_.id):
+            log.warning("Rejected player %s for double entry" % addr)
+            return {"status": "error", "position": -1, "error": "user already in queue"}
+
+        payment = await initiate_payment(db, addr, PaymentMethod.COMP, 0)
+        position = await confirm_payment(db, payment, secrets.token_bytes(32))
+
+    log.info("FREE_PLAY: comped play for %s (position %s)", addr, position)
+    return {"status": "ok", "position": position}
+
+
 @sio.on("pay_crypto")
 async def pay_crypto(sid, data):
     """Crypto rail v2: pay-to-play by a direct USDC transfer to the treasury.
@@ -191,6 +228,12 @@ async def pay_crypto(sid, data):
     there's no transfer: the backend mints a synthetic key and skips the check.
     """
     addr = sid_to_addr[sid]
+
+    # Never take money while plays are comped. (BYPASS_PAYMENT is demo mode and
+    # still routes through here with a synthetic key — the simulation relies on
+    # it — so only a real FREE_PLAY deployment is refused.)
+    if FREE_PLAY and not BYPASS_PAYMENT:
+        return {"status": "error", "position": -1, "error": "payments are disabled — use pay_free"}
 
     async with async_session() as db:
         round_ = await db.scalar(select(Round).order_by(Round.created_at.desc()))

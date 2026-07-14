@@ -31,6 +31,27 @@ SUPABASE_URL          = os.environ.get("SUPABASE_URL")
 SUPABASE_JWT_SECRET   = os.environ.get("SUPABASE_JWT_SECRET")
 SUPABASE_JWT_AUDIENCE = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
 
+# FREE PLAY — the pre-monetization mode.
+#
+# Everyone logs in for real (wallet / email / social, so they get a persistent
+# account, their own inventory and a real payout address) but nobody pays: PLAY
+# goes straight to the queue. Wins, boosters, cards, resells are all real; only
+# the payment step is comped, and withdrawals are simulated (no USDC leaves the
+# treasury for a play nobody paid for).
+#
+# Distinct from BYPASS_PAYMENT, which is DEMO mode: no wallet at all, synthetic
+# guest addresses. Dev and the simulation suite rely on that one.
+#
+# Turning monetization on is: FREE_PLAY=false + restart. No frontend rebuild —
+# the client is told at login.
+FREE_PLAY = os.environ.get("FREE_PLAY", "false").lower() == "true"
+
+
+def free_play() -> bool:
+    """Plays are comped and withdrawals simulated (demo mode implies this)."""
+    return FREE_PLAY or BYPASS_PAYMENT
+
+
 # Default game settings
 DEFAULT_MAX_FEE    = os.environ.get("DEFAULT_MAX_FEE", 20)
 DEFAULT_FEE_GROWTH = os.environ.get("DEFAULT_FEE_GROWTH", 50)

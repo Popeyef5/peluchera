@@ -75,6 +75,7 @@ interface PersonalSyncData {
 }
 
 interface WalletConnectedData {
+	free_play: boolean;
 	position: number;
 	balance: number;
 	played: number;
@@ -169,6 +170,11 @@ interface ClawCtx {
 	press: (a: keyof typeof ACTION_TO_KEY) => void;
 	release: (a: keyof typeof ACTION_TO_KEY) => void;
 	approveAndBet: () => void;
+	// Pre-monetization mode, told to us by the server at login (so it can be
+	// switched off with a backend restart — no rebuild). PLAY goes straight to
+	// the queue; nobody is charged.
+	freePlay: boolean;
+	payFree: () => void;
 	// Payment method picker (crypto vs card) + card rail.
 	paymentPickerOpen: boolean;
 	openPaymentPicker: () => void;
@@ -245,6 +251,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [roundWon, setRoundWon] = useState(0);
 	const [pendingWin, setPendingWin] = useState<PendingWin | null>(null);
 	const [paymentPickerOpen, setPaymentPickerOpen] = useState(false);
+	const [freePlay, setFreePlay] = useState(false);
 	const [secondsLeft, updateSeconds] = useCountdown(0);
 
 	/* wallet — in bypass mode, identity is a per-session synthetic guest
@@ -266,6 +273,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 			socket.emit('wallet_connected', { address }, (res: { status: string, data: WalletConnectedData }) => {
 				if (res.status === "ok") {
+					setFreePlay(!!res.data.free_play);
 					setPosition(res.data.position);
 					setAccountBalance(res.data.balance);
 					setAccountBets(res.data.bets);
@@ -545,6 +553,12 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		}
 	}, [address, chainId, socket, onPayAck]);
 
+	/* free play (pre-monetization) — straight to the queue, nobody is charged */
+	const payFree = useCallback(() => {
+		setLoading(true);
+		socket.emit('pay_free', {}, onPayAck);
+	}, [socket, onPayAck]);
+
 	/* pay-to-play (card rail) */
 	const openPaymentPicker = useCallback(() => setPaymentPickerOpen(true), []);
 	const closePaymentPicker = useCallback(() => setPaymentPickerOpen(false), []);
@@ -726,6 +740,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		press,
 		release,
 		approveAndBet,
+		freePlay,
+		payFree,
 		paymentPickerOpen,
 		openPaymentPicker,
 		closePaymentPicker,

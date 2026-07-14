@@ -9,7 +9,7 @@ import stripe
 from sqlalchemy import select
 
 from .sio_instance import sio
-from ..config import TICKET_PRICE_CENTS
+from ..config import TICKET_PRICE_CENTS, free_play
 from ..deps import async_session
 from ..logging import log
 from ..models import Round, PaymentMethod
@@ -62,6 +62,10 @@ async def pay_card(sid, data=None):
     addr = sid_to_addr.get(sid)
     if not addr:
         return _err("not connected")
+    if free_play():
+        # Plays are comped — charging a card now would be taking money for
+        # something we're giving away.
+        return _err("payments are disabled")
     if not stripe_enabled():
         return _err("card payments disabled")
 
