@@ -6,6 +6,25 @@ Recurring deploy, on the VPS:
 cd ~/peluchera/central && ./update.sh
 ```
 
+## Two env files
+
+|            | file        | database              | mode              | read by |
+|------------|-------------|-----------------------|-------------------|---------|
+| **dev**    | `.env`      | local Postgres (`claw_db`) | `BYPASS_PAYMENT=true` | `docker-compose.dev.yml`, the sim |
+| **prod**   | `.env.prod` | Supabase              | `FREE_PLAY=true`  | `docker-compose.yml`, `update.sh` |
+
+They are kept apart so a dev stack can never be pointed at the production
+database by accident — `docker-compose.yml` reads `.env.prod` and nothing else,
+and `update.sh` **refuses to deploy** if `DATABASE_URL` mentions `claw_db`.
+
+On the VPS, only `.env.prod` matters. Start from `.env.prod.example`.
+
+Running prod compose by hand needs the same file:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.yml <cmd>
+```
+
 That pulls, rebuilds, backs up the DB, runs `alembic upgrade head`, and only then
 restarts. **If the migration fails, nothing restarts** — the old version keeps
 serving and the script prints the restore command. `deploy.sh` is first-time

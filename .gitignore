@@ -36,6 +36,7 @@ yarn-error.log*
 # ...but DO track the documented templates.
 !*.env.example
 !.env.example
+!.env.prod.example
 !.env.admin.example
 
 # vercel

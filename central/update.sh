@@ -32,9 +32,39 @@ else
 fi
 
 # --- env ----------------------------------------------------------------
-[[ -f .env ]] || die ".env not found in $(pwd)"
-set -a; source .env; set +a
-: "${DATABASE_URL:?DATABASE_URL must be set in .env}"
+# Prod lives in .env.prod; .env is the DEV file (local Postgres, bypass mode).
+# Keeping them apart is what stops a dev stack from being pointed at the
+# production database — docker-compose.yml reads .env.prod and nothing else.
+ENV_FILE="${ENV_FILE:-.env.prod}"
+[[ -f "$ENV_FILE" ]] || die "$ENV_FILE not found in $(pwd).
+   Prod config lives in .env.prod (see .env.prod.example / DEPLOY.md).
+   .env is the dev file and must NOT be used to deploy."
+
+# Do NOT `source` the env file. A compose env file is not a shell script — a
+# value containing #, a space, parentheses or a quote is perfectly legal there
+# and will blow bash up (and did). Read out only what this script needs.
+env_get() {
+  local v
+  v="$(grep -m1 -E "^$1=" "$ENV_FILE" | cut -d= -f2-)"
+  v="${v%\"}"; v="${v#\"}"          # strip surrounding double quotes
+  v="${v%\'}"; v="${v#\'}"          # ...or single
+  printf '%s' "$v"
+}
+
+DATABASE_URL="$(env_get DATABASE_URL)"
+[[ -n "$DATABASE_URL" ]] || die "DATABASE_URL is not set in $ENV_FILE"
+
+case "$DATABASE_URL" in
+  *claw_db*) die "$ENV_FILE points DATABASE_URL at claw_db — that is the DEV
+   database. Prod runs against Supabase and has no db service." ;;
+esac
+
+# --env-file drives ${VAR} interpolation inside the compose file — which is how
+# the Next builds get their NEXT_PUBLIC_* build args. The admin app's Supabase
+# args live in .env.admin, so it has to be passed too or next-admin is built with
+# a blank Supabase URL and its login silently cannot work.
+DC="$DC --env-file $ENV_FILE"
+[[ -f .env.admin ]] && DC="$DC --env-file .env.admin"
 
 # pg_dump wants the libpq form; DATABASE_URL is the SQLAlchemy form.
 PGURL="${DATABASE_URL/postgresql+psycopg:\/\//postgresql://}"
