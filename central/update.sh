@@ -66,8 +66,25 @@ esac
 DC="$DC --env-file $ENV_FILE"
 [[ -f .env.admin ]] && DC="$DC --env-file .env.admin"
 
-# pg_dump wants the libpq form; DATABASE_URL is the SQLAlchemy form.
-PGURL="${DATABASE_URL/postgresql+psycopg:\/\//postgresql://}"
+# Split DATABASE_URL into components for pg_dump/psql — do NOT hand libpq a URL.
+# The Supabase password can contain URL-special chars (#, /), which libpq's
+# strict RFC parser mangles (it truncates at '#', loses the @host, and reads the
+# username as the hostname). SQLAlchemy's lenient parser tolerates it, so the app
+# works while pg_dump doesn't. Passing PGPASSWORD + -h/-p/-U/-d sidesteps URL
+# parsing entirely. (Assumes the password itself contains no '@'.)
+_rest="${DATABASE_URL#*://}"        # user:pass@host:port/db?params
+_creds="${_rest%@*}"               # user:pass   (everything before the LAST @)
+_hostpart="${_rest##*@}"           # host:port/db?params
+PGUSER_="${_creds%%:*}"
+PGPASS_="${_creds#*:}"
+_hpq="${_hostpart%%\?*}"           # strip ?params
+_hp="${_hpq%%/*}"                  # host:port
+PGDB_="${_hpq#*/}"                 # db
+PGHOST_="${_hp%%:*}"
+PGPORT_="${_hp##*:}"; [[ "$PGPORT_" == "$PGHOST_" ]] && PGPORT_=5432
+
+# For the restore hint printed on migration failure.
+PGURL="postgresql://${PGUSER_}@${PGHOST_}:${PGPORT_}/${PGDB_}  (PGPASSWORD from $ENV_FILE)"
 
 # --- 1. pull ------------------------------------------------------------
 if [[ "${SKIP_PULL:-0}" != "1" ]]; then
@@ -112,10 +129,13 @@ backup_db() {
   # compose network and the internet). Fall back to a throwaway postgres image
   # on the host network (for a remote DB, e.g. Supabase).
   if $DC ps --status=running 2>/dev/null | grep -q '\bdb\b'; then
-    $DC exec -T db pg_dump "$PGURL" | gzip > "$dump" || { rm -f "$dump"; return 1; }
+    $DC exec -T -e PGPASSWORD="$PGPASS_" db \
+      pg_dump -h "$PGHOST_" -p "$PGPORT_" -U "$PGUSER_" -d "$PGDB_" --no-owner \
+      | gzip > "$dump" || { rm -f "$dump"; return 1; }
   else
-    docker run --rm --network host -e PGURL="$PGURL" postgres:17 \
-      sh -c 'pg_dump "$PGURL"' | gzip > "$dump" || { rm -f "$dump"; return 1; }
+    docker run --rm --network host -e PGPASSWORD="$PGPASS_" postgres:17 \
+      pg_dump -h "$PGHOST_" -p "$PGPORT_" -U "$PGUSER_" -d "$PGDB_" --no-owner \
+      | gzip > "$dump" || { rm -f "$dump"; return 1; }
   fi
 
   [[ -s "$dump" ]] || { rm -f "$dump"; return 1; }
