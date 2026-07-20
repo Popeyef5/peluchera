@@ -8,8 +8,14 @@
 # volume, so only the first flash pays the download cost.
 FROM python:3.12-slim
 
+# build-essential + the -dev headers are needed because on ARM (the real Pi)
+# some of esptool's deps (cffi, bitarray) have no prebuilt wheels and compile
+# from source. Without a compiler the flash dies with "gcc: No such file or
+# directory". x86 dev boxes have wheels, so this only bites on the Pi.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git curl ca-certificates \
+ && apt-get install -y --no-install-recommends \
+      git curl ca-certificates \
+      build-essential python3-dev libffi-dev libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir platformio
