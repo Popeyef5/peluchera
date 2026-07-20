@@ -110,6 +110,11 @@ TELEGRAM_BOT_CHATS = {
 	'info': int(info) if (info := os.environ.get("TELEGRAM_BOT_CHAT_INFO", None)) is not None else None
 }
 
+# Global switch for ALL Telegram alerts (version mismatch, inventory fault, ...).
+# OFF by default — alerts are opt-in. Set TELEGRAM_ALERTS=true (+ token/chat) to
+# turn them on; leave unset/false to keep the app silent everywhere.
+TELEGRAM_ALERTS = os.environ.get("TELEGRAM_ALERTS", "false").lower() == "true"
+
 # reconciler config
 # START_BLOCK = 0              # deploy block
 # CONFIRMATIONS = 50           # finality buffer

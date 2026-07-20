@@ -3,7 +3,7 @@ import logging
 
 from telegram import Bot
 
-from .config import TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_CHATS
+from .config import TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_CHATS, TELEGRAM_ALERTS
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +25,8 @@ class TelegramNotifier:
         return None
 
     async def send_plain(self, text, chat="info"):
+        if not TELEGRAM_ALERTS:
+            return  # globally disabled via TELEGRAM_ALERTS=false
         if not self.token:
             log.info("Telegram not configured (no token) — skipping alert")
             return
