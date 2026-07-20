@@ -107,7 +107,7 @@ RESELL_PRICE_BY_BOOSTER_SKU_CENTS = {
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", None)
 TELEGRAM_BOT_CHATS = {
-	'regular': int(info) if (info := os.environ.get("TELEGRAM_BOT_CHAT_INFO", None)) is not None else None
+	'info': int(info) if (info := os.environ.get("TELEGRAM_BOT_CHAT_INFO", None)) is not None else None
 }
 
 # reconciler config
