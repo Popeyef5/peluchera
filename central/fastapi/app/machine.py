@@ -67,6 +67,8 @@ async def blocked() -> Optional[dict]:
     Call this immediately before starting a turn. A player must never be able to
     pay for a play the machine cannot honour.
     """
+    if state.version_fault:
+        return state.version_fault
     if state.cabinet_fault:
         return state.cabinet_fault
     return await refresh_inventory_fault()

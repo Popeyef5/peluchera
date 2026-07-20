@@ -122,21 +122,32 @@ class World:
             time.sleep(0.25)
         raise AssertionError(f"timed out after {timeout}s waiting for {what} (last={last!r})")
 
-    def drain(self, timeout: float = 120.0) -> None:
-        """Wait until no turn is queued or in flight.
+    def wait_idle(self, stable_for: float = 1.5, timeout: float = 40.0) -> None:
+        """Wait until the machine is *stably* idle before a test starts.
 
-        Required for isolation: a turn left running by a previous test keeps the
-        cabinet armed, and its chute verdict (which arrives *after* turn_end)
-        would otherwise land in the middle of the next test — eating the
-        next-tag override and getting attributed to the wrong turn.
+        Call AFTER reset() (which wipes the queue). Then confirm the queue STAYS
+        empty for `stable_for` seconds. This closes the isolation race that plain
+        drain() missed: the backend's turn_end holds no entry 'active' while it's
+        awaiting the chute verdict, so the scheduler can promote a stale queued
+        entry (left by a no-play test) into a losing turn right as we reset. Any
+        such in-flight turn's verdict also drains harmlessly (its key is gone)
+        during this window.
+
+        Requires the machine to be unpaused (faults cleared, stock restored) —
+        otherwise a queued entry would never drain. The fixture does that first.
         """
-        self.wait_until(
-            lambda w: not w._q(
-                "SELECT 1 FROM queue WHERE status = 'active' LIMIT 1"
-            ),
-            timeout=timeout,
-            what="the in-flight turn to finish",
-        )
+        deadline = time.time() + timeout
+        empty_since = None
+        while time.time() < deadline:
+            busy = self._q("SELECT 1 FROM queue WHERE status IN ('queued','active') LIMIT 1")
+            if busy:
+                empty_since = None
+            elif empty_since is None:
+                empty_since = time.time()
+            elif time.time() - empty_since >= stable_for:
+                return
+            time.sleep(0.2)
+        raise AssertionError("machine never settled idle (queue kept refilling)")
 
     def entry_played(self, address: str):
         """The player's latest queue entry, once the backend has recorded it as played."""

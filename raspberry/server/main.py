@@ -26,6 +26,7 @@ from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, WebSocketException
 
+from protocol_version import PI_VPS_PROTO, PI_FW
 from esp_link import EspLink
 from fsm import FSM, FSMHooks, State, EV_TURN_START, EV_FAULT_CLEAR
 from hardware import ClawOutputs, Sensors, open_gpiochip
@@ -210,6 +211,13 @@ MESSAGE_HANDLERS = {
 }
 
 
+def esp_status_frame() -> dict:
+    """The status the Pi reports to central: the effective chute fault plus the
+    version info central needs for the Pi<->VPS and ESP<->Pi compatibility
+    checks. Every esp_status the Pi sends goes through here."""
+    return {"type": "esp_status", "data": esp.status_data()}
+
+
 @app.websocket("/")
 async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
@@ -218,9 +226,7 @@ async def websocket_endpoint(ws: WebSocket):
     # even when the latch predates this connection (e.g. the ESP latched across
     # a Pi restart and re-announced it via `ready`).
     try:
-        await ws.send_text(json.dumps(
-            {"type": "esp_status", "data": {"latched_fault": esp.latched_fault}}
-        ))
+        await ws.send_text(json.dumps(esp_status_frame()))
     except Exception as e:
         log.warning("esp_status send failed: %s", e)
     try:

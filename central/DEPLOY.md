@@ -149,3 +149,25 @@ the payment picker.
   `raspberry/flash.sh --ota` and drop-test — including a deliberate jam, to
   confirm `no_exit` comes back *with* the tag. Do it while the cabinet is idle:
   a reboot mid-turn faults it.
+
+## Version compatibility (ESP / Pi / VPS)
+
+The three pieces deploy on different schedules, so they check they still speak
+the same protocol. Two contract versions, each an integer, checked at its
+handshake and required to be **equal**:
+
+- `ESP_PI_PROTO` — ESP firmware ↔ Pi. `esp/src/protocol.h`, `raspberry/server/protocol_version.py`.
+- `PI_VPS_PROTO` — Pi ↔ VPS. `raspberry/server/protocol_version.py`, `central/fastapi/app/versioning.py`.
+
+A mismatch is treated as "machine not fit to play": **the queue pauses** and you
+get a **Telegram alert** immediately and then every 30 min until it's resolved.
+`/admin/cabinet/status` shows `version_fault`.
+
+This is exactly what protects you across a partial deploy — VPS pulled + restarted
+but the ESP not reflashed. If you see a version-mismatch alert after deploying,
+you skipped the flash: run `raspberry/flash.sh`.
+
+**Bumping a protocol:** change the constant at *both* ends of that interface in
+the same commit (the repo test `sim/tests/test_protocol_versions.py` fails
+otherwise), and reflash/redeploy whatever changed. Bump only on an incompatible
+wire change — backward-compatible tweaks leave it alone.

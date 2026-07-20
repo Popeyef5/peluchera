@@ -47,6 +47,7 @@ from fastapi import (
     WebSocketException,
 )
 
+from protocol_version import PI_VPS_PROTO, PI_FW
 from esp_link import EspLink
 from fsm import FSM, FSMHooks, State, EV_TURN_START, EV_FAULT_CLEAR
 from mock_hardware import (
@@ -216,7 +217,7 @@ async def websocket_endpoint(ws: WebSocket):
     # Mirror the real Pi: announce the current chute latch on connect.
     try:
         await ws.send_text(json.dumps(
-            {"type": "esp_status", "data": {"latched_fault": esp.latched_fault}}
+            {"type": "esp_status", "data": esp.status_data()}
         ))
     except Exception as e:
         log.warning("esp_status send failed: %s", e)
@@ -338,6 +339,20 @@ async def scenario_disconnect():
             log.warning("error closing ws: %s", e)
     manager.active_connections.clear()
     return {"closed": n}
+
+
+@app.post("/scenarios/report-version/{pi_proto}")
+async def scenario_report_version(pi_proto: int):
+    """Push an esp_status reporting a given Pi<->VPS protocol version, to drive
+    the VPS version-compatibility check. pi_proto != the VPS's constant makes it
+    pause the queue; equal clears it. (No real cabinet endpoint — a test hook at
+    the hardware boundary, same as the other /scenarios.)"""
+    await manager.broadcast({"type": "esp_status", "data": {
+        "latched_fault": esp.effective_fault(),
+        "pi_proto": pi_proto,
+        "versions": {"esp_fw": esp.fw, "esp_proto": esp.esp_proto, "pi_fw": PI_FW},
+    }})
+    return {"reported_pi_proto": pi_proto}
 
 
 @app.post("/scenarios/chute-delay/{seconds}")

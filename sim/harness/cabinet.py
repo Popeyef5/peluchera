@@ -73,6 +73,10 @@ class Cabinet:
         one stray fault would poison every subsequent win."""
         return await self._post("/scenarios/fault-clear")
 
+    async def report_version(self, pi_proto: int) -> dict:
+        """Make the Pi report a given Pi<->VPS protocol version to the VPS."""
+        return await self._post(f"/scenarios/report-version/{pi_proto}")
+
     async def state(self) -> dict:
         r = await self._c.get("/scenarios/state")
         r.raise_for_status()

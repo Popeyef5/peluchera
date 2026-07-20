@@ -14,7 +14,12 @@ def world() -> World:
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def fresh_world(world):
+async def fresh_world(request, world):
+    # Static tests (e.g. protocol-version agreement) read source files only and
+    # need no running stack — skip the cabinet/DB reset for them.
+    if request.node.get_closest_marker("static"):
+        yield
+        return
     """Every test starts from a freshly-seeded world AND a healthy cabinet.
 
     Clearing the fault is not optional: a latched chute fault (rfid_failed /
@@ -31,6 +36,7 @@ async def fresh_world(world):
     # next-tag override the upcoming test is about to set.
     await c.always_lose()
     await c.chute_delay(0)     # a test that slowed the chute must not leak it
+    await c.report_version(1)  # clear any version fault a prior test left set
 
     # Then actually WAIT for the fault to clear, don't just ask for it. The Pi
     # FSM only handles fault_clear when it's idle, so if the previous test left
@@ -47,12 +53,12 @@ async def fresh_world(world):
         raise AssertionError("cabinet fault would not clear — machine stuck")
     await c.aclose()
 
-    # Then let any in-flight turn finish before we wipe the tables underneath it.
-    world.drain()
-    await asyncio.sleep(1.5)   # let the last chute verdict land and settle
-
+    # Wipe first — so the scheduler has no stale queued entry to promote into a
+    # turn — then wait until the machine is *stably* idle. reset() also restores
+    # inventory/stock, which lets the backend clear any inventory fault on its
+    # next tick so wait_idle doesn't deadlock on a paused machine.
     world.reset()
-    await asyncio.sleep(0.3)   # let the turn scheduler notice the empty queue
+    world.wait_idle()
     yield
 
 

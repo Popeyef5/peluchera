@@ -40,6 +40,11 @@ enroll_pending: Optional[dict] = None
 #   {"kind": "unclaimable_prizes", "reason": str, "balls": [{serial, reason}]}
 inventory_fault: Optional[dict] = None
 
+# A protocol-version mismatch between VPS / Pi / ESP (see versioning.py). Pauses
+# the queue like any other "machine not fit" fault. Shape:
+#   {"kind": "version_mismatch", "problems": [str], "versions": {...}}
+version_fault: Optional[dict] = None
+
 # Mirror of the chute ESP32's latched fault, surfaced to the admin ops page.
 # Set by pi_client.on_pi_fault when the Pi forwards a `fault`, cleared by the
 # admin /cabinet/clear_fault endpoint once the Pi acks the clear. None == healthy.

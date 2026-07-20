@@ -59,12 +59,39 @@ class EspLink:
         self.connected = False
         self.latched_fault: Optional[str] = None
         self.fw: Optional[str] = None          # firmware version from the last `ready`
+        self.esp_proto: Optional[int] = None   # ESP_PI protocol from the last `ready`
+        self._ready_seen = False
         self._ready_event = asyncio.Event()
         self._ping_seq = 0
         self._pong_waiters: "dict[int, asyncio.Future]" = {}
         # When set (by arm_and_wait), the next verdict frame resolves it and is
         # NOT forwarded to the turn FSM — used by the admin "test win" probe.
         self._verdict_waiter: Optional["asyncio.Future"] = None
+
+    def version_ok(self) -> bool:
+        """False once we've heard a `ready` whose protocol doesn't match ours.
+        Unknown-until-first-ready is treated as OK so we don't fault on boot."""
+        from protocol_version import ESP_PI_PROTO
+        return (not self._ready_seen) or (self.esp_proto == ESP_PI_PROTO)
+
+    def effective_fault(self) -> Optional[str]:
+        """What to report as the chute's blocking fault: a version mismatch takes
+        precedence (a reflash is the only fix — an operator's fault_clear cannot
+        resolve it), otherwise the physical latch."""
+        if not self.version_ok():
+            return "esp_version_mismatch"
+        return self.latched_fault
+
+    def status_data(self) -> dict:
+        """The esp_status payload the Pi reports to central. EVERY esp_status
+        must go through here — omitting pi_proto makes central read the Pi as
+        version-unaware and pause the queue."""
+        from protocol_version import PI_VPS_PROTO, PI_FW
+        return {
+            "latched_fault": self.effective_fault(),
+            "pi_proto": PI_VPS_PROTO,
+            "versions": {"esp_fw": self.fw, "esp_proto": self.esp_proto, "pi_fw": PI_FW},
+        }
 
     async def run(self) -> None:
         """Reconnect loop. Run as a background task."""
@@ -106,6 +133,8 @@ class EspLink:
             if msg.type == "ready":
                 self.latched_fault = payload.get("fault")
                 self.fw = payload.get("fw")
+                self.esp_proto = payload.get("proto")
+                self._ready_seen = True
                 self._ready_event.set()
             elif msg.type == "fault":
                 # ESP only emits `fault` for new latches; still_blocked

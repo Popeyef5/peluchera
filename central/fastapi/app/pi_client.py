@@ -14,6 +14,7 @@ from .deps import async_session
 from .models import QueueEntry, PrizeKind
 from . import win_transitions as wt
 from . import machine
+from . import versioning
 import asyncio, websockets, json
 
 PI_WEBSOCKET_URL = PI_SERVER_URL.replace('http://', 'ws://').replace('https://', 'wss://')
@@ -149,13 +150,28 @@ async def request_test_arm(timeout: float = 20.0) -> dict:
 
 
 def on_esp_status(data: Optional[dict] = None):
-    """Authoritative chute-latch sync sent by the Pi on every (re)connect, so
-    the central mirror is correct even when the latch predates the connection
-    (the bug where a latch arrived via the ESP `ready` frame and central's
-    `cabinet_fault` stayed None). Sets or clears the mirror to match the ESP."""
-    kind = (data or {}).get("latched_fault")
-    state.cabinet_fault = {"kind": kind, "reason": "latched"} if kind else None
-    log.info("ESP status sync: latched_fault=%s", kind)
+    """Chute-latch + version sync sent by the Pi on every (re)connect, so the
+    central mirror is correct even when the state predates the connection.
+
+    The Pi now also reports its Pi<->VPS protocol version and the ESP's version,
+    so this is where both compatibility checks land. An ESP protocol mismatch
+    arrives as latched_fault="esp_version_mismatch"; we route THAT to the version
+    fault (not the chute latch) so the operator gets a version-specific message —
+    both pause the queue either way."""
+    data = data or {}
+    latched = data.get("latched_fault")
+    pi_proto = data.get("pi_proto")
+    versions = data.get("versions") or {}
+
+    esp_version_bad = (latched == "esp_version_mismatch")
+    physical_latch = latched if (latched and not esp_version_bad) else None
+
+    state.cabinet_fault = {"kind": physical_latch, "reason": "latched"} if physical_latch else None
+    log.info("ESP status sync: latched=%s pi_proto=%s versions=%s",
+             physical_latch, pi_proto, versions)
+
+    # Version check is async (it may alert) — schedule it.
+    asyncio.create_task(versioning.on_handshake(pi_proto, esp_version_bad, versions))
 
 
 def on_test_result(data: Optional[dict] = None):

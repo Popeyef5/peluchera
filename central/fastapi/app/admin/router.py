@@ -801,7 +801,8 @@ async def cabinet_status(_: AdminIdentity = RequireAdmin):
 		)
 	return {
 		"pi_connected": _state.pi_connected,
-		# Either fault pauses the queue until an operator resolves it.
+		# Any of these pauses the queue until it's resolved.
+		"version_fault": _state.version_fault,
 		"inventory_fault": _state.inventory_fault,
 		"current_player": _state.current_player,
 		"queue_length": int(queue_length or 0),

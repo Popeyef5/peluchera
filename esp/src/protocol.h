@@ -37,6 +37,12 @@ constexpr const char *FAULT_INTERNAL      = "internal_error";
 
 constexpr const char *REASON_STILL_BLOCKED = "still_blocked";
 
+// ESP<->Pi wire-protocol version. Bump ONLY on an incompatible change to the
+// UART JSON contract (arm / verdict / ready). Must equal ESP_PI_PROTO in
+// raspberry/server/protocol_version.py — the Pi refuses to run a mismatched
+// chute (and pauses the queue) rather than misread its frames.
+constexpr int ESP_PI_PROTOCOL = 1;
+
 // Chute verdict outcomes — exactly one per arm. See the table at the top.
 constexpr const char *VERDICT_NO_FALL = "no_fall";
 constexpr const char *VERDICT_NO_READ = "no_read";

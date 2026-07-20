@@ -108,15 +108,15 @@ class FSM:
                 # now pauses the queue — the machine would never resume.
                 await self.hooks.broadcast({
                     "type": "esp_status",
-                    "data": {"latched_fault": self.esp.latched_fault},
+                    "data": self.esp.status_data(),
                 })
                 continue
             if ev == EV_TURN_START:
-                if self.esp.latched_fault:
+                if self.esp.effective_fault():
                     await self.hooks.broadcast({
                         "type": "fault",
                         "data": {
-                            "kind": self.esp.latched_fault,
+                            "kind": self.esp.effective_fault(),
                             "reason": "still_blocked",
                         },
                     })

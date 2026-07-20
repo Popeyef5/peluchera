@@ -8,6 +8,7 @@ from .schedulers import turn_scheduler, sync_scheduler
 from .notifier import alertBot
 from .admin import router as admin_router
 from .stripe_rail import router as stripe_router
+from .versioning import version_watch
 import asyncio
 
 api = FastAPI()
@@ -46,5 +47,6 @@ async def on_startup():
     asyncio.create_task(connect_pi())
     asyncio.create_task(turn_scheduler())
     asyncio.create_task(sync_scheduler())
+    asyncio.create_task(version_watch())
 
 __all__ = ["app"]   # for `uvicorn app:app`

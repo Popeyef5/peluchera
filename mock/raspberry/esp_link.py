@@ -58,9 +58,32 @@ class EspLink:
         self._arm_gen = 0
         self._arm_task: Optional[asyncio.Task] = None
         self.fw = "garra-chute-mock-0.1.0"   # mirrors the real ESP's `ready.fw`
+        from protocol_version import ESP_PI_PROTO
+        self.esp_proto = ESP_PI_PROTO        # the mock always speaks our protocol
+        self._ready_seen = True
         self._ready_event = asyncio.Event()
         self._ready_event.set()
         self._verdict_waiter: Optional["asyncio.Future"] = None
+
+    def version_ok(self) -> bool:
+        from protocol_version import ESP_PI_PROTO
+        return (not self._ready_seen) or (self.esp_proto == ESP_PI_PROTO)
+
+    def effective_fault(self) -> Optional[str]:
+        if not self.version_ok():
+            return "esp_version_mismatch"
+        return self.latched_fault
+
+    def status_data(self) -> dict:
+        """The esp_status payload the Pi reports to central. EVERY esp_status
+        must go through here — omitting pi_proto makes central read the Pi as
+        version-unaware and pause the queue."""
+        from protocol_version import PI_VPS_PROTO, PI_FW
+        return {
+            "latched_fault": self.effective_fault(),
+            "pi_proto": PI_VPS_PROTO,
+            "versions": {"esp_fw": self.fw, "esp_proto": self.esp_proto, "pi_fw": PI_FW},
+        }
 
     async def run(self) -> None:
         # Real impl manages a reconnect loop here; nothing to do for the mock.

@@ -40,8 +40,9 @@ static void writeln(const JsonDocument &doc) {
 
 void emit_ready(const char *fw_version, const char *latched_fault_or_null) {
     JsonDocument d;
-    d["type"] = "ready";
-    d["fw"]   = fw_version;
+    d["type"]  = "ready";
+    d["fw"]    = fw_version;
+    d["proto"] = ESP_PI_PROTOCOL;   // Pi checks this against its ESP_PI_PROTO
     if (latched_fault_or_null) d["fault"] = latched_fault_or_null;
     else                       d["fault"] = nullptr;
     writeln(d);
