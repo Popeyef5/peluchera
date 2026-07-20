@@ -44,17 +44,20 @@ runs its own database. Work through this once.
 
 - [ ] `DATABASE_URL` points at Supabase, using the **session pooler**:
 
-      postgresql+psycopg://postgres.<REF>:<PASSWORD>@aws-0-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require
+      postgresql+psycopg://postgres.<REF>:<PASSWORD>@aws-<N>-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require
 
   - **Session pooler (port 5432)**, not the transaction pooler (6543) — that one
     is PgBouncer, which breaks the prepared statements SQLAlchemy/psycopg use.
   - **Not** the direct host (`db.<REF>.supabase.co`) — it is **IPv6-only**, and an
     IPv4 VPS cannot reach it at all.
+  - The pooler host is region+cluster specific (e.g. `aws-1-us-east-2`, NOT
+    necessarily `aws-0`). Copy it verbatim from the dashboard's **Session pooler**
+    tab — a wrong cluster fails with `tenant/user ... not found`.
   - Password: Supabase dashboard → Project Settings → Database.
 
 - [ ] Verify before deploying:
 
-      psql "postgresql://postgres.<REF>:<PASSWORD>@aws-0-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require" \
+      psql "postgresql://postgres.<REF>:<PASSWORD>@aws-<N>-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require" \
         -c "SELECT version_num FROM alembic_version;"
 
   It should already be at head, so the deploy's migration step is a no-op.
