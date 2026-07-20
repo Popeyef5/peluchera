@@ -118,17 +118,27 @@ app = FastAPI(lifespan=lifespan)
 async def health():
     """Status of the chute ESP + this Pi server. Curl it on the Pi, or via the
     admin Cabinet page (central proxies it). Does a live ping, so it reflects
-    actual ESP responsiveness, not just that the serial port is open."""
+    actual ESP responsiveness, not just that the serial port is open.
+
+    Includes the ESP<->Pi protocol check, so this is a valid convergence probe
+    after a firmware flash: protocol_ok=true and esp_proto==expected_esp_proto."""
+    from protocol_version import ESP_PI_PROTO, PI_VPS_PROTO
     ping_ok = await esp.ping(timeout=2.0)
-    esp_ok = esp.connected and ping_ok and esp.latched_fault is None
+    fault = esp.effective_fault()          # includes esp_version_mismatch
+    esp_ok = esp.connected and ping_ok and fault is None
     return {
         "ok": esp_ok,
         "esp": {
             "connected": esp.connected,
             "fw": esp.fw,
-            "latched_fault": esp.latched_fault,
+            "esp_proto": esp.esp_proto,
+            "expected_esp_proto": ESP_PI_PROTO,
+            "protocol_ok": esp.version_ok(),
+            "latched_fault": esp.latched_fault,   # physical latch (kept for compat)
+            "fault": fault,                        # effective (incl. version mismatch)
             "ping_ok": ping_ok,
         },
+        "pi_proto": PI_VPS_PROTO,
         "central_connected": len(manager.active_connections) > 0,
     }
 
