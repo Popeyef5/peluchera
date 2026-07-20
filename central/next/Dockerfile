@@ -13,6 +13,10 @@ RUN npm install -g pnpm
 WORKDIR /code
 COPY . .
 COPY --from=deps /code/node_modules ./node_modules
+# `next build` on this app (wagmi + three.js + Next 15) exceeds V8's default
+# heap ceiling (~1 GB) and aborts with "JavaScript heap out of memory". Raise
+# the old-space limit. The box needs RAM+swap to back this — see DEPLOY.md.
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN pnpm build
 
 # Dev stage: hot-reload server. Used by docker-compose.dev.yml via `target: dev`.

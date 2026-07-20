@@ -135,6 +135,25 @@ the payment picker.
 
 ---
 
+## Build needs memory (swap)
+
+`next build` for the player app peaks around 2–3 GB of heap (the Dockerfiles set
+`NODE_OPTIONS=--max-old-space-size=4096`). V8 aborts at its heap ceiling
+regardless of RAM, so raising the limit is necessary — but the box must have the
+RAM+swap to back it, or the kernel OOM-kills the build instead.
+
+On a small VPS (≤2 GB RAM), add swap once:
+
+```bash
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab   # persist across reboots
+free -h                                                       # confirm swap is live
+```
+
+Symptom if this is missing: `pnpm build` dies with `JavaScript heap out of
+memory` (exit 134), or the build is silently `Killed`.
+
 ## Known gotchas
 
 - **`NEXT_PUBLIC_*` are baked in at build time.** `update.sh` always rebuilds, so

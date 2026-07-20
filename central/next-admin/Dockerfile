@@ -22,6 +22,8 @@ RUN npm install -g pnpm
 WORKDIR /code
 COPY . .
 COPY --from=deps /code/node_modules ./node_modules
+# Match central/next: give `next build` headroom above V8's ~1 GB default.
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN pnpm build
 
 # Dev: hot-reload on port 3001 (different from central/next's 3000 to avoid
