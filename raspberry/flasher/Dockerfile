@@ -18,7 +18,11 @@ RUN apt-get update \
       build-essential python3-dev libffi-dev libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir platformio
+# platformio drives OTA/USB builds on a box where the xtensa toolchain works
+# (x86/arm64). esptool is installed explicitly so the --prebuilt upload path
+# works on this 32-bit Pi WITHOUT ever invoking the (missing) cross-compiler:
+# it just writes firmware built off-Pi. Its console scripts land on PATH.
+RUN pip install --no-cache-dir platformio esptool
 
 WORKDIR /project
 # `docker compose run flasher run -e <env> -t upload ...` => `pio run ...`

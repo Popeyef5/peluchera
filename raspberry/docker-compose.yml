@@ -64,13 +64,12 @@ services:
   flasher:
     profiles: ["flash"]
     build: ./flasher
-    # Force arm64 even on a 32-bit userland. This Pi runs a 64-bit kernel
-    # (uname -m = aarch64) with a 32-bit armv7l userland, so the default build
-    # produces a 32-bit image — and PlatformIO's xtensa-esp32 GCC has no working
-    # armv7l host binary, so the firmware compile dies with "xtensa-esp32-elf-g++:
-    # not found" (Error 127). The aarch64 toolchain is supported; pin the image
-    # to arm64 and PlatformIO installs a runnable cross-compiler.
-    platform: "linux/arm64"
+    # Runs 32-bit (armv7l) to match this Pi's userland. It CANNOT compile the
+    # firmware — PlatformIO's xtensa-esp32 GCC has no armv7l host binary, and an
+    # arm64 image would need the 32-bit Docker daemon to emulate it (QEMU, which
+    # dies in apt with SIGSYS / exit 159). So the firmware is built off-Pi (x86,
+    # `pio run -e esp32dev`) and this container only UPLOADS the prebuilt bins
+    # via esptool — pure Python, no cross-compiler. See flash.sh --prebuilt.
     network_mode: "host"
     environment:
       - GARRA_OTA_PASSWORD=${GARRA_OTA_PASSWORD:-}
