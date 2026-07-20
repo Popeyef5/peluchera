@@ -84,8 +84,23 @@ log "Deploying $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
 # --- 2. build -----------------------------------------------------------
 # NOTE: NEXT_PUBLIC_* are baked into the Next.js bundle at build time, so
 # changing one only takes effect after this rebuild.
-log "Building images"
-$DC build
+#
+# By default we build ONE SERVICE AT A TIME. `docker compose build` builds every
+# service concurrently, and two `next build` processes (next + next-admin) each
+# want a multi-GB heap — on a small box (≤2 GB RAM) that thrashes swap or gets
+# OOM-killed. Serial is slower on a big box but reliable everywhere; set
+# PARALLEL_BUILD=1 to opt back into the concurrent build.
+if [[ "${PARALLEL_BUILD:-0}" == "1" ]]; then
+  log "Building images (parallel)"
+  $DC build
+else
+  log "Building images (one service at a time)"
+  # Every service; compose skips the ones that use a prebuilt image.
+  for svc in $($DC config --services); do
+    log "  build $svc"
+    $DC build "$svc"
+  done
+fi
 
 # --- 3. back up the DB before touching the schema -----------------------
 backup_db() {
