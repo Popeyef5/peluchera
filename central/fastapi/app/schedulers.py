@@ -5,7 +5,7 @@ from web3 import Web3
 import app.state as state
 
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import select
+from sqlalchemy import select, update
 from .abi import claw_abi
 from .models import QueueEntry
 from .deps import async_session
@@ -44,7 +44,14 @@ async def _turn_scheduler_loop():
         await asyncio.sleep(1)
         return
 
-    # Last game was over TURN_DURATION seconds ago? let's end any game that might have been left pending
+    # Last game was over TURN_DURATION seconds ago? Close out any entry left
+    # pending and claim the next queued one — in ONE tight transaction.
+    #
+    # The DB session MUST NOT stay open across the inter-turn sleep or the socket
+    # emits below: a checked-out connection idling for a few seconds is exactly
+    # what Supabase's pooler kills, and the next use then fails with
+    # "SSL SYSCALL error: EOF detected". So we pull out the plain values we need,
+    # commit, close the session, and only then wait / emit.
     async with async_session() as db:
         old_entry = await db.scalar(
             select(QueueEntry)
@@ -55,40 +62,47 @@ async def _turn_scheduler_loop():
             log.info("Cleaning up old entry in scheduler... This should not happen")
             old_entry.ended_at = datetime.utcnow()
             old_entry.status = "played"
-        await db.commit()
 
         new_entry = await db.scalar(
             select(QueueEntry)
             .where(QueueEntry.status == "queued")
             .order_by(QueueEntry.created_at.asc())
         )
-        if not new_entry:
-            if old_entry:
-                await sio.emit("turn_end")
-            state.current_player = None
-            state.current_key = None
-            await asyncio.sleep(INTER_TURN_DELAY)
-            return
-
-        new_entry.status = "active"
+        had_old = old_entry is not None
+        next_addr = next_key = next_id = None
+        if new_entry:
+            new_entry.status = "active"
+            next_addr, next_key, next_id = new_entry.address, new_entry.key, new_entry.id
         await db.commit()
-        await sio.emit("turn_end")
 
-        # Wait between turns
+    # --- nothing queued: go idle (no DB connection held across the sleep) ---
+    if next_id is None:
+        if had_old:
+            await sio.emit("turn_end")
+        state.current_player = None
+        state.current_key = None
         await asyncio.sleep(INTER_TURN_DELAY)
+        return
 
-        state.current_player = new_entry.address
-        state.current_key = new_entry.key
-        state.last_start = datetime.utcnow()
-        # And launch the next one
-        await sio.emit("turn_start")
-        await safe_pi_emit("turn_start")
+    # --- start the next turn; no session held across these waits/emits ---
+    await sio.emit("turn_end")
+    await asyncio.sleep(INTER_TURN_DELAY)  # wait between turns
 
-        new_entry.played_at = datetime.utcnow()
-        await db.commit()
-        log.info(
-            f"Started turn {state.current_key} by player {state.current_player} from the scheduler"
+    state.current_player = next_addr
+    state.current_key = next_key
+    state.last_start = datetime.utcnow()
+    await sio.emit("turn_start")
+    await safe_pi_emit("turn_start")
+
+    async with async_session() as db:
+        await db.execute(
+            update(QueueEntry).where(QueueEntry.id == next_id).values(played_at=datetime.utcnow())
         )
+        await db.commit()
+
+    log.info(
+        f"Started turn {state.current_key} by player {state.current_player} from the scheduler"
+    )
 
 
 async def turn_scheduler():  # clean up any partially-played entry
