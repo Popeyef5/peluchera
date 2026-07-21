@@ -4,18 +4,28 @@ from sqlalchemy.orm import declarative_base
 from .config import DATABASE_URL
 
 
-# pool_pre_ping: check a pooled connection is still alive on checkout and
-# transparently reconnect if not. Essential against Supabase (the session pooler
-# and the DB both close idle connections), otherwise a stale connection surfaces
-# as "server closed the connection unexpectedly" on the next query.
-# pool_recycle: proactively drop connections older than this so they never reach
-# the server-side idle cutoff in the first place.
+# Resilience against Supabase/network dropping connections ("server closed the
+# connection unexpectedly" / "SSL SYSCALL error: EOF"):
+#   - pool_pre_ping: liveness-check a pooled connection on checkout and reconnect
+#     if it's dead, instead of failing the query.
+#   - pool_recycle: drop connections older than this so they never reach a
+#     server-side idle cutoff. Shortened to 5 min — Supabase's pooler and the
+#     VPS<->us-east-2 path close idle connections well before 30 min.
+#   - keepalives: send TCP keepalives so a NAT/middlebox on the VPS<->Supabase
+#     path can't silently drop an idle connection (the likely cause here — the
+#     pooler is the session pooler on :5432, so it's not a prepared-stmt issue).
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_size=5,
     pool_pre_ping=True,
-    pool_recycle=1800,   # 30 min
+    pool_recycle=300,   # 5 min
+    connect_args={
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    },
 )
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 
