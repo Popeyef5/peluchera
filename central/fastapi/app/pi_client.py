@@ -167,6 +167,15 @@ def on_esp_status(data: Optional[dict] = None):
     physical_latch = latched if (latched and not esp_version_bad) else None
 
     state.cabinet_fault = {"kind": physical_latch, "reason": "latched"} if physical_latch else None
+
+    # Keep the raw version snapshot for the ops page — available even when the
+    # chain is healthy (version_fault is null then). See state.py.
+    state.pi_proto = pi_proto
+    state.esp_proto = versions.get("esp_proto")
+    state.esp_fw = versions.get("esp_fw")
+    state.pi_fw = versions.get("pi_fw")
+    state.esp_pi_ok = not esp_version_bad
+
     log.info("ESP status sync: latched=%s pi_proto=%s versions=%s",
              physical_latch, pi_proto, versions)
 

@@ -45,6 +45,16 @@ inventory_fault: Optional[dict] = None
 #   {"kind": "version_mismatch", "problems": [str], "versions": {...}}
 version_fault: Optional[dict] = None
 
+# Last-seen protocol snapshot from the Pi handshake (esp_status), kept even when
+# everything AGREES — version_fault is null when healthy, so without this the ops
+# page could only ever show the numbers on a mismatch. With it, the panel renders
+# the whole chain (VPS/Pi/ESP all on 1 ✓) live. Updated by pi_client.on_esp_status.
+pi_proto: Optional[int] = None
+esp_proto: Optional[int] = None
+esp_fw: Optional[str] = None
+pi_fw: Optional[str] = None
+esp_pi_ok: bool = True   # ESP<->Pi contract, per the Pi's own latch
+
 # Mirror of the chute ESP32's latched fault, surfaced to the admin ops page.
 # Set by pi_client.on_pi_fault when the Pi forwards a `fault`, cleared by the
 # admin /cabinet/clear_fault endpoint once the Pi acks the clear. None == healthy.
@@ -53,8 +63,13 @@ cabinet_fault: Optional[dict] = None
 
 def set_pi_status(connected: bool) -> None:
     """Update global flags that reflect the Pi‑side socket health."""
-    global pi_connected
+    global pi_connected, pi_proto, esp_proto, esp_fw, pi_fw, esp_pi_ok
     pi_connected = connected
+    if not connected:
+        # The version snapshot describes a live Pi/ESP link; once the Pi drops,
+        # it's stale. Clear it so the ops page shows "unknown", not a phantom ✓.
+        pi_proto = esp_proto = esp_fw = pi_fw = None
+        esp_pi_ok = True
     log.info(
         f"\033[95m[PI STATUS] connected={pi_connected}\033[0m"
     )

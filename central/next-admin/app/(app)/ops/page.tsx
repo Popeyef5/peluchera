@@ -19,11 +19,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+type Versions = {
+  vps_proto: number;
+  pi_proto: number | null;
+  esp_proto: number | null;
+  esp_fw: string | null;
+  pi_fw: string | null;
+  pi_vps_ok: boolean;
+  esp_pi_ok: boolean;
+};
+
 type CabinetStatus = {
   pi_connected: boolean;
   current_player: string | null;
   queue_length: number;
   cabinet_fault: { kind: string; reason: string | null } | null;
+  version_fault: { kind: string; problems: string[] } | null;
+  inventory_fault: { kind: string; reason?: string | null } | null;
+  versions?: Versions;
 };
 
 type EspHealth = {
@@ -165,6 +178,29 @@ export default function OpsPage() {
               )}
             </Stat>
           </dl>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Protocol chain</CardTitle>
+          <CardDescription>
+            Each link must speak the same integer. A mismatch pauses the queue
+            until the lagging piece is redeployed (VPS/Pi) or reflashed (ESP).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <ProtocolChain status={status} />
+          {status?.version_fault && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-900">
+              <p className="font-medium">Version mismatch — queue paused</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {status.version_fault.problems?.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -335,6 +371,78 @@ function Dot({ ok }: { ok: boolean }) {
     <span
       className={`inline-block h-2 w-2 rounded-full ${ok ? "bg-green-500" : "bg-red-500"}`}
     />
+  );
+}
+
+function ProtocolChain({ status }: { status: CabinetStatus | null }) {
+  const v = status?.versions;
+  if (!v) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No protocol snapshot yet — waiting for the Pi handshake.
+      </p>
+    );
+  }
+  // The ESP/Pi numbers only mean something while the Pi link is up; on
+  // disconnect the backend nulls them, so gate on live connectivity too.
+  const online = !!status?.pi_connected && v.pi_proto != null;
+  return (
+    <div className="flex items-stretch gap-1 sm:gap-2">
+      <ChainNode label="VPS" proto={v.vps_proto} known />
+      <ChainLink ok={v.pi_vps_ok} known={online} />
+      <ChainNode label="Pi" proto={online ? v.pi_proto : null} sub={online ? v.pi_fw : null} known={online} />
+      <ChainLink ok={v.esp_pi_ok} known={online} />
+      <ChainNode label="ESP" proto={online ? v.esp_proto : null} sub={online ? v.esp_fw : null} known={online} />
+    </div>
+  );
+}
+
+function ChainNode({
+  label,
+  proto,
+  sub,
+  known,
+}: {
+  label: string;
+  proto: number | null;
+  sub?: string | null;
+  known: boolean;
+}) {
+  return (
+    <div className="flex min-w-[60px] flex-col items-center justify-center rounded-md border px-3 py-2 text-center">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="font-mono text-sm">
+        {known && proto != null ? `v${proto}` : "—"}
+      </span>
+      {sub && (
+        <span className="max-w-[88px] truncate font-mono text-[10px] text-muted-foreground">
+          {sub}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ChainLink({ ok, known }: { ok: boolean; known: boolean }) {
+  const state = !known ? "unknown" : ok ? "ok" : "bad";
+  const bar =
+    state === "ok"
+      ? "bg-green-500"
+      : state === "bad"
+        ? "bg-red-500"
+        : "bg-muted-foreground/30";
+  const label = state === "ok" ? "match" : state === "bad" ? "mismatch" : "—";
+  return (
+    <div className="flex min-w-[44px] flex-1 flex-col items-center justify-center gap-1">
+      <div className={`h-0.5 w-full ${bar}`} />
+      <span
+        className={`text-[10px] ${state === "bad" ? "font-medium text-red-700" : "text-muted-foreground"}`}
+      >
+        {label}
+      </span>
+    </div>
   );
 }
 

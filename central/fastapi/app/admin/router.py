@@ -25,6 +25,7 @@ import httpx
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import PI_SERVER_URL
+from ..versioning import PI_VPS_PROTO
 
 from ..models import (
 	Ball, OpenedBooster, ClosedBoosterStock, Card, CommitmentBatch, QueueEntry, Win,
@@ -807,6 +808,18 @@ async def cabinet_status(_: AdminIdentity = RequireAdmin):
 		"current_player": _state.current_player,
 		"queue_length": int(queue_length or 0),
 		"cabinet_fault": _state.cabinet_fault,
+		# The full VPS/Pi/ESP protocol chain, for the ops page. Numbers are the
+		# last-seen snapshot (present even when healthy); *_ok are the live
+		# equality verdicts. vps_proto is this process's own constant.
+		"versions": {
+			"vps_proto": PI_VPS_PROTO,
+			"pi_proto": _state.pi_proto,
+			"esp_proto": _state.esp_proto,
+			"esp_fw": _state.esp_fw,
+			"pi_fw": _state.pi_fw,
+			"pi_vps_ok": _state.pi_proto == PI_VPS_PROTO,
+			"esp_pi_ok": _state.esp_pi_ok,
+		},
 	}
 
 
