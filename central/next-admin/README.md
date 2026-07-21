@@ -18,11 +18,13 @@ handled by Supabase (admin sessions are Supabase JWTs).
      password. (Repeat per operator. There are no roles in v1 — every signed-
      in user is an admin.)
 
-3. **Copy env vars**:
-   - `cp central/.env.admin.example central/.env.admin`
-   - Fill in `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (from
-     Project Settings → API), and `SUPABASE_JWT_SECRET` (from Project
-     Settings → API → JWT Settings).
+3. **Add the admin env vars** to `central/.env` (dev) — or `central/.env.prod`
+   for prod. There is no separate `.env.admin`: each environment has a single
+   env file, so nothing can silently shadow it.
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (from Project
+     Settings → API) and `SUPABASE_JWT_SECRET` (from Project Settings → API →
+     JWT Settings). `NEXT_PUBLIC_*` are baked in at build time, so rebuild after
+     changing them.
 
 4. **Run**:
    - `docker compose -f docker-compose.dev.yml up --build`

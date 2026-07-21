@@ -51,8 +51,6 @@ services:
       - claw_network
     env_file:
       - .env
-      - path: .env.admin
-        required: false
 
   next:
     build:
@@ -103,8 +101,6 @@ services:
     env_file:
       - .env
       - path: .env.dev
-        required: false
-      - path: .env.admin
         required: false
     environment:
       - PI_SERVER_URL=${PI_DEV_URL:-http://mock-pi:5001}
