@@ -180,6 +180,23 @@ fi
 log "Restarting services"
 $DC up -d --remove-orphans
 
+# --- 5b. reload the reverse proxy --------------------------------------------
+# proxy/nginx.conf is a bind-mounted FILE, so `up -d` above does NOT pick up
+# edits to it (a changed mount doesn't recreate the container). Reload it
+# explicitly so nginx.conf changes actually ship with the deploy. Graceful
+# (`nginx -s reload` keeps live connections); validated first, so a broken
+# config can't take the site down — nginx keeps serving the old one if the test
+# fails. Note: the upstream re-resolution fix means the proxy no longer needs
+# bouncing just because fastapi got a new IP — this is only for config changes.
+if $DC ps --status=running 2>/dev/null | grep -q '\bproxy\b'; then
+  log "Reloading proxy config"
+  if $DC exec -T proxy nginx -t >/dev/null 2>&1; then
+    $DC exec -T proxy nginx -s reload || warn "nginx reload failed — proxy kept the old config."
+  else
+    warn "nginx -t FAILED — NOT reloading; old config still serving. Fix proxy/nginx.conf."
+  fi
+fi
+
 # --- 6. verify ----------------------------------------------------------
 log "Service status"
 $DC ps
