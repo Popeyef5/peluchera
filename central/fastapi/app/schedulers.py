@@ -92,17 +92,26 @@ async def _turn_scheduler_loop():
 
 
 async def turn_scheduler():  # clean up any partially-played entry
+    # Crash recovery: mark any entry left "active" by a previous run as "played".
+    # Wrapped in try/except because a transient DB blip HERE (e.g. Supabase
+    # dropped the connection at boot) would otherwise throw straight out of this
+    # coroutine and kill the task — silently stopping ALL turn scheduling until
+    # the next restart. Retry instead until the DB answers.
     while True:
-        async with async_session() as db:
-            entry = await db.scalar(
-                select(QueueEntry).where(QueueEntry.status == "active")
-            )
-            if entry:
-                entry.status, entry.ended_at = "played", datetime.utcnow()
-                await db.commit()
-                log.info("Cleaned old entry on startup")
-            else:
-                break
+        try:
+            async with async_session() as db:
+                entry = await db.scalar(
+                    select(QueueEntry).where(QueueEntry.status == "active")
+                )
+                if entry:
+                    entry.status, entry.ended_at = "played", datetime.utcnow()
+                    await db.commit()
+                    log.info("Cleaned old entry on startup")
+                else:
+                    break
+        except Exception:
+            log.exception("turn_scheduler startup cleanup failed — retrying in 2s")
+            await asyncio.sleep(2)
 
     # main loop
     while True:
