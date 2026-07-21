@@ -138,27 +138,34 @@ async def turn_scheduler():  # clean up any partially-played entry
 
 async def sync_scheduler():
     while True:
-        start_time = time.time()
+        # One transient DB drop (Supabase closing a connection mid-query) must
+        # NOT kill this loop — an unhandled exception here silently stops all
+        # queue-position updates until the next restart. Catch, log, retry.
+        try:
+            start_time = time.time()
 
-        # --- Global sync to every socket connection ---
-        await sio.emit("global_sync", await global_sync())
+            # --- Global sync to every socket connection ---
+            await sio.emit("global_sync", await global_sync())
 
-        # --- Personal sync to every address in queue ---
-        async with async_session() as db:
-            result = await db.execute(
-                select(QueueEntry)
-                .where(QueueEntry.status == "queued")
-                .order_by(QueueEntry.created_at.asc())
-            )
-            queue = result.scalars().all()
+            # --- Personal sync to every address in queue ---
+            async with async_session() as db:
+                result = await db.execute(
+                    select(QueueEntry)
+                    .where(QueueEntry.status == "queued")
+                    .order_by(QueueEntry.created_at.asc())
+                )
+                queue = result.scalars().all()
 
-        for i, entry in enumerate(queue):
-            await sio.emit("personal_sync", {"position": i + 1}, room=entry.address)
+            for i, entry in enumerate(queue):
+                await sio.emit("personal_sync", {"position": i + 1}, room=entry.address)
 
-        spent_time = time.time() - start_time
-        if spent_time < SYNC_PERIOD:
-            # log.info("Sleeping for %ds" % (SYNC_PERIOD - spent_time))
-            await asyncio.sleep(SYNC_PERIOD - spent_time)
+            spent_time = time.time() - start_time
+            if spent_time < SYNC_PERIOD:
+                # log.info("Sleeping for %ds" % (SYNC_PERIOD - spent_time))
+                await asyncio.sleep(SYNC_PERIOD - spent_time)
+        except Exception:
+            log.exception("sync_scheduler iteration failed — retrying")
+            await asyncio.sleep(1)
 
 
 async def round_end_scheduler():
