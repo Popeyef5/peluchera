@@ -60,11 +60,11 @@ case "$DATABASE_URL" in
 esac
 
 # --env-file drives ${VAR} interpolation inside the compose file — which is how
-# the Next builds get their NEXT_PUBLIC_* build args. The admin app's Supabase
-# args live in .env.admin, so it has to be passed too or next-admin is built with
-# a blank Supabase URL and its login silently cannot work.
+# the Next builds get their NEXT_PUBLIC_* build args (including the admin app's
+# NEXT_PUBLIC_SUPABASE_*). All prod config is in $ENV_FILE (.env.prod) — the
+# single source of truth; there is no separate admin env file in prod. (Keeping
+# a second env_file here is what let a stale .env.admin silently shadow prod.)
 DC="$DC --env-file $ENV_FILE"
-[[ -f .env.admin ]] && DC="$DC --env-file .env.admin"
 
 # Split DATABASE_URL into components for pg_dump/psql — do NOT hand libpq a URL.
 # The Supabase password can contain URL-special chars (#, /), which libpq's

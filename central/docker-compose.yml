@@ -41,9 +41,10 @@ services:
     container_name: claw_next_admin
     build:
       context: ./next-admin
-      # NEXT_PUBLIC_* must be inlined at build time. Compose interpolates
-      # these from its own env (which it loads from .env by default — pass
-      # --env-file .env.admin too on build to layer the admin creds in).
+      # NEXT_PUBLIC_* must be inlined at build time. Compose interpolates these
+      # from the file passed via --env-file (update.sh passes .env.prod, the
+      # single prod config). Put NEXT_PUBLIC_SUPABASE_* in .env.prod for the
+      # admin login to build with real creds.
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
@@ -54,8 +55,6 @@ services:
       - NODE_ENV=production
     env_file:
       - .env.prod
-      - path: .env.admin
-        required: false
     networks:
       - claw_network
 
@@ -74,8 +73,6 @@ services:
       - '5000'
     env_file:
       - .env.prod
-      - path: .env.admin
-        required: false
     networks:
       - claw_network
 
