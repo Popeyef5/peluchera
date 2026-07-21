@@ -6,6 +6,7 @@ import app.state as state
 
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, update
+from sqlalchemy.exc import OperationalError
 from .abi import claw_abi
 from .models import QueueEntry
 from .deps import async_session
@@ -123,6 +124,9 @@ async def turn_scheduler():  # clean up any partially-played entry
                     log.info("Cleaned old entry on startup")
                 else:
                     break
+        except OperationalError:
+            log.warning("turn_scheduler startup cleanup: DB connection dropped — retrying in 2s")
+            await asyncio.sleep(2)
         except Exception:
             log.exception("turn_scheduler startup cleanup failed — retrying in 2s")
             await asyncio.sleep(2)
@@ -131,6 +135,13 @@ async def turn_scheduler():  # clean up any partially-played entry
     while True:
         try:
             await _turn_scheduler_loop()
+        except OperationalError:
+            # Transient DB drop (Supabase closing a pooled connection). The next
+            # loop reconnects (pool_pre_ping) — one tick is skipped, ~1s, which
+            # players never notice. Log a calm one-liner, not a fatal-looking
+            # 40-line traceback.
+            log.warning("turn_scheduler: DB connection dropped — retrying next tick")
+            await asyncio.sleep(1)
         except Exception as e:
             log.exception(f"turn_scheduler crashed: {e}")
             await asyncio.sleep(1)  # brief pause before retrying
@@ -163,6 +174,9 @@ async def sync_scheduler():
             if spent_time < SYNC_PERIOD:
                 # log.info("Sleeping for %ds" % (SYNC_PERIOD - spent_time))
                 await asyncio.sleep(SYNC_PERIOD - spent_time)
+        except OperationalError:
+            log.warning("sync_scheduler: DB connection dropped — retrying")
+            await asyncio.sleep(1)
         except Exception:
             log.exception("sync_scheduler iteration failed — retrying")
             await asyncio.sleep(1)
