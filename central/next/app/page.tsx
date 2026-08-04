@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Drawer, Flex, HStack, Portal, VStack } from "@chakra-ui/react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
+import { useWallet } from "@/lib/wallet/context";
 import { ClawProvider, SocketProvider, useClaw } from "@/components/providers";
 import { BYPASS_PAYMENT } from "@/components/providers/ClawProvider";
 import WebRTCPlayer from "@/components/WebRTCPlayer";
@@ -116,8 +116,7 @@ const ThemeToggle = () => {
 
 const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | "radial"; mobile?: boolean }) => {
 	const { isPlaying, position, loading, approveAndBet, openPaymentPicker, freePlay, payFree, queueCount, clawSocketOn } = useClaw();
-	const { isConnected } = useAppKitAccount();
-	const { open } = useAppKit();
+	const { isConnected, login } = useWallet();
 	const [userText, setUserText] = useState("");
 	const ref = useRef<HTMLButtonElement>(null);
 
@@ -191,7 +190,7 @@ const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | 
 	// Otherwise: open the picker so they can choose crypto or card.
 	const onClick = ready
 		? (BYPASS_PAYMENT ? approveAndBet : freePlay ? payFree : openPaymentPicker)
-		: () => open();
+		: () => login();
 	const disabled = loading || (ready && !clawSocketOn);
 	const label = ready ? "PLAY" : "CONNECT WALLET";
 

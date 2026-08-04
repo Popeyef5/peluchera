@@ -1,59 +1,24 @@
-'use client'
+"use client";
 
-import { wagmiAdapter, projectId } from '@/config'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createAppKit } from '@reown/appkit/react'
-import { baseSepolia } from '@reown/appkit/networks'
-import React, { type ReactNode } from 'react'
-import { cookieToInitialState, WagmiProvider, type Config } from 'wagmi'
+import React, { type ReactNode } from "react";
+import { WALLET_PROVIDER } from "@/lib/wallet/provider";
+import ReownStack from "./reown";
+import PrivyStack from "./privy";
 
-// Set up queryClient
-const queryClient = new QueryClient()
-
-if (!projectId) {
-  throw new Error('Project ID is not defined')
-}
-
-// Set up metadata
-const metadata = {
-  name: 'Claw',
-  description: 'Claw Example',
-  url: 'https://cryptoclaw.xyz', // origin must match your domain & subdomain
-  icons: ['https://avatars.githubusercontent.com/u/179229932']
-}
-
-// Create the modal
-const modal = createAppKit({
-  adapters: [wagmiAdapter],
-  projectId,
-  networks: [baseSepolia],
-  defaultNetwork: baseSepolia,
-  metadata: metadata,
-  featuredWalletIds: [
-    "fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa"
-  ],
-  features: {
-    analytics: false, // Optional - defaults to your Cloud configuration,
-    // Embedded-wallet login for non-crypto users: signing in with email or a
-    // social account provisions a self-custodial smart account, so the player
-    // gets a wallet address (used as their identity AND winnings payout target)
-    // without a seed phrase. Requires email/social + the matching providers to
-    // be enabled for this projectId in the Reown Cloud dashboard, and the
-    // dashboard domain to match `metadata.url` above.
-    email: true,
-    socials: ['google', 'apple', 'x'],
-    emailShowWallets: true, // keep external wallets visible alongside email/social
+// Wallet-provider switch. Picks the Reown or Privy stack from the build-time
+// NEXT_PUBLIC_WALLET_PROVIDER flag. Each stack mounts its own provider tree +
+// bridge, and the whole app reads wallet state through useWallet() regardless.
+function ContextProvider({
+  children,
+  cookies,
+}: {
+  children: ReactNode;
+  cookies: string | null;
+}) {
+  if (WALLET_PROVIDER === "privy") {
+    return <PrivyStack>{children}</PrivyStack>;
   }
-})
-
-function ContextProvider({ children, cookies }: { children: ReactNode; cookies: string | null }) {
-  const initialState = cookieToInitialState(wagmiAdapter.wagmiConfig as Config, cookies)
-
-  return (
-    <WagmiProvider config={wagmiAdapter.wagmiConfig as Config} initialState={initialState}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </WagmiProvider>
-  )
+  return <ReownStack cookies={cookies}>{children}</ReownStack>;
 }
 
-export default ContextProvider
+export default ContextProvider;

@@ -4,9 +4,7 @@ import React, {
 	createContext, useCallback, useContext, useEffect, useState, useRef, useMemo
 } from 'react';
 import { useSocket } from '@/components/providers/SocketProvider';
-import {
-	useAppKitAccount, useAppKitNetwork,
-} from '@reown/appkit/react';
+import { useWallet } from '@/lib/wallet/context';
 
 // Demo / public-session toggle — see central/fastapi/app/config.py for the
 // matching server flag. When on, the play flow skips wallet connect, permit
@@ -258,8 +256,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	 * address; the AppKit hook still runs (cheap, harmless) but we ignore its
 	 * output so disconnected guests can play.
 	 */
-	const { address: walletAddress } = useAppKitAccount();
-	const { chainId } = useAppKitNetwork();
+	const { address: walletAddress, chainId } = useWallet();
 	const guestAddress = useMemo(
 		() => (BYPASS_PAYMENT ? getOrCreateGuestAddress() : undefined),
 		[],

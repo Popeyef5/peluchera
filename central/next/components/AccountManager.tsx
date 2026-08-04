@@ -3,7 +3,7 @@ import { Box, Drawer, VStack, HStack, Text, Tabs, IconButton, Portal, Skeleton, 
 import { useState } from "react";
 import { useClaw } from "./providers";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
+import { useWallet } from '@/lib/wallet/context';
 import { FiSettings } from 'react-icons/fi';
 import { FaWallet } from "react-icons/fa";
 import { RxCross2 } from "react-icons/rx";
@@ -147,8 +147,7 @@ interface AccountManagerProps {
 export const AccountManager = (
 	{ containerRef, triggerClassName }: AccountManagerProps
 ) => {
-	const { address, isConnected } = useAppKitAccount();
-	const { open } = useAppKit();
+	const { address, isConnected, openAccount } = useWallet();
 	const [drawerOpen, setDrawerOpen] = useState(false);
 	const isMobile = useIsMobile();
 
@@ -194,7 +193,7 @@ export const AccountManager = (
 									</Text>
 									<button
 										className="chip chip--circle holo-rim spec"
-										onClick={(event) => { event.stopPropagation(); setDrawerOpen(false); open() }}
+										onClick={(event) => { event.stopPropagation(); setDrawerOpen(false); openAccount() }}
 										aria-label="Settings"
 									>
 										<FiSettings />

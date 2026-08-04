@@ -3,7 +3,7 @@
 import { VStack, Box, Button, StackProps } from "@chakra-ui/react";
 import { useClaw } from "@/components/providers"
 import GameController from "./GameController";
-import { useAppKitAccount, useAppKit } from '@reown/appkit/react';
+import { useWallet } from '@/lib/wallet/context';
 import { useEffect, useState } from "react";
 
 interface ActionButtonProps extends StackProps {
@@ -24,8 +24,7 @@ const ActionButton = ({
 	userTextSize = "2.25vh",
 	...props }: ActionButtonProps) => {
 	const { isPlaying, position, loading, approveAndBet, queueCount, clawSocketOn } = useClaw();
-	const { isConnected } = useAppKitAccount();
-	const { open } = useAppKit();
+	const { isConnected, login } = useWallet();
 	const [userText, setUserText] = useState("");
 
 	useEffect(() => {
@@ -50,7 +49,7 @@ const ActionButton = ({
 				{position < 0 && (
 					<Button
 						loading={loading}
-						onClick={!isConnected ? () => open() : approveAndBet}
+						onClick={!isConnected ? () => login() : approveAndBet}
 						h={buttonHeight}
 						fontSize={buttonFontSize}
 						borderRadius={"1.5rem"}

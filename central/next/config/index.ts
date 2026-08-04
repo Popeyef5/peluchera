@@ -1,6 +1,8 @@
 import { cookieStorage, createStorage, http } from "wagmi";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { mainnet, arbitrum, baseSepolia } from "@reown/appkit/networks";
+import { WALLET_PROVIDER } from "@/lib/wallet/provider";
+import { privyConfig } from "./privy";
 
 // Get projectId from https://cloud.reown.com
 export const projectId =
@@ -22,4 +24,9 @@ export const wagmiAdapter = new WagmiAdapter({
   networks,
 });
 
-export const config = wagmiAdapter.wagmiConfig;
+// The ACTIVE wagmi config the app transacts against (writeContract, etc.).
+// Must match whichever provider stack is mounted, so branch on the same flag.
+// Importing privyConfig here is a harmless object build; the heavy provider
+// side effects live in the stack components, not the config.
+export const config =
+  WALLET_PROVIDER === "privy" ? privyConfig : wagmiAdapter.wagmiConfig;
