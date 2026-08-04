@@ -28,7 +28,7 @@ from ..config import PI_SERVER_URL
 from ..versioning import PI_VPS_PROTO
 
 from ..models import (
-	Ball, OpenedBooster, ClosedBoosterStock, Card, CommitmentBatch, QueueEntry, Win,
+	Ball, OpenedBooster, ClosedBooster, Card, CommitmentBatch, QueueEntry, Win,
 	BallStatus, InventoryStatus, PrizeKind, CardStatus, CardRarity, CardOrigin,
 )
 
@@ -439,7 +439,7 @@ async def list_closed_boosters(_: AdminIdentity = RequireAdmin):
 	sealed packs are fungible, so we track availability, not individual units."""
 	async with async_session() as db:
 		rows = (await db.execute(
-			select(ClosedBoosterStock).order_by(ClosedBoosterStock.sku)
+			select(ClosedBooster).order_by(ClosedBooster.sku)
 		)).scalars().all()
 		return {
 			"closed_boosters": [
@@ -522,7 +522,7 @@ async def _upsert_closed_stock(db, data: dict) -> str:
 		raise HTTPException(status_code=400, detail="closed booster needs sku")
 	in_stock = data.get("in_stock")
 	in_stock = True if in_stock is None else bool(in_stock)
-	stmt = pg_insert(ClosedBoosterStock).values(sku=sku, in_stock=in_stock)
+	stmt = pg_insert(ClosedBooster).values(sku=sku, in_stock=in_stock)
 	stmt = stmt.on_conflict_do_update(
 		index_elements=["sku"], set_={"in_stock": in_stock},
 	)
@@ -586,7 +586,7 @@ async def patch_closed_stock(sku: str, body: PatchClosedStockBody, _: AdminIdent
 	sealed-pack SKU."""
 	async with async_session() as db:
 		row = await db.scalar(
-			select(ClosedBoosterStock).where(ClosedBoosterStock.sku == sku)
+			select(ClosedBooster).where(ClosedBooster.sku == sku)
 		)
 		if row is None:
 			raise HTTPException(status_code=404, detail=f"SKU {sku} not registered")

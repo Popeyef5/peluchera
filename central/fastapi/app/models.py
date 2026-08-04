@@ -104,7 +104,7 @@ class InventoryStatus(str, enum.Enum):
     AVAILABLE = "AVAILABLE"
     RESERVED  = "RESERVED"
     CONSUMED  = "CONSUMED"   # OpenedBooster whose cards moved to a user
-    SHIPPED   = "SHIPPED"    # (legacy; sealed packs now tracked by ClosedBoosterStock)
+    SHIPPED   = "SHIPPED"    # (legacy; sealed packs now tracked by ClosedBooster)
     RETIRED   = "RETIRED"
 
 
@@ -226,35 +226,78 @@ class Ball(Base):
     win                 = relationship("Win", back_populates="ball", uselist=False)
 
 
-class ClosedBoosterStock(Base):
-    """Sealed-pack availability, tracked per SKU rather than per unit.
+class ClosedBooster(Base):
+    """Catalog of sealed packs, one row per SKU.
 
-    Sealed packs are fungible — at fulfillment time the only thing that matters
-    is whether we still have one of this SKU to ship. `in_stock` is a flag the
-    operator flips as they restock / run out (admin inventory). No quantity is
-    tracked, so a booster-pair win only checks that its SKU is in stock; it
-    does not decrement anything.
+    Sealed packs are fungible — availability (`in_stock`) is a flag the operator
+    flips as they restock / run out; no quantity is tracked, so a booster-pair
+    win only checks the SKU is in stock, it doesn't decrement anything.
+
+    The presentation fields (name, both booster face images for the win-reveal
+    mesh UV map, and card_count) may be filled in incrementally — a row can be
+    created partial. `is_complete` is true only when all of them are set, and a
+    ball may only be bound to a booster whose ClosedBooster is complete.
+    (Formerly `ClosedBooster`.)
     """
-    __tablename__ = "closed_booster_stock"
-    id        = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    sku       = Column(String, unique=True, index=True, nullable=False)
-    in_stock  = Column(Boolean, default=True, nullable=False)
+    __tablename__ = "closed_booster"
+    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sku             = Column(String, unique=True, index=True, nullable=False)
+    name            = Column(String)
+    # The two faces of the sealed pack, handed to the win-reveal 3D mesh as the
+    # UV map. Stored as URLs (Supabase Storage upload, or pasted).
+    image_front_url = Column(String)
+    image_back_url  = Column(String)
+    # How many cards a pack of this SKU yields — used to validate that an
+    # OpenedBooster of this SKU has the right number of cards.
+    card_count      = Column(Integer)
+    in_stock        = Column(Boolean, default=True, nullable=False)
+
+    @property
+    def is_complete(self) -> bool:
+        return bool(
+            self.name
+            and self.image_front_url
+            and self.image_back_url
+            and self.card_count
+        )
 
 
 class OpenedBooster(Base):
+    """One filmed opening of a pack of a given SKU: the ClosedBooster it came
+    from, the opening video, and the ordered cards revealed.
+
+    Buildable incrementally (partial): the ClosedBooster link, video, and cards
+    can be filled in over time. `is_complete` requires the ClosedBooster set, a
+    video, and exactly `closed_booster.card_count` cards — only then may a ball
+    be bound to it. `sku` is kept denormalized from the ClosedBooster for the
+    fungible-pack fulfilment path (Shipment/stock lookups by SKU).
+    """
     __tablename__ = "opened_booster"
     id                = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    sku               = Column(String, nullable=False)
-    video_url         = Column(String, nullable=False)
-    video_hash        = Column(String, unique=True, nullable=False)
-    filmed_at         = Column(DateTime, nullable=False)
+    closed_booster_id = Column(UUID(as_uuid=True), ForeignKey("closed_booster.id"), index=True)
+    sku               = Column(String)
+    video_url         = Column(String)
+    video_hash        = Column(String, unique=True)
+    filmed_at         = Column(DateTime)
     status            = Column(Enum(InventoryStatus, name="inventory_status"), default=InventoryStatus.AVAILABLE, nullable=False)
 
     reserved_by_win_id = Column(UUID(as_uuid=True), ForeignKey("win.id"), unique=True)
 
+    closed_booster    = relationship("ClosedBooster", lazy="selectin")
     reserved_by_win   = relationship("Win", foreign_keys=[reserved_by_win_id], back_populates="opened_booster")
-    cards             = relationship("Card", back_populates="opened_booster", lazy="selectin")
+    cards             = relationship("Card", back_populates="opened_booster", order_by="Card.position", lazy="selectin")
     ball              = relationship("Ball", back_populates="opened_booster", uselist=False)
+
+    @property
+    def is_complete(self) -> bool:
+        cb = self.closed_booster
+        return bool(
+            cb
+            and cb.is_complete
+            and self.video_url
+            and cb.card_count
+            and len(self.cards) == cb.card_count
+        )
 
     __table_args__ = (
         Index("ix_opened_booster_sku_status", "sku", "status"),
@@ -272,6 +315,8 @@ class Card(Base):
 
     origin            = Column(Enum(CardOrigin, name="card_origin"), nullable=False)
     opened_booster_id = Column(UUID(as_uuid=True), ForeignKey("opened_booster.id"))
+    # Order of this card within its opened booster (the reveal sequence).
+    position          = Column(Integer)
 
     status            = Column(Enum(CardStatus, name="card_status"), default=CardStatus.IN_POOL, nullable=False)
     owner_user_id     = Column(UUID(as_uuid=True), ForeignKey("user_account.id"))
@@ -302,7 +347,7 @@ class Win(Base):
     expires_at        = Column(DateTime, nullable=False)
 
     # Single-card wins set this; booster-pair wins use the opened-booster
-    # relationship (the sealed pack is fungible-by-SKU — see ClosedBoosterStock).
+    # relationship (the sealed pack is fungible-by-SKU — see ClosedBooster).
     prize_card_id     = Column(UUID(as_uuid=True), ForeignKey("card.id"), unique=True)
 
     # Snapshotted at win time so later operator price changes don't
@@ -337,7 +382,7 @@ class Shipment(Base):
     shipping_address  = Column(JSONB, nullable=False)
 
     # For a booster-pair ship, the SKU of the sealed pack to mail. Sealed packs
-    # are tracked by availability only (ClosedBoosterStock), so this records
+    # are tracked by availability only (ClosedBooster), so this records
     # what to physically pull. Null for card shipments.
     sku               = Column(String)
 

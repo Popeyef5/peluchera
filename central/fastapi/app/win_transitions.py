@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .config import RESELL_PRICE_BY_RARITY_CENTS, RESELL_PRICE_BY_BOOSTER_SKU_CENTS
 from .models import (
-    User, Win, Ball, ClosedBoosterStock, OpenedBooster, Card, Shipment, LedgerEntry,
+    User, Win, Ball, ClosedBooster, OpenedBooster, Card, Shipment, LedgerEntry,
     QueueEntry,
     WinStatus, BallStatus, InventoryStatus, CardStatus, PrizeKind,
     SettlementKind, ShipmentStatus, LedgerKind,
@@ -93,10 +93,10 @@ async def unclaimable_loaded_balls(session: AsyncSession) -> list[dict]:
       - SINGLE_CARD:  its bound Card has left the pool.
     """
     rows = (await session.execute(
-        select(Ball, OpenedBooster, Card, ClosedBoosterStock.in_stock)
+        select(Ball, OpenedBooster, Card, ClosedBooster.in_stock)
         .outerjoin(OpenedBooster, OpenedBooster.id == Ball.opened_booster_id)
         .outerjoin(Card, Card.id == Ball.prize_card_id)
-        .outerjoin(ClosedBoosterStock, ClosedBoosterStock.sku == OpenedBooster.sku)
+        .outerjoin(ClosedBooster, ClosedBooster.sku == OpenedBooster.sku)
         .where(Ball.status == BallStatus.LOADED)
     )).all()
 
@@ -139,7 +139,7 @@ async def reserve_win(
     Atomically:
     - Marks the ball GRABBED.
     - For BOOSTER_PAIR: reserves the bound OpenedBooster (single-row) and
-      confirms a sealed pack of the same SKU is in stock (ClosedBoosterStock
+      confirms a sealed pack of the same SKU is in stock (ClosedBooster
       is a per-SKU availability flag — fungible, nothing to decrement).
     - For SINGLE_CARD: reserves the bound Card.
     - Creates the Win row in PENDING with a 30d expiry, snapshotting the
@@ -195,10 +195,10 @@ async def reserve_win(
         )).scalar_one()
 
         # Sealed packs are fungible-by-SKU: just confirm we still have one of
-        # this SKU to ship. No per-unit reservation — ClosedBoosterStock is an
+        # this SKU to ship. No per-unit reservation — ClosedBooster is an
         # availability flag the operator manages by hand.
         in_stock = await session.scalar(
-            select(ClosedBoosterStock.in_stock).where(ClosedBoosterStock.sku == sku)
+            select(ClosedBooster.in_stock).where(ClosedBooster.sku == sku)
         )
         if not in_stock:
             raise PoolExhausted(f"No sealed pack in stock for SKU {sku}")

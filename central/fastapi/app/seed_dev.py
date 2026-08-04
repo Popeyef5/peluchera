@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from .db import async_session, engine, Base
 from .models import (
-    CommitmentBatch, Ball, OpenedBooster, ClosedBoosterStock, Card,
+    CommitmentBatch, Ball, OpenedBooster, ClosedBooster, Card,
     BallStatus, CardStatus, CardOrigin, CardRarity, PrizeKind,
 )
 
@@ -77,7 +77,7 @@ async def seed():
                 ))
 
         # Sealed-pack availability for this SKU (fungible, tracked per-SKU).
-        db.add(ClosedBoosterStock(sku=SKU, in_stock=True))
+        db.add(ClosedBooster(sku=SKU, in_stock=True))
 
         # 6 standalone single-prize Cards.
         single_cards = []
