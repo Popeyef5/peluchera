@@ -3,3 +3,4 @@ import app.socket.events_queue
 import app.socket.events_game
 import app.socket.events_inventory
 import app.socket.events_payments
+import app.socket.events_dev

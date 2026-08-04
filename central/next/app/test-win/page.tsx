@@ -1,51 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
 import HomePage from "../page";
+import { TestWinProvider } from "@/components/TestWinPicker";
 
-declare global {
-	interface Window {
-		__garraTestWin?: boolean;
-		__garraTiltResolved?: boolean;
-	}
-}
-
+// Dev-only harness. Renders the real home page, but PLAY opens a picker of the
+// actual loaded balls (TestWinProvider + the DEV_TOOLS-gated dev_win_ball
+// socket event). Confirming forces the mock chute to drop the chosen ball and
+// runs a REAL turn — queue wait, then the normal win animation. No production
+// route: /test-win only does anything while NEXT_PUBLIC_DEV_TOOLS is set.
 export default function TestWinPage() {
-	useEffect(() => {
-		let cancelled = false;
-		let timer: ReturnType<typeof setTimeout> | null = null;
-
-		// Don't start the 3s countdown while the motion-permission modal is
-		// still up (or pending). MotionPermissionModal fires garra:tilt-resolved
-		// when it has settled — either bailed out (desktop / no API / prior
-		// session) or the user resolved it. The window flag handles the race
-		// where the modal resolves before this listener attaches.
-		const start = () => {
-			if (cancelled) return;
-			timer = setTimeout(() => {
-				console.log("[test-win] firing garra:test-win");
-				window.__garraTestWin = true;
-				window.dispatchEvent(new CustomEvent("garra:test-win"));
-			}, 3000);
-		};
-
-		if (window.__garraTiltResolved) {
-			start();
-		} else {
-			const onResolved = () => start();
-			window.addEventListener("garra:tilt-resolved", onResolved, { once: true });
-			return () => {
-				cancelled = true;
-				if (timer) clearTimeout(timer);
-				window.removeEventListener("garra:tilt-resolved", onResolved);
-			};
-		}
-
-		return () => {
-			cancelled = true;
-			if (timer) clearTimeout(timer);
-		};
-	}, []);
-
-	return <HomePage />;
+	return (
+		<TestWinProvider>
+			<HomePage />
+		</TestWinProvider>
+	);
 }

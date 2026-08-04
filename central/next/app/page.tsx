@@ -14,6 +14,7 @@ import AccountManager from "@/components/AccountManager";
 import { useColorMode } from "@/components/ui/color-mode";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
 import { subscribeOrientation } from "@/lib/orientationTilt";
+import { useTestWin, TestWinPicker } from "@/components/TestWinPicker";
 
 const WinChoiceModal = dynamic(() => import("@/components/WinChoiceModal"), { ssr: false });
 const MotionPermissionModal = dynamic(() => import("@/components/MotionPermissionModal"), { ssr: false });
@@ -117,6 +118,9 @@ const ThemeToggle = () => {
 const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | "radial"; mobile?: boolean }) => {
 	const { isPlaying, position, loading, approveAndBet, openPaymentPicker, freePlay, payFree, queueCount, clawSocketOn, machineBlocked } = useClaw();
 	const { isConnected, login } = useWallet();
+	// On /test-win a provider enables this; PLAY then opens the ball picker
+	// instead of the normal pay/queue flow. Inert (enabled=false) everywhere else.
+	const testWin = useTestWin();
 	const [userText, setUserText] = useState("");
 	const ref = useRef<HTMLButtonElement>(null);
 
@@ -188,14 +192,18 @@ const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | 
 	// Bypass (demo, no wallet): straight to the fake crypto play.
 	// Free play (real login, pre-monetization): straight to the queue, no picker.
 	// Otherwise: open the picker so they can choose crypto or card.
-	const onClick = ready
-		? (BYPASS_PAYMENT ? approveAndBet : freePlay ? payFree : openPaymentPicker)
-		: () => login();
+	const onClick = testWin.enabled
+		? testWin.openPicker
+		: ready
+			? (BYPASS_PAYMENT ? approveAndBet : freePlay ? payFree : openPaymentPicker)
+			: () => login();
 	// A blocked machine (protocol / chute / inventory fault) can't start a turn,
 	// so the backend would refuse the pay/enqueue anyway — disable PLAY up front
-	// rather than let the player try and bounce off an error.
-	const disabled = loading || machineBlocked || (ready && !clawSocketOn);
-	const label = !ready ? "CONNECT WALLET" : machineBlocked ? "UNAVAILABLE" : "PLAY";
+	// rather than let the player try and bounce off an error. Test-win mode still
+	// needs the machine (mock chute), but skips the wallet step.
+	const needsMachine = ready || testWin.enabled;
+	const disabled = loading || machineBlocked || (needsMachine && !clawSocketOn);
+	const label = machineBlocked ? "UNAVAILABLE" : (ready || testWin.enabled) ? "PLAY" : "CONNECT WALLET";
 
 	const content = isPlaying ? (
 		<GameController />
@@ -1114,6 +1122,7 @@ function Shell() {
 			<WinChoiceModal />
 			<MotionPermissionModal containerRef={rootRef} />
 			<PaymentPicker containerRef={rootRef} />
+			<TestWinPicker />
 		</Box>
 	);
 }

@@ -23,6 +23,11 @@ PRIVATE_KEY      = os.environ.get("CLAW_PRIVATE_KEY")
 # guarantee is off in this mode, by design.
 BYPASS_PAYMENT   = os.environ.get("BYPASS_PAYMENT", "false").lower() == "true"
 
+# Dev-only tooling (the /test-win ball picker). Gates socket events that let a
+# developer force the mock chute to drop a chosen ball and run a real turn.
+# MUST stay false in production — there is no /test-win in prod.
+DEV_TOOLS        = os.environ.get("DEV_TOOLS", "false").lower() == "true"
+
 # Admin app — Supabase auth integration. JWTs minted by Supabase are HS256-
 # signed with the project's JWT secret. Backend verifies incoming admin
 # requests against this secret; if unset, the admin router refuses to mount
