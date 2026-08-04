@@ -115,7 +115,7 @@ const ThemeToggle = () => {
 };
 
 const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | "radial"; mobile?: boolean }) => {
-	const { isPlaying, position, loading, approveAndBet, openPaymentPicker, freePlay, payFree, queueCount, clawSocketOn } = useClaw();
+	const { isPlaying, position, loading, approveAndBet, openPaymentPicker, freePlay, payFree, queueCount, clawSocketOn, machineBlocked } = useClaw();
 	const { isConnected, login } = useWallet();
 	const [userText, setUserText] = useState("");
 	const ref = useRef<HTMLButtonElement>(null);
@@ -191,8 +191,11 @@ const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | 
 	const onClick = ready
 		? (BYPASS_PAYMENT ? approveAndBet : freePlay ? payFree : openPaymentPicker)
 		: () => login();
-	const disabled = loading || (ready && !clawSocketOn);
-	const label = ready ? "PLAY" : "CONNECT WALLET";
+	// A blocked machine (protocol / chute / inventory fault) can't start a turn,
+	// so the backend would refuse the pay/enqueue anyway — disable PLAY up front
+	// rather than let the player try and bounce off an error.
+	const disabled = loading || machineBlocked || (ready && !clawSocketOn);
+	const label = !ready ? "CONNECT WALLET" : machineBlocked ? "UNAVAILABLE" : "PLAY";
 
 	const content = isPlaying ? (
 		<GameController />
@@ -210,7 +213,7 @@ const Play = ({ glossMode, mobile = false }: { glossMode: "static" | "linear" | 
 					<span className="play__label">{label}</span>
 				</button>
 			)}
-			<Box className="queue">{userText}</Box>
+			<Box className="queue">{machineBlocked ? "Machine temporarily unavailable — check back soon." : userText}</Box>
 		</>
 	);
 

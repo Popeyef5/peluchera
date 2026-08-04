@@ -66,6 +66,7 @@ interface GlobalSyncData {
 	queue_length: number;
 	con: boolean;
 	seconds_left: number;
+	blocked?: boolean; // machine can't start a turn (fault) — PLAY is disabled
 }
 
 interface PersonalSyncData {
@@ -160,6 +161,9 @@ interface ClawCtx {
 	accountBets: PlayedRound[] | null;
 	accountWithdrawals: Withdrawal[] | null;
 	clawSocketOn: boolean;
+	// Machine can't start a turn (protocol / chute / inventory fault). PLAY is
+	// disabled while true — the backend would refuse the pay/enqueue anyway.
+	machineBlocked: boolean;
 	roundPlayed: number;
 	roundWon: number;
 	secondsLeft: number;
@@ -245,6 +249,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const toastId = useRef<string | null>(null);        // keep the id we get back
 	const timerId = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [clawSocketOn, setClawSocketOn] = useState(false);
+	const [machineBlocked, setMachineBlocked] = useState(false);
 	const [roundPlayed, setRoundPlayed] = useState(0);
 	const [roundWon, setRoundWon] = useState(0);
 	const [pendingWin, setPendingWin] = useState<PendingWin | null>(null);
@@ -349,6 +354,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setRoundInfo(data.round_info);
 			setQueueCount(data.queue_length);
 			setClawSocketOn(data.con);
+			setMachineBlocked(!!data.blocked);
 			updateSeconds(data.seconds_left);
 		}
 		const onPersonalSync = (data: PersonalSyncData) => {
@@ -732,6 +738,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		accountBets,
 		accountWithdrawals,
 		clawSocketOn,
+		machineBlocked,
 		roundPlayed,
 		roundWon,
 		secondsLeft,

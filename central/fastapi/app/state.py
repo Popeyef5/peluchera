@@ -94,6 +94,12 @@ async def global_sync():
         "queue_length": qcount,
         "con": pi_connected,
         "seconds_left": seconds_left,
+        # True when the machine can't start a turn (protocol / chute / inventory
+        # fault). Mirrors machine.blocked(); read from the cached fault fields,
+        # which the scheduler refreshes every tick, so this adds no DB query and
+        # avoids a state<->machine import cycle. Lets the client disable PLAY
+        # instead of letting a player try to pay into a queue that can't serve.
+        "blocked": bool(version_fault or cabinet_fault or inventory_fault),
     }
 
 
