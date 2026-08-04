@@ -51,11 +51,35 @@ type ClosedBooster = {
 };
 type CardRow = {
   id: string;
-  set: string;
-  number: string;
-  rarity: string;
-  status: string;
+  sku: string;
+  name: string | null;
+  image_url: string | null;
+  type: string | null;
+  rarity: string | null;
+  set: string | null;
+  number: string | null;
+  is_complete: boolean;
 };
+
+// Common Pokémon holo/foil rendering categories (free-text; datalist suggestion).
+const HOLO_TYPES = [
+  "normal",
+  "reverse-holo",
+  "holo",
+  "cosmos-holo",
+  "galaxy-holo",
+  "amazing-rare",
+  "radiant-holo",
+  "v",
+  "v-full-art",
+  "v-max",
+  "v-star",
+  "trainer-gallery",
+  "trainer-full-art",
+  "rainbow-rare",
+  "gold-secret",
+  "shiny-vault",
+];
 
 const RARITIES = [
   "COMMON",
@@ -70,7 +94,7 @@ type Tab = "opened" | "closed" | "cards";
 const TABS: { key: Tab; label: string }[] = [
   { key: "opened", label: "Opened boosters" },
   { key: "closed", label: "Closed boosters" },
-  { key: "cards", label: "Cards" },
+  { key: "cards", label: "Card types" },
 ];
 
 export default function InventoryPage() {
@@ -126,10 +150,10 @@ export default function InventoryPage() {
         );
         setClosed(r.closed_boosters);
       } else {
-        const r = await apiFetch<{ cards: CardRow[] }>(
-          "/admin/inventory/cards",
+        const r = await apiFetch<{ card_types: CardRow[] }>(
+          "/admin/inventory/card-types",
         );
-        setCards(r.cards);
+        setCards(r.card_types);
       }
       setError(null);
     } catch (e) {
@@ -289,29 +313,30 @@ export default function InventoryPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Set</TableHead>
-                  <TableHead>Number</TableHead>
+                  <TableHead className="w-8" title="Green = complete (name, image, type, rarity); amber = incomplete"></TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead>Image</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Rarity</TableHead>
-                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {cards.map((c) => (
                   <TableRow key={c.id}>
-                    <TableCell className="font-mono">{c.set}</TableCell>
-                    <TableCell>{c.number}</TableCell>
-                    <TableCell>{c.rarity}</TableCell>
                     <TableCell>
-                      <StatusPill value={c.status} />
+                      <CompletenessDot complete={c.is_complete} />
                     </TableCell>
+                    <TableCell className="font-mono">{c.sku}</TableCell>
+                    <TableCell>
+                      <Thumb url={c.image_url} label="card" />
+                    </TableCell>
+                    <TableCell>{c.name ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="text-xs">{c.type ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="text-xs">{c.rarity ?? <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={c.status !== "IN_POOL"}
-                        onClick={() => setEditCard(c)}
-                      >
+                      <Button variant="outline" size="sm" onClick={() => setEditCard(c)}>
                         Edit
                       </Button>
                     </TableCell>
@@ -323,12 +348,17 @@ export default function InventoryPage() {
         </CardContent>
       </Card>
 
-      <NewDialog
-        tab={tab}
-        open={newOpen && tab === "cards"}
-        onClose={() => setNewOpen(false)}
-        onCreated={() => {
+      {/* Card types: catalog entries (sku, name, image, holo type, rarity). */}
+      <CardTypeDialog
+        open={(newOpen && tab === "cards") || editCard !== null}
+        editing={editCard}
+        onClose={() => {
           setNewOpen(false);
+          setEditCard(null);
+        }}
+        onSaved={() => {
+          setNewOpen(false);
+          setEditCard(null);
           refresh();
         }}
       />
@@ -366,14 +396,6 @@ export default function InventoryPage() {
         onClose={() => setImportOpen(false)}
         onDone={() => {
           setImportOpen(false);
-          refresh();
-        }}
-      />
-      <EditCardDialog
-        card={editCard}
-        onClose={() => setEditCard(null)}
-        onSaved={() => {
-          setEditCard(null);
           refresh();
         }}
       />
@@ -727,6 +749,139 @@ function OpenedBoosterDialog({
   );
 }
 
+// Create/edit a card TYPE (catalog): sku, name, image, holo/foil type, rarity.
+function CardTypeDialog({
+  open,
+  editing,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  editing: CardRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [sku, setSku] = useState("");
+  const [name, setName] = useState("");
+  const [image, setImage] = useState("");
+  const [type, setType] = useState("");
+  const [rarity, setRarity] = useState("COMMON");
+  const [setName_, setSetName] = useState("");
+  const [number, setNumber] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setSku(editing?.sku ?? "");
+    setName(editing?.name ?? "");
+    setImage(editing?.image_url ?? "");
+    setType(editing?.type ?? "");
+    setRarity(editing?.rarity ?? "COMMON");
+    setSetName(editing?.set ?? "");
+    setNumber(editing?.number ?? "");
+    setError(null);
+    setSubmitting(false);
+  }, [open, editing]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    const payload: Record<string, unknown> = {
+      name: name || null,
+      image_url: image || null,
+      type: type || null,
+      rarity: rarity || null,
+      set: setName_ || null,
+      number: number || null,
+    };
+    try {
+      if (editing) {
+        await apiFetch(
+          `/admin/inventory/card-types/${encodeURIComponent(editing.sku)}`,
+          { method: "PATCH", body: JSON.stringify(payload) },
+        );
+      } else {
+        await apiFetch("/admin/inventory/card-types", {
+          method: "POST",
+          body: JSON.stringify({ sku, ...payload }),
+        });
+      }
+      onSaved();
+    } catch (x) {
+      setError(x instanceof ApiError ? x.message : String(x));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <form onSubmit={submit}>
+        <DialogHeader>
+          <DialogTitle>{editing ? `Edit ${editing.sku}` : "New card type"}</DialogTitle>
+          <DialogDescription>
+            A card in the catalog. Fill in name, image, holo/foil type and rarity
+            to make it complete — only complete card types can be a prize.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <Field label="SKU">
+            <Input
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              placeholder="151-025"
+              autoFocus={!editing}
+              required
+              disabled={!!editing}
+            />
+          </Field>
+          <Field label="Name">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Pikachu" />
+          </Field>
+          <ImageField label="Image" value={image} folder="cards" onChange={setImage} />
+          <Field label="Type (holo / foil)">
+            <Input
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              placeholder="reverse-holo"
+              list="holo-types"
+            />
+            <datalist id="holo-types">
+              {HOLO_TYPES.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+          </Field>
+          <Field label="Rarity">
+            <RaritySelect value={rarity} onChange={setRarity} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Set (optional)">
+              <Input value={setName_} onChange={(e) => setSetName(e.target.value)} placeholder="151" />
+            </Field>
+            <Field label="Number (optional)">
+              <Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="025" />
+            </Field>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting || (!editing && !sku)}>
+            {submitting ? "Saving…" : editing ? "Save" : "Create"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
+  );
+}
+
 function StatusPill({ value }: { value: string }) {
   const style =
     value === "AVAILABLE" || value === "IN_POOL" || value === "IN_STOCK"
@@ -760,204 +915,6 @@ function Field({
   );
 }
 
-function NewDialog({
-  tab,
-  open,
-  onClose,
-  onCreated,
-}: {
-  tab: Tab;
-  open: boolean;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [form, setForm] = useState<Record<string, string>>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!open) {
-      setForm({});
-      setError(null);
-      setSubmitting(false);
-    }
-  }, [open]);
-
-  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      if (tab === "opened") {
-        await apiFetch("/admin/inventory/opened-boosters", {
-          method: "POST",
-          body: JSON.stringify({
-            sku: form.sku,
-            video_url: form.video_url,
-            filmed_at: form.filmed_at || null,
-          }),
-        });
-      } else if (tab === "closed") {
-        await apiFetch("/admin/inventory/closed-boosters", {
-          method: "POST",
-          body: JSON.stringify({
-            sku: form.sku,
-            in_stock: form.in_stock !== "false",
-          }),
-        });
-      } else {
-        await apiFetch("/admin/inventory/cards", {
-          method: "POST",
-          body: JSON.stringify({
-            set: form.set,
-            number: form.number,
-            rarity: form.rarity || "COMMON",
-            image_url: form.image_url,
-            condition: form.condition || null,
-          }),
-        });
-      }
-      onCreated();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const title =
-    tab === "opened"
-      ? "New opened booster"
-      : tab === "closed"
-        ? "New closed booster"
-        : "New card";
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <form onSubmit={submit}>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            Creates a row in the {tab} pool (status AVAILABLE / IN_POOL).
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3">
-          {tab === "opened" && (
-            <>
-              <Field label="SKU">
-                <Input
-                  value={form.sku ?? ""}
-                  onChange={(e) => set("sku", e.target.value)}
-                  placeholder="SV-OBF"
-                  autoFocus
-                  required
-                />
-              </Field>
-              <Field label="Video URL">
-                <Input
-                  value={form.video_url ?? ""}
-                  onChange={(e) => set("video_url", e.target.value)}
-                  placeholder="https://…/booster.mp4"
-                  required
-                />
-              </Field>
-              <Field label="Filmed at (optional)">
-                <Input
-                  type="datetime-local"
-                  value={form.filmed_at ?? ""}
-                  onChange={(e) => set("filmed_at", e.target.value)}
-                />
-              </Field>
-            </>
-          )}
-          {tab === "closed" && (
-            <>
-              <Field label="SKU">
-                <Input
-                  value={form.sku ?? ""}
-                  onChange={(e) => set("sku", e.target.value)}
-                  placeholder="SV-OBF"
-                  autoFocus
-                  required
-                />
-              </Field>
-              <Field label="Availability">
-                <select
-                  value={form.in_stock ?? "true"}
-                  onChange={(e) => set("in_stock", e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="true">In stock</option>
-                  <option value="false">Out of stock</option>
-                </select>
-              </Field>
-              <p className="text-xs text-muted-foreground">
-                Sealed packs are tracked per SKU by availability, not by unit.
-                Re-submitting a SKU just updates its flag.
-              </p>
-            </>
-          )}
-          {tab === "cards" && (
-            <>
-              <Field label="Set">
-                <Input
-                  value={form.set ?? ""}
-                  onChange={(e) => set("set", e.target.value)}
-                  placeholder="SV01"
-                  autoFocus
-                  required
-                />
-              </Field>
-              <Field label="Number">
-                <Input
-                  value={form.number ?? ""}
-                  onChange={(e) => set("number", e.target.value)}
-                  placeholder="025/198"
-                  required
-                />
-              </Field>
-              <Field label="Rarity">
-                <RaritySelect
-                  value={form.rarity ?? "COMMON"}
-                  onChange={(v) => set("rarity", v)}
-                />
-              </Field>
-              <Field label="Image URL">
-                <Input
-                  value={form.image_url ?? ""}
-                  onChange={(e) => set("image_url", e.target.value)}
-                  placeholder="https://…/card.png"
-                  required
-                />
-              </Field>
-              <Field label="Condition (optional)">
-                <Input
-                  value={form.condition ?? ""}
-                  onChange={(e) => set("condition", e.target.value)}
-                  placeholder="NM"
-                />
-              </Field>
-            </>
-          )}
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? "Creating…" : "Create"}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Dialog>
-  );
-}
-
 function RaritySelect({
   value,
   onChange,
@@ -980,112 +937,9 @@ function RaritySelect({
   );
 }
 
-function EditCardDialog({
-  card,
-  onClose,
-  onSaved,
-}: {
-  card: CardRow | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [form, setForm] = useState<Record<string, string>>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (card) {
-      setForm({
-        set: card.set,
-        number: card.number,
-        rarity: card.rarity,
-      });
-      setError(null);
-    }
-  }, [card]);
-
-  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!card) return;
-    setError(null);
-    setSubmitting(true);
-    try {
-      await apiFetch(`/admin/inventory/cards/${card.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(form),
-      });
-      onSaved();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={card !== null} onOpenChange={(o) => !o && onClose()}>
-      <form onSubmit={submit}>
-        <DialogHeader>
-          <DialogTitle>Edit card</DialogTitle>
-          <DialogDescription>
-            Only IN_POOL cards are editable. Image URL and condition can be set
-            here too.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <Field label="Set">
-            <Input
-              value={form.set ?? ""}
-              onChange={(e) => set("set", e.target.value)}
-            />
-          </Field>
-          <Field label="Number">
-            <Input
-              value={form.number ?? ""}
-              onChange={(e) => set("number", e.target.value)}
-            />
-          </Field>
-          <Field label="Rarity">
-            <RaritySelect
-              value={form.rarity ?? "COMMON"}
-              onChange={(v) => set("rarity", v)}
-            />
-          </Field>
-          <Field label="Image URL (optional)">
-            <Input
-              value={form.image_url ?? ""}
-              onChange={(e) => set("image_url", e.target.value)}
-              placeholder="leave blank to keep"
-            />
-          </Field>
-          <Field label="Condition (optional)">
-            <Input
-              value={form.condition ?? ""}
-              onChange={(e) => set("condition", e.target.value)}
-              placeholder="leave blank to keep"
-            />
-          </Field>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? "Saving…" : "Save"}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Dialog>
-  );
-}
-
 const IMPORT_EXAMPLE = `[
-  { "type": "card", "set": "SV01", "number": "025/198", "rarity": "RARE", "image_url": "https://…/pikachu.png" },
-  { "type": "closed_booster", "sku": "SV-OBF" },
-  { "type": "opened_booster", "sku": "SV-OBF", "video_url": "https://…/obf.mp4" }
+  { "type": "closed_booster", "sku": "pkmn-151", "name": "Pokémon 151", "card_count": 10 },
+  { "type": "opened_booster", "closed_booster_sku": "pkmn-151", "video_url": "https://…/151.mp4" }
 ]`;
 
 function ImportDialog({
