@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { uploadAsset } from "@/lib/upload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -35,7 +36,15 @@ type OpenedBooster = {
   video_url: string;
   filmed_at: string | null;
 };
-type ClosedBooster = { sku: string; in_stock: boolean };
+type ClosedBooster = {
+  sku: string;
+  name: string | null;
+  image_front_url: string | null;
+  image_back_url: string | null;
+  card_count: number | null;
+  in_stock: boolean;
+  is_complete: boolean;
+};
 type CardRow = {
   id: string;
   set: string;
@@ -68,6 +77,7 @@ export default function InventoryPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [newOpen, setNewOpen] = useState(false);
+  const [editingClosed, setEditingClosed] = useState<ClosedBooster | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [editCard, setEditCard] = useState<CardRow | null>(null);
 
@@ -204,7 +214,11 @@ export default function InventoryPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8" title="Green = complete (can bind a ball); amber = still missing fields"></TableHead>
                   <TableHead>SKU</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Faces</TableHead>
+                  <TableHead>Cards</TableHead>
                   <TableHead>Availability</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -212,17 +226,31 @@ export default function InventoryPage() {
               <TableBody>
                 {closed.map((c) => (
                   <TableRow key={c.sku}>
+                    <TableCell>
+                      <CompletenessDot complete={c.is_complete} />
+                    </TableCell>
                     <TableCell className="font-mono">{c.sku}</TableCell>
+                    <TableCell>{c.name ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Thumb url={c.image_front_url} label="front" />
+                        <Thumb url={c.image_back_url} label="back" />
+                      </div>
+                    </TableCell>
+                    <TableCell>{c.card_count ?? <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell>
                       <StatusPill value={c.in_stock ? "IN_STOCK" : "OUT"} />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="space-x-2 text-right">
+                      <Button variant="outline" size="sm" onClick={() => setEditingClosed(c)}>
+                        Edit
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => toggleClosed(c.sku, !c.in_stock)}
                       >
-                        {c.in_stock ? "Mark out of stock" : "Mark in stock"}
+                        {c.in_stock ? "Out of stock" : "In stock"}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -271,10 +299,24 @@ export default function InventoryPage() {
 
       <NewDialog
         tab={tab}
-        open={newOpen}
+        open={newOpen && tab !== "closed"}
         onClose={() => setNewOpen(false)}
         onCreated={() => {
           setNewOpen(false);
+          refresh();
+        }}
+      />
+      {/* Closed boosters get a richer create/edit dialog (name, faces, count). */}
+      <ClosedBoosterDialog
+        open={(newOpen && tab === "closed") || editingClosed !== null}
+        editing={editingClosed}
+        onClose={() => {
+          setNewOpen(false);
+          setEditingClosed(null);
+        }}
+        onSaved={() => {
+          setNewOpen(false);
+          setEditingClosed(null);
           refresh();
         }}
       />
@@ -295,6 +337,218 @@ export default function InventoryPage() {
         }}
       />
     </div>
+  );
+}
+
+function CompletenessDot({ complete }: { complete: boolean }) {
+  return (
+    <span
+      title={complete ? "Complete — can bind a ball" : "Incomplete — missing fields"}
+      className={cn(
+        "inline-block h-2.5 w-2.5 rounded-full",
+        complete ? "bg-green-500" : "bg-amber-500",
+      )}
+    />
+  );
+}
+
+function Thumb({ url, label }: { url: string | null; label: string }) {
+  if (!url)
+    return (
+      <span className="flex h-9 w-9 items-center justify-center rounded border border-dashed text-[9px] text-muted-foreground">
+        {label}
+      </span>
+    );
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={url} alt={label} title={label} className="h-9 w-9 rounded border object-cover" />
+  );
+}
+
+// URL input + upload button; upload writes to Supabase Storage and fills the URL.
+function ImageField({
+  label,
+  value,
+  folder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  folder: "boosters" | "cards" | "videos";
+  onChange: (url: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      onChange(await uploadAsset(file, folder));
+    } catch (x) {
+      setErr(x instanceof Error ? x.message : String(x));
+    } finally {
+      setBusy(false);
+      e.target.value = "";
+    }
+  };
+  return (
+    <Field label={label}>
+      <div className="flex items-center gap-2">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://… or upload →"
+        />
+        <label className="shrink-0 cursor-pointer rounded-md border px-2 py-2 text-xs hover:bg-accent">
+          {busy ? "…" : "Upload"}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={onFile}
+            disabled={busy}
+          />
+        </label>
+        {value ? <Thumb url={value} label={label} /> : null}
+      </div>
+      {err && <p className="mt-1 text-xs text-destructive">{err}</p>}
+    </Field>
+  );
+}
+
+// Create/edit a closed booster. SKU is immutable on edit. Partial is fine —
+// the row dot shows completeness; only complete boosters can be bound to a ball.
+function ClosedBoosterDialog({
+  open,
+  editing,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  editing: ClosedBooster | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [sku, setSku] = useState("");
+  const [name, setName] = useState("");
+  const [front, setFront] = useState("");
+  const [back, setBack] = useState("");
+  const [cardCount, setCardCount] = useState("");
+  const [inStock, setInStock] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setSku(editing?.sku ?? "");
+    setName(editing?.name ?? "");
+    setFront(editing?.image_front_url ?? "");
+    setBack(editing?.image_back_url ?? "");
+    setCardCount(editing?.card_count != null ? String(editing.card_count) : "");
+    setInStock(editing?.in_stock ?? true);
+    setError(null);
+    setSubmitting(false);
+  }, [open, editing]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    const payload: Record<string, unknown> = {
+      name: name || null,
+      image_front_url: front || null,
+      image_back_url: back || null,
+      card_count: cardCount ? Number(cardCount) : null,
+      in_stock: inStock,
+    };
+    try {
+      if (editing) {
+        await apiFetch(
+          `/admin/inventory/closed-boosters/${encodeURIComponent(editing.sku)}`,
+          { method: "PATCH", body: JSON.stringify(payload) },
+        );
+      } else {
+        await apiFetch("/admin/inventory/closed-boosters", {
+          method: "POST",
+          body: JSON.stringify({ sku, ...payload }),
+        });
+      }
+      onSaved();
+    } catch (x) {
+      setError(x instanceof ApiError ? x.message : String(x));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <form onSubmit={submit}>
+        <DialogHeader>
+          <DialogTitle>
+            {editing ? `Edit ${editing.sku}` : "New closed booster"}
+          </DialogTitle>
+          <DialogDescription>
+            A sealed-pack SKU. Fill in name, both face images (used by the win
+            reveal) and cards-per-pack to make it complete — only complete
+            boosters can be bound to a ball.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <Field label="SKU">
+            <Input
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              placeholder="pkmn-151"
+              autoFocus={!editing}
+              required
+              disabled={!!editing}
+            />
+          </Field>
+          <Field label="Name">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Pokémon 151"
+            />
+          </Field>
+          <ImageField label="Front image" value={front} folder="boosters" onChange={setFront} />
+          <ImageField label="Back image" value={back} folder="boosters" onChange={setBack} />
+          <Field label="Cards per pack">
+            <Input
+              type="number"
+              min={1}
+              value={cardCount}
+              onChange={(e) => setCardCount(e.target.value)}
+              placeholder="e.g. 10"
+            />
+          </Field>
+          <Field label="Availability">
+            <select
+              value={inStock ? "true" : "false"}
+              onChange={(e) => setInStock(e.target.value === "true")}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="true">In stock</option>
+              <option value="false">Out of stock</option>
+            </select>
+          </Field>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting || (!editing && !sku)}>
+            {submitting ? "Saving…" : editing ? "Save" : "Create"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }
 
