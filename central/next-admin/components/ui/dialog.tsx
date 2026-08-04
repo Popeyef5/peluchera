@@ -1,11 +1,18 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
-// Minimal portal-less dialog — backdrop + centered panel, ESC closes. Plenty
-// for v1 admin forms. Swap in @radix-ui/react-dialog when we need a11y
-// (focus trap, aria patterns) seriously.
+// Minimal dialog — backdrop + centered panel, ESC closes. Plenty for v1 admin
+// forms. Swap in @radix-ui/react-dialog when we need a11y (focus trap, aria
+// patterns) seriously.
+//
+// The panel is portalled to <body>: a modal must never be a DOM descendant of
+// wherever its trigger sits. HelpTip's "?" button lives inline inside header
+// <p> subtitles, and a <div> panel rendered there is invalid HTML ("<div>
+// cannot be a descendant of <p>") — a hydration error. Portalling sidesteps
+// that (and escapes overflow/stacking contexts, which a modal wants anyway).
 type DialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -13,6 +20,10 @@ type DialogProps = {
 };
 
 export function Dialog({ open, onOpenChange, children }: DialogProps) {
+  // Portals need document; only mount client-side to stay SSR-safe.
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -22,8 +33,8 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
 
-  if (!open) return null;
-  return (
+  if (!open || !mounted) return null;
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={() => onOpenChange(false)}
@@ -34,7 +45,8 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
