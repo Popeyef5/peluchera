@@ -61,6 +61,15 @@ type CardRow = {
   is_complete: boolean;
 };
 
+type ObCard = {
+  id: string;
+  position: number | null;
+  card_type_sku: string | null;
+  name: string | null;
+  image_url: string | null;
+  rarity: string | null;
+};
+
 // Common Pokémon holo/foil rendering categories (free-text; datalist suggestion).
 const HOLO_TYPES = [
   "normal",
@@ -134,16 +143,18 @@ export default function InventoryPage() {
       if (tab === "opened") {
         // Also load the closed-booster catalog so the create/edit dialog's
         // picker is populated on this tab.
-        const [r, cb] = await Promise.all([
+        const [r, cb, ct] = await Promise.all([
           apiFetch<{ opened_boosters: OpenedBooster[] }>(
             "/admin/inventory/opened-boosters",
           ),
           apiFetch<{ closed_boosters: ClosedBooster[] }>(
             "/admin/inventory/closed-boosters",
           ),
+          apiFetch<{ card_types: CardRow[] }>("/admin/inventory/card-types"),
         ]);
         setOpened(r.opened_boosters);
         setClosed(cb.closed_boosters);
+        setCards(ct.card_types);
       } else if (tab === "closed") {
         const r = await apiFetch<{ closed_boosters: ClosedBooster[] }>(
           "/admin/inventory/closed-boosters",
@@ -381,6 +392,7 @@ export default function InventoryPage() {
         open={(newOpen && tab === "opened") || editingOpened !== null}
         editing={editingOpened}
         closedBoosters={closed ?? []}
+        cardTypes={cards ?? []}
         onClose={() => {
           setNewOpen(false);
           setEditingOpened(null);
@@ -625,12 +637,14 @@ function OpenedBoosterDialog({
   open,
   editing,
   closedBoosters,
+  cardTypes,
   onClose,
   onSaved,
 }: {
   open: boolean;
   editing: OpenedBooster | null;
   closedBoosters: ClosedBooster[];
+  cardTypes: CardRow[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -639,6 +653,9 @@ function OpenedBoosterDialog({
   const [filmedAt, setFilmedAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [obCards, setObCards] = useState<ObCard[]>([]);
+  const [addSku, setAddSku] = useState("");
+  const [cardBusy, setCardBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -647,7 +664,67 @@ function OpenedBoosterDialog({
     setFilmedAt(editing?.filmed_at ? editing.filmed_at.slice(0, 16) : "");
     setError(null);
     setSubmitting(false);
+    setAddSku("");
   }, [open, editing]);
+
+  const reloadCards = useCallback(async () => {
+    if (!editing) return;
+    try {
+      const r = await apiFetch<{ cards: ObCard[] }>(
+        `/admin/inventory/opened-boosters/${editing.id}/cards`,
+      );
+      setObCards(r.cards);
+    } catch {
+      /* keep prior list on transient error */
+    }
+  }, [editing]);
+
+  useEffect(() => {
+    if (open && editing) reloadCards();
+    else setObCards([]);
+  }, [open, editing, reloadCards]);
+
+  const withCardBusy = async (fn: () => Promise<void>) => {
+    setCardBusy(true);
+    setError(null);
+    try {
+      await fn();
+      await reloadCards();
+    } catch (x) {
+      setError(x instanceof ApiError ? x.message : String(x));
+    } finally {
+      setCardBusy(false);
+    }
+  };
+
+  const addCard = () =>
+    editing &&
+    addSku &&
+    withCardBusy(async () => {
+      await apiFetch(`/admin/inventory/opened-boosters/${editing.id}/cards`, {
+        method: "POST",
+        body: JSON.stringify({ card_type_sku: addSku }),
+      });
+      setAddSku("");
+    });
+
+  const removeCard = (id: string) =>
+    withCardBusy(async () => {
+      await apiFetch(`/admin/inventory/cards/${id}`, { method: "DELETE" });
+    });
+
+  const move = (i: number, dir: number) => {
+    const j = i + dir;
+    if (!editing || j < 0 || j >= obCards.length) return;
+    const order = obCards.map((c) => c.id);
+    [order[i], order[j]] = [order[j], order[i]];
+    return withCardBusy(async () => {
+      await apiFetch(`/admin/inventory/opened-boosters/${editing.id}/cards/reorder`, {
+        method: "POST",
+        body: JSON.stringify({ card_ids: order }),
+      });
+    });
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -726,11 +803,52 @@ function OpenedBoosterDialog({
               onChange={(e) => setFilmedAt(e.target.value)}
             />
           </Field>
-          {editing && (
+          {editing ? (
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">
+                Reveal cards ({obCards.length}
+                {needed != null ? ` / ${needed}` : ""})
+              </p>
+              {obCards.length > 0 && (
+                <ol className="space-y-1">
+                  {obCards.map((c, i) => (
+                    <li key={c.id} className="flex items-center gap-2 text-sm">
+                      <span className="w-4 text-right text-xs text-muted-foreground">{i + 1}</span>
+                      <Thumb url={c.image_url} label="card" />
+                      <span className="flex-1 truncate">
+                        {c.name ?? c.card_type_sku ?? "—"}
+                        {c.rarity ? ` · ${c.rarity}` : ""}
+                      </span>
+                      <button type="button" disabled={i === 0 || cardBusy} onClick={() => move(i, -1)} className="px-1 text-muted-foreground disabled:opacity-30">↑</button>
+                      <button type="button" disabled={i === obCards.length - 1 || cardBusy} onClick={() => move(i, 1)} className="px-1 text-muted-foreground disabled:opacity-30">↓</button>
+                      <button type="button" disabled={cardBusy} onClick={() => removeCard(c.id)} className="px-1 text-destructive disabled:opacity-30">✕</button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <div className="flex gap-2">
+                <select
+                  value={addSku}
+                  onChange={(e) => setAddSku(e.target.value)}
+                  className="flex h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="">— add card type —</option>
+                  {cardTypes.map((t) => (
+                    <option key={t.sku} value={t.sku}>
+                      {t.sku}
+                      {t.name ? ` · ${t.name}` : ""}
+                      {t.is_complete ? "" : " (incomplete)"}
+                    </option>
+                  ))}
+                </select>
+                <Button type="button" size="sm" variant="outline" disabled={!addSku || cardBusy} onClick={addCard}>
+                  Add
+                </Button>
+              </div>
+            </div>
+          ) : (
             <p className="text-xs text-muted-foreground">
-              Cards: {editing.cards_count}
-              {editing.card_count_needed != null ? ` / ${editing.card_count_needed}` : ""}
-              {" — the ordered-cards editor lands with the card-type work."}
+              Create the opened booster first, then edit it to add the reveal cards.
             </p>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}

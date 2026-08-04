@@ -840,6 +840,101 @@ async def patch_opened_booster(ob_id: str, body: PatchOpenedBoosterBody, _: Admi
 		return {"ok": True, "id": str(ob.id)}
 
 
+# ─── Opened-booster ordered cards editor ─────────────────────────────────
+
+def _serialize_ob_card(c: Card) -> dict:
+	ct = c.card_type
+	return {
+		"id": str(c.id),
+		"position": c.position,
+		"card_type_sku": ct.sku if ct else None,
+		"name": ct.name if ct else None,
+		"image_url": ct.image_url if ct else None,
+		"rarity": ct.rarity.value if ct and ct.rarity else None,
+	}
+
+
+async def _get_editable_ob(db, ob_id: str) -> OpenedBooster:
+	try:
+		oid = uuid.UUID(ob_id)
+	except ValueError:
+		raise HTTPException(status_code=400, detail="ob_id is not a UUID")
+	ob = await db.get(OpenedBooster, oid)
+	if ob is None:
+		raise HTTPException(status_code=404, detail="OpenedBooster not found")
+	if ob.status != InventoryStatus.AVAILABLE:
+		raise HTTPException(status_code=409, detail=f"OpenedBooster is {ob.status.value}, not editable")
+	return ob
+
+
+@router.get("/inventory/opened-boosters/{ob_id}/cards")
+async def list_ob_cards(ob_id: str, _: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		ob = await _get_editable_ob(db, ob_id)
+		return {"cards": [_serialize_ob_card(c) for c in ob.cards]}  # already ordered by position
+
+
+class AddObCardBody(BaseModel):
+	card_type_sku: str
+
+
+@router.post("/inventory/opened-boosters/{ob_id}/cards")
+async def add_ob_card(ob_id: str, body: AddObCardBody, _: AdminIdentity = RequireAdmin):
+	"""Append a card instance (of the given CardType) to the opened booster's
+	ordered reveal."""
+	async with async_session() as db:
+		ob = await _get_editable_ob(db, ob_id)
+		ct = await db.scalar(select(CardType).where(CardType.sku == (body.card_type_sku or "").strip()))
+		if ct is None:
+			raise HTTPException(status_code=400, detail="unknown card_type_sku")
+		positions = [c.position for c in ob.cards if c.position is not None]
+		card = Card(
+			card_type_id=ct.id,
+			origin=CardOrigin.OPENED_BOOSTER,
+			opened_booster_id=ob.id,
+			position=(max(positions) + 1) if positions else 0,
+			status=CardStatus.IN_POOL,
+		)
+		db.add(card)
+		await db.commit()
+		return {"ok": True, "id": str(card.id)}
+
+
+@router.delete("/inventory/cards/{card_id}")
+async def delete_card(card_id: str, _: AdminIdentity = RequireAdmin):
+	try:
+		cid = uuid.UUID(card_id)
+	except ValueError:
+		raise HTTPException(status_code=400, detail="card_id is not a UUID")
+	async with async_session() as db:
+		card = await db.get(Card, cid)
+		if card is None:
+			raise HTTPException(status_code=404, detail="Card not found")
+		if card.status != CardStatus.IN_POOL:
+			raise HTTPException(status_code=409, detail=f"Card is {card.status.value}, not deletable")
+		await db.delete(card)
+		await db.commit()
+		return {"ok": True}
+
+
+class ReorderCardsBody(BaseModel):
+	card_ids: List[str]
+
+
+@router.post("/inventory/opened-boosters/{ob_id}/cards/reorder")
+async def reorder_ob_cards(ob_id: str, body: ReorderCardsBody, _: AdminIdentity = RequireAdmin):
+	"""Set card positions from the given order (index = position)."""
+	async with async_session() as db:
+		ob = await _get_editable_ob(db, ob_id)
+		by_id = {str(c.id): c for c in ob.cards}
+		for pos, cid in enumerate(body.card_ids):
+			c = by_id.get(cid)
+			if c is not None:
+				c.position = pos
+		await db.commit()
+		return {"ok": True}
+
+
 @router.post("/inventory/import")
 async def import_inventory(items: List[dict], _: AdminIdentity = RequireAdmin):
 	"""Bulk-create inventory in one transaction. Each item is a dict with a
