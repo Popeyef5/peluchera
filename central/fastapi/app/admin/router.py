@@ -117,6 +117,12 @@ async def bind_ball(
 			raise HTTPException(status_code=404, detail="OpenedBooster not found")
 		if ob.status != InventoryStatus.AVAILABLE:
 			raise HTTPException(status_code=409, detail=f"OpenedBooster is {ob.status.value}, not AVAILABLE")
+		if not ob.is_complete:
+			raise HTTPException(
+				status_code=409,
+				detail="OpenedBooster is incomplete — it needs a complete ClosedBooster, "
+				"a video, and the right number of cards before it can be bound.",
+			)
 
 		# Reject if some other Ball is already pointing at this OpenedBooster.
 		existing_owner = await db.scalar(
@@ -424,9 +430,13 @@ async def list_opened_boosters(
 				{
 					"id": str(ob.id),
 					"sku": ob.sku,
+					"closed_booster_sku": ob.closed_booster.sku if ob.closed_booster else None,
 					"status": ob.status.value,
 					"video_url": ob.video_url,
 					"filmed_at": ob.filmed_at.isoformat() if ob.filmed_at else None,
+					"cards_count": len(ob.cards),
+					"card_count_needed": ob.closed_booster.card_count if ob.closed_booster else None,
+					"is_complete": ob.is_complete,
 				}
 				for ob in obs
 			]
@@ -503,16 +513,22 @@ def _parse_rarity(value: str) -> CardRarity:
 
 
 def _new_opened_booster(db, data: dict) -> OpenedBooster:
-	sku = (data.get("sku") or "").strip()
-	video_url = (data.get("video_url") or "").strip()
-	if not sku or not video_url:
-		raise HTTPException(status_code=400, detail="opened booster needs sku and video_url")
-	# video_hash is UNIQUE NOT NULL; derive a placeholder from the URL when the
-	# real content hash isn't supplied yet (parity with the crypto placeholders).
-	video_hash = (data.get("video_hash") or "").strip() or _placeholder_hash(
-		"opened-booster", sku, video_url, str(datetime.utcnow())
-	)
+	# Links to a ClosedBooster by SKU (denormalized here for fulfilment lookups).
+	# closed_booster_id is pre-resolved by the caller (async lookup). Video is
+	# optional — an OpenedBooster can be built partially and completed later.
+	sku = (data.get("closed_booster_sku") or data.get("sku") or "").strip()
+	if not sku:
+		raise HTTPException(status_code=400, detail="opened booster needs a closed booster sku")
+	video_url = (data.get("video_url") or "").strip() or None
+	video_hash = None
+	if video_url:
+		# video_hash is UNIQUE; derive a placeholder when a real content hash
+		# isn't supplied (parity with the crypto placeholders).
+		video_hash = (data.get("video_hash") or "").strip() or _placeholder_hash(
+			"opened-booster", sku, video_url, str(datetime.utcnow())
+		)
 	ob = OpenedBooster(
+		closed_booster_id=data.get("closed_booster_id"),
 		sku=sku,
 		video_url=video_url,
 		video_hash=video_hash,
@@ -563,8 +579,8 @@ def _new_card(db, data: dict) -> Card:
 
 
 class CreateOpenedBoosterBody(BaseModel):
-	sku: str
-	video_url: str
+	closed_booster_sku: str
+	video_url: Optional[str] = None
 	video_hash: Optional[str] = None
 	filmed_at: Optional[str] = None
 
@@ -572,8 +588,13 @@ class CreateOpenedBoosterBody(BaseModel):
 @router.post("/inventory/opened-boosters")
 async def create_opened_booster(body: CreateOpenedBoosterBody, _: AdminIdentity = RequireAdmin):
 	async with async_session() as db:
-		ob = _new_opened_booster(db, body.dict())
+		data = body.dict()
+		sku = (body.closed_booster_sku or "").strip()
+		cb = await db.scalar(select(ClosedBooster).where(ClosedBooster.sku == sku)) if sku else None
+		data["closed_booster_id"] = cb.id if cb else None
+		ob = _new_opened_booster(db, data)
 		await db.commit()
+		await db.refresh(ob)
 		return {"ok": True, "id": str(ob.id), "sku": ob.sku}
 
 
@@ -697,7 +718,7 @@ async def patch_card(card_id: str, body: PatchCardBody, _: AdminIdentity = Requi
 
 
 class PatchOpenedBoosterBody(BaseModel):
-	sku: Optional[str] = None
+	closed_booster_sku: Optional[str] = None
 	video_url: Optional[str] = None
 	filmed_at: Optional[str] = None
 
@@ -714,10 +735,17 @@ async def patch_opened_booster(ob_id: str, body: PatchOpenedBoosterBody, _: Admi
 			raise HTTPException(status_code=404, detail="OpenedBooster not found")
 		if ob.status != InventoryStatus.AVAILABLE:
 			raise HTTPException(status_code=409, detail=f"OpenedBooster is {ob.status.value}, not editable")
-		if body.sku is not None:
-			ob.sku = body.sku.strip()
+		if body.closed_booster_sku is not None:
+			sku = body.closed_booster_sku.strip()
+			cb = await db.scalar(select(ClosedBooster).where(ClosedBooster.sku == sku)) if sku else None
+			ob.closed_booster_id = cb.id if cb else None
+			ob.sku = sku or None
 		if body.video_url is not None:
-			ob.video_url = body.video_url.strip()
+			ob.video_url = body.video_url.strip() or None
+			if ob.video_url and not ob.video_hash:
+				ob.video_hash = _placeholder_hash(
+					"opened-booster", ob.sku or "", ob.video_url, str(datetime.utcnow())
+				)
 		if body.filmed_at is not None:
 			ob.filmed_at = _parse_dt(body.filmed_at)
 		await db.commit()
