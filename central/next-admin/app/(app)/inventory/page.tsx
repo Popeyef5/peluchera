@@ -32,9 +32,13 @@ import { cn } from "@/lib/utils";
 type OpenedBooster = {
   id: string;
   sku: string;
+  closed_booster_sku: string | null;
   status: string;
-  video_url: string;
+  video_url: string | null;
   filmed_at: string | null;
+  cards_count: number;
+  card_count_needed: number | null;
+  is_complete: boolean;
 };
 type ClosedBooster = {
   sku: string;
@@ -78,6 +82,7 @@ export default function InventoryPage() {
 
   const [newOpen, setNewOpen] = useState(false);
   const [editingClosed, setEditingClosed] = useState<ClosedBooster | null>(null);
+  const [editingOpened, setEditingOpened] = useState<OpenedBooster | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [editCard, setEditCard] = useState<CardRow | null>(null);
 
@@ -103,10 +108,18 @@ export default function InventoryPage() {
   const refresh = useCallback(async () => {
     try {
       if (tab === "opened") {
-        const r = await apiFetch<{ opened_boosters: OpenedBooster[] }>(
-          "/admin/inventory/opened-boosters",
-        );
+        // Also load the closed-booster catalog so the create/edit dialog's
+        // picker is populated on this tab.
+        const [r, cb] = await Promise.all([
+          apiFetch<{ opened_boosters: OpenedBooster[] }>(
+            "/admin/inventory/opened-boosters",
+          ),
+          apiFetch<{ closed_boosters: ClosedBooster[] }>(
+            "/admin/inventory/closed-boosters",
+          ),
+        ]);
         setOpened(r.opened_boosters);
+        setClosed(cb.closed_boosters);
       } else if (tab === "closed") {
         const r = await apiFetch<{ closed_boosters: ClosedBooster[] }>(
           "/admin/inventory/closed-boosters",
@@ -185,24 +198,37 @@ export default function InventoryPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>SKU</TableHead>
+                  <TableHead className="w-8" title="Green = complete (ClosedBooster + video + all cards); amber = incomplete"></TableHead>
+                  <TableHead>Closed booster</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Video</TableHead>
-                  <TableHead>Filmed</TableHead>
+                  <TableHead>Cards</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {opened.map((o) => (
                   <TableRow key={o.id}>
-                    <TableCell className="font-mono">{o.sku}</TableCell>
+                    <TableCell>
+                      <CompletenessDot complete={o.is_complete} />
+                    </TableCell>
+                    <TableCell className="font-mono">
+                      {o.closed_booster_sku ?? <span className="text-muted-foreground">— unlinked</span>}
+                    </TableCell>
                     <TableCell>
                       <StatusPill value={o.status} />
                     </TableCell>
-                    <TableCell className="max-w-[16rem] truncate text-xs">
-                      {o.video_url}
+                    <TableCell className="text-xs">
+                      {o.video_url ? "✓" : <span className="text-muted-foreground">none</span>}
                     </TableCell>
                     <TableCell className="text-xs">
-                      {o.filmed_at?.slice(0, 10) ?? "—"}
+                      {o.cards_count}
+                      {o.card_count_needed != null ? ` / ${o.card_count_needed}` : ""}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="outline" size="sm" onClick={() => setEditingOpened(o)}>
+                        Edit
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -299,7 +325,7 @@ export default function InventoryPage() {
 
       <NewDialog
         tab={tab}
-        open={newOpen && tab !== "closed"}
+        open={newOpen && tab === "cards"}
         onClose={() => setNewOpen(false)}
         onCreated={() => {
           setNewOpen(false);
@@ -317,6 +343,21 @@ export default function InventoryPage() {
         onSaved={() => {
           setNewOpen(false);
           setEditingClosed(null);
+          refresh();
+        }}
+      />
+      {/* Opened boosters: pick a ClosedBooster + attach the opening video. */}
+      <OpenedBoosterDialog
+        open={(newOpen && tab === "opened") || editingOpened !== null}
+        editing={editingOpened}
+        closedBoosters={closed ?? []}
+        onClose={() => {
+          setNewOpen(false);
+          setEditingOpened(null);
+        }}
+        onSaved={() => {
+          setNewOpen(false);
+          setEditingOpened(null);
           refresh();
         }}
       />
@@ -370,13 +411,16 @@ function ImageField({
   label,
   value,
   folder,
+  accept = "image/*",
   onChange,
 }: {
   label: string;
   value: string;
   folder: "boosters" | "cards" | "videos";
+  accept?: string;
   onChange: (url: string) => void;
 }) {
+  const isImage = accept.startsWith("image");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -405,13 +449,14 @@ function ImageField({
           {busy ? "…" : "Upload"}
           <input
             type="file"
-            accept="image/*"
+            accept={accept}
             className="hidden"
             onChange={onFile}
             disabled={busy}
           />
         </label>
-        {value ? <Thumb url={value} label={label} /> : null}
+        {value && isImage ? <Thumb url={value} label={label} /> : null}
+        {value && !isImage ? <span className="text-xs text-green-600">✓ set</span> : null}
       </div>
       {err && <p className="mt-1 text-xs text-destructive">{err}</p>}
     </Field>
@@ -544,6 +589,136 @@ function ClosedBoosterDialog({
             Cancel
           </Button>
           <Button type="submit" disabled={submitting || (!editing && !sku)}>
+            {submitting ? "Saving…" : editing ? "Save" : "Create"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
+  );
+}
+
+// Create/edit an opened booster: pick the ClosedBooster it came from + attach
+// the opening video (upload or URL). Cards are managed separately.
+function OpenedBoosterDialog({
+  open,
+  editing,
+  closedBoosters,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  editing: OpenedBooster | null;
+  closedBoosters: ClosedBooster[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [closedSku, setClosedSku] = useState("");
+  const [video, setVideo] = useState("");
+  const [filmedAt, setFilmedAt] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setClosedSku(editing?.closed_booster_sku ?? "");
+    setVideo(editing?.video_url ?? "");
+    setFilmedAt(editing?.filmed_at ? editing.filmed_at.slice(0, 16) : "");
+    setError(null);
+    setSubmitting(false);
+  }, [open, editing]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    const payload = {
+      closed_booster_sku: closedSku || null,
+      video_url: video || null,
+      filmed_at: filmedAt || null,
+    };
+    try {
+      if (editing) {
+        await apiFetch(`/admin/inventory/opened-boosters/${editing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await apiFetch("/admin/inventory/opened-boosters", {
+          method: "POST",
+          body: JSON.stringify({ ...payload, closed_booster_sku: closedSku }),
+        });
+      }
+      onSaved();
+    } catch (x) {
+      setError(x instanceof ApiError ? x.message : String(x));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const needed = closedBoosters.find((c) => c.sku === closedSku)?.card_count ?? null;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <form onSubmit={submit}>
+        <DialogHeader>
+          <DialogTitle>
+            {editing ? "Edit opened booster" : "New opened booster"}
+          </DialogTitle>
+          <DialogDescription>
+            One filmed opening of a sealed pack: pick the closed booster it came
+            from and attach the opening video. It becomes complete once it also
+            has {needed ?? "the pack's"} cards (added separately).
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <Field label="Closed booster (SKU)">
+            <select
+              value={closedSku}
+              onChange={(e) => setClosedSku(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              required
+            >
+              <option value="">— select —</option>
+              {closedBoosters.map((c) => (
+                <option key={c.sku} value={c.sku}>
+                  {c.sku}
+                  {c.name ? ` · ${c.name}` : ""}
+                  {c.is_complete ? "" : " (incomplete)"}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <ImageField
+            label="Opening video"
+            value={video}
+            folder="videos"
+            accept="video/*"
+            onChange={setVideo}
+          />
+          <Field label="Filmed at (optional)">
+            <Input
+              type="datetime-local"
+              value={filmedAt}
+              onChange={(e) => setFilmedAt(e.target.value)}
+            />
+          </Field>
+          {editing && (
+            <p className="text-xs text-muted-foreground">
+              Cards: {editing.cards_count}
+              {editing.card_count_needed != null ? ` / ${editing.card_count_needed}` : ""}
+              {" — the ordered-cards editor lands with the card-type work."}
+            </p>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting || !closedSku}>
             {submitting ? "Saving…" : editing ? "Save" : "Create"}
           </Button>
         </DialogFooter>
