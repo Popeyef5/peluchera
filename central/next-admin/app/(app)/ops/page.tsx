@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { Help } from "@/components/HelpTip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -145,7 +146,10 @@ export default function OpsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Status</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            Status
+            <Help term="inventory-fault" />
+          </CardTitle>
           {error && (
             <CardDescription className="text-destructive">
               {error}
@@ -183,7 +187,10 @@ export default function OpsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Protocol chain</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base">
+            Protocol chain
+            <Help term="version-chain" />
+          </CardTitle>
           <CardDescription>
             Each link must speak the same integer. A mismatch pauses the queue
             until the lagging piece is redeployed (VPS/Pi) or reflashed (ESP).

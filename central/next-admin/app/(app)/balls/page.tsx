@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
+import { Help } from "@/components/HelpTip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -101,9 +102,14 @@ export default function BallsPage() {
     <div className="space-y-4">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Balls</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+            Balls
+            <Help term="ball-status" />
+          </h1>
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
             Physical tags and their current prize binding.
+            <Help term="bind" />
+            <Help term="void" />
           </p>
         </div>
         <div className="flex gap-2">

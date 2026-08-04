@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { Help } from "@/components/HelpTip";
 
 type OpenedBooster = {
   id: string;
@@ -219,9 +220,15 @@ export default function InventoryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            {count === undefined ? "Loading…" : `${count} rows`}
-          </CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">
+              {count === undefined ? "Loading…" : `${count} rows`}
+            </CardTitle>
+            {tab === "opened" && <Help term="opened-booster" />}
+            {tab === "closed" && <Help term="closed-booster" />}
+            {tab === "cards" && <Help term="card-type" />}
+            <Help term="completeness" />
+          </div>
           {error && (
             <CardDescription className="text-destructive">
               {error}
