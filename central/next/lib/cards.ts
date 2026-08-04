@@ -118,3 +118,34 @@ export function getFoilTexture(
 		default:                          return undefined;
 	}
 }
+
+// Every foil overlay getFoilTexture() can return. These are CSS background
+// layers applied the instant a card flips, so if they aren't already in cache
+// they decode visibly mid-animation. Preload the whole set up front (see
+// preloadWinAssets). Keep in sync with the returns above.
+export const FOIL_TEXTURES = [
+	"/img/cosmos.webp",
+	"/img/rainbow.webp",
+	"/img/galaxy.jpg",
+	"/img/metal.png",
+	"/img/wave.png",
+	"/img/glitter.png",
+] as const;
+
+// Warm the browser cache for everything the win reveal paints, so nothing
+// fetches mid-animation on a slow machine. Images only (the GLB + booster
+// textures are warmed by Booster.tsx via drei's loaders). Safe to call more
+// than once — the browser dedupes by URL. No-op on the server.
+export function preloadWinAssets() {
+	if (typeof window === "undefined") return;
+	for (const url of [CARD_BACK_IMAGE, ...FOIL_TEXTURES]) {
+		const img = new window.Image();
+		img.decoding = "async";
+		img.src = url;
+	}
+	// Warm the pack mesh over HTTP. Booster.tsx also preloads it via drei, but
+	// that only runs once the heavy 3D chunk has parsed; a plain fetch here
+	// populates the shared HTTP cache earlier, so drei's later fetch is a cache
+	// hit and the mesh isn't racing the rise animation on a cold load.
+	fetch("/booster.glb").catch(() => {});
+}

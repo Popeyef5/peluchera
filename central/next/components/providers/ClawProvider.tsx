@@ -5,6 +5,7 @@ import React, {
 } from 'react';
 import { useSocket } from '@/components/providers/SocketProvider';
 import { useWallet } from '@/lib/wallet/context';
+import { preloadWinAssets } from '@/lib/cards';
 
 // Demo / public-session toggle — see central/fastapi/app/config.py for the
 // matching server flag. When on, the play flow skips wallet connect, permit
@@ -251,6 +252,23 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	const [clawSocketOn, setClawSocketOn] = useState(false);
 	const [machineBlocked, setMachineBlocked] = useState(false);
 	const [roundPlayed, setRoundPlayed] = useState(0);
+
+	// Warm the win-reveal images (foils + card back) once, off the critical
+	// path, so the first win doesn't fetch them mid-animation on a slow machine.
+	// Deferred to idle so it never competes with initial paint. The GLB and
+	// booster textures are warmed separately by Booster.tsx.
+	useEffect(() => {
+		const w = window as Window & {
+			requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+			cancelIdleCallback?: (id: number) => void;
+		};
+		if (w.requestIdleCallback) {
+			const id = w.requestIdleCallback(() => preloadWinAssets(), { timeout: 4000 });
+			return () => w.cancelIdleCallback?.(id);
+		}
+		const t = setTimeout(preloadWinAssets, 1500);
+		return () => clearTimeout(t);
+	}, []);
 	const [roundWon, setRoundWon] = useState(0);
 	const [pendingWin, setPendingWin] = useState<PendingWin | null>(null);
 	const [paymentPickerOpen, setPaymentPickerOpen] = useState(false);
