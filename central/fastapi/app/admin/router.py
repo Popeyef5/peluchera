@@ -433,20 +433,29 @@ async def list_opened_boosters(
 		}
 
 
+def _serialize_closed_booster(r: ClosedBooster) -> dict:
+	return {
+		"sku": r.sku,
+		"name": r.name,
+		"image_front_url": r.image_front_url,
+		"image_back_url": r.image_back_url,
+		"card_count": r.card_count,
+		"in_stock": r.in_stock,
+		"is_complete": r.is_complete,
+	}
+
+
 @router.get("/inventory/closed-boosters")
 async def list_closed_boosters(_: AdminIdentity = RequireAdmin):
-	"""Sealed-pack availability per SKU. Each row is a SKU + an in_stock flag —
-	sealed packs are fungible, so we track availability, not individual units."""
+	"""Sealed-pack catalog. Each row is a SKU plus presentation fields (name,
+	both face images for the win-reveal mesh, card_count) and an in_stock flag.
+	Rows may be partial; `is_complete` gates whether a ball can be bound to a
+	booster of this SKU."""
 	async with async_session() as db:
 		rows = (await db.execute(
 			select(ClosedBooster).order_by(ClosedBooster.sku)
 		)).scalars().all()
-		return {
-			"closed_boosters": [
-				{"sku": r.sku, "in_stock": r.in_stock}
-				for r in rows
-			]
-		}
+		return {"closed_boosters": [_serialize_closed_booster(r) for r in rows]}
 
 
 @router.get("/inventory/cards")
@@ -514,20 +523,26 @@ def _new_opened_booster(db, data: dict) -> OpenedBooster:
 	return ob
 
 
-async def _upsert_closed_stock(db, data: dict) -> str:
-	"""Upsert a per-SKU sealed-pack availability flag. Creating the same SKU
-	again just updates its in_stock flag (idempotent restock)."""
+_CB_FIELDS = ("name", "image_front_url", "image_back_url", "card_count", "in_stock")
+
+
+async def _upsert_closed_booster(db, data: dict):
+	"""Upsert a sealed-pack catalog row by SKU. Only the provided (non-None)
+	fields are written, so a booster can be built up incrementally across calls
+	(partial creation)."""
 	sku = (data.get("sku") or "").strip()
 	if not sku:
 		raise HTTPException(status_code=400, detail="closed booster needs sku")
-	in_stock = data.get("in_stock")
-	in_stock = True if in_stock is None else bool(in_stock)
-	stmt = pg_insert(ClosedBooster).values(sku=sku, in_stock=in_stock)
-	stmt = stmt.on_conflict_do_update(
-		index_elements=["sku"], set_={"in_stock": in_stock},
-	)
+	provided = {f: data[f] for f in _CB_FIELDS if data.get(f) is not None}
+	# New rows default to in_stock=True; existing rows keep theirs unless sent.
+	stmt = pg_insert(ClosedBooster).values(sku=sku, in_stock=data.get("in_stock", True),
+	                                       **{k: v for k, v in provided.items() if k != "in_stock"})
+	if provided:
+		stmt = stmt.on_conflict_do_update(index_elements=["sku"], set_=provided)
+	else:
+		stmt = stmt.on_conflict_do_nothing(index_elements=["sku"])
 	await db.execute(stmt)
-	return sku
+	return await db.scalar(select(ClosedBooster).where(ClosedBooster.sku == sku))
 
 
 def _new_card(db, data: dict) -> Card:
@@ -564,38 +579,56 @@ async def create_opened_booster(body: CreateOpenedBoosterBody, _: AdminIdentity 
 
 class CreateClosedBoosterBody(BaseModel):
 	sku: str
-	in_stock: bool = True
+	name: Optional[str] = None
+	image_front_url: Optional[str] = None
+	image_back_url: Optional[str] = None
+	card_count: Optional[int] = None
+	in_stock: Optional[bool] = None
 
 
 @router.post("/inventory/closed-boosters")
 async def create_closed_booster(body: CreateClosedBoosterBody, _: AdminIdentity = RequireAdmin):
-	"""Register (or restock) a sealed-pack SKU as available / not. Idempotent."""
+	"""Create or update a sealed-pack catalog row. Partial is fine — send any
+	subset of fields and re-POST the same SKU to fill more in. Idempotent."""
 	async with async_session() as db:
-		sku = await _upsert_closed_stock(db, {"sku": body.sku, "in_stock": body.in_stock})
+		row = await _upsert_closed_booster(db, {
+			"sku": body.sku, "name": body.name,
+			"image_front_url": body.image_front_url, "image_back_url": body.image_back_url,
+			"card_count": body.card_count, "in_stock": body.in_stock,
+		})
 		await db.commit()
-		return {"ok": True, "sku": sku, "in_stock": body.in_stock}
+		await db.refresh(row)
+		return {"ok": True, "closed_booster": _serialize_closed_booster(row)}
 
 
-class PatchClosedStockBody(BaseModel):
-	in_stock: bool
+class PatchClosedBoosterBody(BaseModel):
+	name: Optional[str] = None
+	image_front_url: Optional[str] = None
+	image_back_url: Optional[str] = None
+	card_count: Optional[int] = None
+	in_stock: Optional[bool] = None
 
 
 @router.patch("/inventory/closed-boosters/{sku}")
-async def patch_closed_stock(sku: str, body: PatchClosedStockBody, _: AdminIdentity = RequireAdmin):
-	"""Flip a SKU's availability — what you do when you run out of / restock a
-	sealed-pack SKU."""
+async def patch_closed_booster(sku: str, body: PatchClosedBoosterBody, _: AdminIdentity = RequireAdmin):
+	"""Update a sealed-pack catalog row — fill in fields, or flip availability.
+	Only the fields you send change."""
 	async with async_session() as db:
 		row = await db.scalar(
 			select(ClosedBooster).where(ClosedBooster.sku == sku)
 		)
 		if row is None:
 			raise HTTPException(status_code=404, detail=f"SKU {sku} not registered")
-		row.in_stock = body.in_stock
+		for f in _CB_FIELDS:
+			v = getattr(body, f)
+			if v is not None:
+				setattr(row, f, v)
 		await db.commit()
+		await db.refresh(row)
 
-		# Don't block the operator — a set can go out of print and they have no
-		# choice. Block the MACHINE, and tell them exactly what they just
-		# orphaned so they can void or rebind those balls.
+		# A change (out of stock, or card_count no longer matching a bound opened
+		# booster) can orphan loaded balls. Don't block the operator — block the
+		# MACHINE and report what got orphaned so they can void/rebind.
 		orphaned = [
 			b for b in await wt.unclaimable_loaded_balls(db)
 			if b["reason"].endswith("is out of stock")
@@ -604,8 +637,7 @@ async def patch_closed_stock(sku: str, body: PatchClosedStockBody, _: AdminIdent
 	fault = await machine.refresh_inventory_fault()
 	return {
 		"ok": True,
-		"sku": sku,
-		"in_stock": row.in_stock,
+		"closed_booster": _serialize_closed_booster(row),
 		# Non-empty => the queue is now PAUSED until these are voided or rebound.
 		"orphaned_balls": orphaned,
 		"queue_paused": bool(fault),
@@ -706,7 +738,7 @@ async def import_inventory(items: List[dict], _: AdminIdentity = RequireAdmin):
 			elif kind == "opened_booster":
 				_new_opened_booster(db, item)
 			elif kind == "closed_booster":
-				await _upsert_closed_stock(db, item)
+				await _upsert_closed_booster(db, item)
 			else:
 				raise HTTPException(status_code=400, detail=f"item {i}: unknown type {kind!r}")
 			counts[kind] += 1
