@@ -59,12 +59,16 @@ async def _user_for_sid(session, sid) -> Optional[User]:
 
 
 def _serialize_card(c: Card) -> dict:
+	ct = c.card_type
 	return {
 		"id": str(c.id),
-		"set": c.set,
-		"number": c.number,
-		"rarity": c.rarity.value if c.rarity else None,
-		"image_url": c.image_url,
+		"sku": ct.sku if ct else None,
+		"name": ct.name if ct else None,
+		"set": ct.set if ct else None,
+		"number": ct.number if ct else None,
+		"type": ct.type if ct else None,
+		"rarity": ct.rarity.value if ct and ct.rarity else None,
+		"image_url": ct.image_url if ct else None,
 		"condition": c.condition,
 		"status": c.status.value,
 		"acquired_at": int(c.acquired_at.timestamp()) if c.acquired_at else None,
@@ -95,7 +99,8 @@ def _serialize_pending_win(w: Win) -> dict:
 
 
 def _resell_price_for_card(c: Card) -> int:
-	return RESELL_PRICE_BY_RARITY_CENTS.get(c.rarity.value, 0)
+	ct = c.card_type
+	return RESELL_PRICE_BY_RARITY_CENTS.get(ct.rarity.value, 0) if ct and ct.rarity else 0
 
 
 # ─── Win settlements: booster pair ──────────────────────────────────────

@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from .db import async_session, engine, Base
 from .models import (
-    CommitmentBatch, Ball, OpenedBooster, ClosedBooster, Card,
+    CommitmentBatch, Ball, OpenedBooster, ClosedBooster, Card, CardType,
     BallStatus, CardStatus, CardOrigin, CardRarity, PrizeKind,
 )
 
@@ -54,10 +54,31 @@ async def seed():
         db.add(batch)
         await db.flush()
 
-        # 6 OpenedBoosters, each with 3 catalogued cards (the filmed reveal).
+        # Card catalog (CardType), one per template — complete so cards bind.
+        card_types = {}
+        for set_, num, rarity, image_url in CARD_TEMPLATES:
+            ct = CardType(
+                sku=f"{set_}-{num}", name=f"Card {num}", image_url=image_url,
+                type="holo", rarity=rarity, set=set_, number=num,
+            )
+            db.add(ct)
+            card_types[ct.sku] = ct
+        await db.flush()
+
+        # Closed-booster catalog for this SKU — complete (name, faces, count).
+        closed = ClosedBooster(
+            sku=SKU, name="Pokémon 151", card_count=3, in_stock=True,
+            image_front_url="https://example.com/boosters/151-front.png",
+            image_back_url="https://example.com/boosters/151-back.png",
+        )
+        db.add(closed)
+        await db.flush()
+
+        # 6 OpenedBoosters, each linked to the ClosedBooster with 3 ordered cards.
         opened_list = []
         for i in range(6):
             ob = OpenedBooster(
+                closed_booster_id=closed.id,
                 sku=SKU,
                 video_url=f"https://example.com/videos/opened_{i}.mp4",
                 video_hash=_fake_hash(f"opened-video-{i}"),
@@ -70,21 +91,19 @@ async def seed():
             for j in range(3):
                 set_, num, rarity, image_url = CARD_TEMPLATES[(i + j) % len(CARD_TEMPLATES)]
                 db.add(Card(
-                    set=set_, number=num, rarity=rarity, image_url=image_url,
+                    card_type_id=card_types[f"{set_}-{num}"].id,
                     origin=CardOrigin.OPENED_BOOSTER,
                     opened_booster_id=ob.id,
+                    position=j,
                     status=CardStatus.IN_POOL,
                 ))
-
-        # Sealed-pack availability for this SKU (fungible, tracked per-SKU).
-        db.add(ClosedBooster(sku=SKU, in_stock=True))
 
         # 6 standalone single-prize Cards.
         single_cards = []
         for i in range(6):
             set_, num, rarity, image_url = CARD_TEMPLATES[i % len(CARD_TEMPLATES)]
             card = Card(
-                set=set_, number=num, rarity=rarity, image_url=image_url,
+                card_type_id=card_types[f"{set_}-{num}"].id,
                 origin=CardOrigin.SINGLE_PRIZE,
                 status=CardStatus.IN_POOL,
             )

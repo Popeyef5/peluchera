@@ -304,13 +304,34 @@ class OpenedBooster(Base):
     )
 
 
+class CardType(Base):
+    """Catalog of cards — one row per distinct card (the 'what card is this'):
+    SKU, name, image, holo/foil `type` and rarity. Card instances reference a
+    CardType. Buildable partially; `is_complete` gates use as a prize."""
+    __tablename__ = "card_type"
+    id        = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sku       = Column(String, unique=True, index=True, nullable=False)
+    name      = Column(String)
+    image_url = Column(String)
+    # Holo/foil rendering category (e.g. "reverse-holo", "trainer-gallery") —
+    # free string so new effects don't need a migration; UI offers a datalist.
+    type      = Column(String)
+    rarity    = Column(Enum(CardRarity, name="card_rarity"))
+    set       = Column(String)
+    number    = Column(String)
+
+    @property
+    def is_complete(self) -> bool:
+        return bool(self.sku and self.name and self.image_url and self.type and self.rarity)
+
+
 class Card(Base):
+    """A specific card instance (a 'won card'): references its CardType (the
+    catalog entry) plus per-instance state — origin, position within an opened
+    booster, ownership, shipment, status."""
     __tablename__ = "card"
     id                = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    set               = Column(String, nullable=False)
-    number            = Column(String, nullable=False)
-    rarity            = Column(Enum(CardRarity, name="card_rarity"), nullable=False)
-    image_url         = Column(String, nullable=False)
+    card_type_id      = Column(UUID(as_uuid=True), ForeignKey("card_type.id"), index=True)
     condition         = Column(String)
 
     origin            = Column(Enum(CardOrigin, name="card_origin"), nullable=False)
@@ -324,6 +345,7 @@ class Card(Base):
 
     shipment_id       = Column(UUID(as_uuid=True), ForeignKey("shipment.id"))
 
+    card_type         = relationship("CardType", lazy="selectin")
     opened_booster    = relationship("OpenedBooster", back_populates="cards")
     owner             = relationship("User", foreign_keys=[owner_user_id])
     shipment          = relationship("Shipment", foreign_keys=[shipment_id], back_populates="cards")

@@ -257,7 +257,8 @@ def _booster_resell_price(sku: str) -> int:
 
 
 def _card_resell_price(card: Card) -> int:
-    return RESELL_PRICE_BY_RARITY_CENTS.get(card.rarity.value, 0)
+    ct = card.card_type
+    return RESELL_PRICE_BY_RARITY_CENTS.get(ct.rarity.value, 0) if ct and ct.rarity else 0
 
 
 # ─── Booster-pair settlements ───────────────────────────────────────────

@@ -28,7 +28,7 @@ from ..config import PI_SERVER_URL
 from ..versioning import PI_VPS_PROTO
 
 from ..models import (
-	Ball, OpenedBooster, ClosedBooster, Card, CommitmentBatch, QueueEntry, Win,
+	Ball, OpenedBooster, ClosedBooster, Card, CardType, CommitmentBatch, QueueEntry, Win,
 	BallStatus, InventoryStatus, PrizeKind, CardStatus, CardRarity, CardOrigin,
 )
 
@@ -207,6 +207,8 @@ async def bind_ball_card(
 			raise HTTPException(status_code=404, detail="Card not found")
 		if card.status != CardStatus.IN_POOL:
 			raise HTTPException(status_code=409, detail=f"Card is {card.status.value}, not IN_POOL")
+		if card.card_type is None or not card.card_type.is_complete:
+			raise HTTPException(status_code=409, detail="Card's type is incomplete — set its name, image, type and rarity first.")
 
 		existing_owner = await db.scalar(
 			select(Ball).where(Ball.prize_card_id == card_uuid, Ball.serial != serial)
@@ -472,15 +474,16 @@ async def list_closed_boosters(_: AdminIdentity = RequireAdmin):
 async def list_cards(_: AdminIdentity = RequireAdmin):
 	async with async_session() as db:
 		rows = (await db.execute(
-			select(Card).order_by(Card.set, Card.number).limit(200)
+			select(Card).order_by(Card.id).limit(200)
 		)).scalars().all()
 		return {
 			"cards": [
 				{
 					"id": str(r.id),
-					"set": r.set,
-					"number": r.number,
-					"rarity": r.rarity.value,
+					"sku": r.card_type.sku if r.card_type else None,
+					"name": r.card_type.name if r.card_type else None,
+					"type": r.card_type.type if r.card_type else None,
+					"rarity": r.card_type.rarity.value if r.card_type and r.card_type.rarity else None,
 					"status": r.status.value,
 				}
 				for r in rows
@@ -561,17 +564,20 @@ async def _upsert_closed_booster(db, data: dict):
 	return await db.scalar(select(ClosedBooster).where(ClosedBooster.sku == sku))
 
 
-def _new_card(db, data: dict) -> Card:
-	for f in ("set", "number", "image_url"):
-		if not (data.get(f) or "").strip():
-			raise HTTPException(status_code=400, detail=f"card needs {f}")
+async def _new_card(db, data: dict) -> Card:
+	"""Create a card INSTANCE referencing a CardType (looked up by sku)."""
+	sku = (data.get("card_type_sku") or data.get("sku") or "").strip()
+	ct = await db.scalar(select(CardType).where(CardType.sku == sku)) if sku else None
+	if ct is None:
+		raise HTTPException(status_code=400, detail="card needs a valid card_type_sku")
+	origin_val = data.get("origin")
+	valid = {o.value for o in CardOrigin}
 	card = Card(
-		set=data["set"].strip(),
-		number=data["number"].strip(),
-		rarity=_parse_rarity(data.get("rarity") or ""),
-		image_url=data["image_url"].strip(),
+		card_type_id=ct.id,
+		origin=CardOrigin(origin_val) if origin_val in valid else CardOrigin.SINGLE_PRIZE,
+		opened_booster_id=data.get("opened_booster_id"),
+		position=data.get("position"),
 		condition=(data.get("condition") or None),
-		origin=CardOrigin.SINGLE_PRIZE,
 		status=CardStatus.IN_POOL,
 	)
 	db.add(card)
@@ -665,34 +671,122 @@ async def patch_closed_booster(sku: str, body: PatchClosedBoosterBody, _: AdminI
 	}
 
 
+# ─── Card types (catalog) ────────────────────────────────────────────────
+
+_CT_FIELDS = ("name", "image_url", "type", "rarity", "set", "number")
+
+
+def _serialize_card_type(t: CardType) -> dict:
+	return {
+		"id": str(t.id),
+		"sku": t.sku,
+		"name": t.name,
+		"image_url": t.image_url,
+		"type": t.type,
+		"rarity": t.rarity.value if t.rarity else None,
+		"set": t.set,
+		"number": t.number,
+		"is_complete": t.is_complete,
+	}
+
+
+@router.get("/inventory/card-types")
+async def list_card_types(_: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		rows = (await db.execute(select(CardType).order_by(CardType.sku))).scalars().all()
+		return {"card_types": [_serialize_card_type(t) for t in rows]}
+
+
+class CardTypeBody(BaseModel):
+	sku: str
+	name: Optional[str] = None
+	image_url: Optional[str] = None
+	type: Optional[str] = None
+	rarity: Optional[str] = None
+	set: Optional[str] = None
+	number: Optional[str] = None
+
+
+@router.post("/inventory/card-types")
+async def create_card_type(body: CardTypeBody, _: AdminIdentity = RequireAdmin):
+	"""Create/update a card catalog entry by SKU. Partial allowed; is_complete
+	gates using it as a prize."""
+	sku = (body.sku or "").strip()
+	if not sku:
+		raise HTTPException(status_code=400, detail="card type needs sku")
+	async with async_session() as db:
+		provided = {}
+		for f in _CT_FIELDS:
+			v = getattr(body, f)
+			if v is not None:
+				provided[f] = _parse_rarity(v) if f == "rarity" else v
+		stmt = pg_insert(CardType).values(sku=sku, **provided)
+		if provided:
+			stmt = stmt.on_conflict_do_update(index_elements=["sku"], set_=provided)
+		else:
+			stmt = stmt.on_conflict_do_nothing(index_elements=["sku"])
+		await db.execute(stmt)
+		await db.commit()
+		row = await db.scalar(select(CardType).where(CardType.sku == sku))
+		return {"ok": True, "card_type": _serialize_card_type(row)}
+
+
+class PatchCardTypeBody(BaseModel):
+	name: Optional[str] = None
+	image_url: Optional[str] = None
+	type: Optional[str] = None
+	rarity: Optional[str] = None
+	set: Optional[str] = None
+	number: Optional[str] = None
+
+
+@router.patch("/inventory/card-types/{sku}")
+async def patch_card_type(sku: str, body: PatchCardTypeBody, _: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		row = await db.scalar(select(CardType).where(CardType.sku == sku))
+		if row is None:
+			raise HTTPException(status_code=404, detail=f"card type {sku} not found")
+		for f in _CT_FIELDS:
+			v = getattr(body, f)
+			if v is not None:
+				setattr(row, f, _parse_rarity(v) if f == "rarity" else v)
+		await db.commit()
+		await db.refresh(row)
+		return {"ok": True, "card_type": _serialize_card_type(row)}
+
+
+# ─── Card instances ──────────────────────────────────────────────────────
+
 class CreateCardBody(BaseModel):
-	set: str
-	number: str
-	rarity: str
-	image_url: str
+	card_type_sku: str
+	origin: Optional[str] = None
+	opened_booster_id: Optional[str] = None
+	position: Optional[int] = None
 	condition: Optional[str] = None
 
 
 @router.post("/inventory/cards")
 async def create_card(body: CreateCardBody, _: AdminIdentity = RequireAdmin):
+	"""Create a card INSTANCE from a CardType (by sku) — for single-card prizes
+	and for attaching cards to an opened booster."""
 	async with async_session() as db:
-		card = _new_card(db, body.dict())
+		data = body.dict()
+		if data.get("opened_booster_id"):
+			data["opened_booster_id"] = uuid.UUID(data["opened_booster_id"])
+		card = await _new_card(db, data)
 		await db.commit()
 		return {"ok": True, "id": str(card.id)}
 
 
 class PatchCardBody(BaseModel):
-	set: Optional[str] = None
-	number: Optional[str] = None
-	rarity: Optional[str] = None
-	image_url: Optional[str] = None
 	condition: Optional[str] = None
+	position: Optional[int] = None
 
 
 @router.patch("/inventory/cards/{card_id}")
 async def patch_card(card_id: str, body: PatchCardBody, _: AdminIdentity = RequireAdmin):
-	"""Edit a card's metadata. Only IN_POOL cards are editable — once a card is
-	reserved/owned/shipped its identity is locked."""
+	"""Edit a card instance's per-instance fields (condition, position). Catalog
+	fields live on its CardType. Only IN_POOL cards are editable."""
 	try:
 		cid = uuid.UUID(card_id)
 	except ValueError:
@@ -703,16 +797,10 @@ async def patch_card(card_id: str, body: PatchCardBody, _: AdminIdentity = Requi
 			raise HTTPException(status_code=404, detail="Card not found")
 		if card.status != CardStatus.IN_POOL:
 			raise HTTPException(status_code=409, detail=f"Card is {card.status.value}, not editable")
-		if body.set is not None:
-			card.set = body.set.strip()
-		if body.number is not None:
-			card.number = body.number.strip()
-		if body.rarity is not None:
-			card.rarity = _parse_rarity(body.rarity)
-		if body.image_url is not None:
-			card.image_url = body.image_url.strip()
 		if body.condition is not None:
 			card.condition = body.condition or None
+		if body.position is not None:
+			card.position = body.position
 		await db.commit()
 		return {"ok": True, "id": str(card.id)}
 
@@ -762,7 +850,7 @@ async def import_inventory(items: List[dict], _: AdminIdentity = RequireAdmin):
 		for i, item in enumerate(items):
 			kind = (item or {}).get("type")
 			if kind == "card":
-				_new_card(db, item)
+				await _new_card(db, item)
 			elif kind == "opened_booster":
 				_new_opened_booster(db, item)
 			elif kind == "closed_booster":
@@ -793,11 +881,14 @@ def _describe_prize(w: Win) -> dict:
 		info["label"] = f"Booster pair · {ob.sku}" if ob else "Booster pair"
 	else:
 		c = w.prize_card
-		if c is not None:
-			info["label"] = f"{c.set} {c.number} · {c.rarity.value}"
+		ct = c.card_type if c is not None else None
+		if ct is not None:
+			rarity = ct.rarity.value if ct.rarity else "—"
+			info["label"] = f"{ct.name or ct.sku} · {rarity}"
 			info["card"] = {
-				"set": c.set, "number": c.number,
-				"rarity": c.rarity.value, "image_url": c.image_url,
+				"sku": ct.sku, "name": ct.name, "set": ct.set, "number": ct.number,
+				"type": ct.type, "rarity": ct.rarity.value if ct.rarity else None,
+				"image_url": ct.image_url,
 			}
 		else:
 			info["label"] = "Single card"
