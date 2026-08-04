@@ -20,9 +20,11 @@ export function getSupabase(): SupabaseClient {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      // Disable URL hash detection — we use email/password only, no OAuth
-      // redirect handling that would benefit from it.
-      detectSessionInUrl: false,
+      // OAuth (Google, …) redirects back with a PKCE code in the URL; let the
+      // client detect it and exchange it for a session automatically. Harmless
+      // for the email/password path (only acts when auth params are present).
+      detectSessionInUrl: true,
+      flowType: "pkce",
     },
   });
   return _client;

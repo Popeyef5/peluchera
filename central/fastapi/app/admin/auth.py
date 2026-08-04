@@ -19,7 +19,12 @@ import jwt
 from jwt import PyJWKClient
 from fastapi import Depends, Header, HTTPException, status
 
-from ..config import SUPABASE_URL, SUPABASE_JWT_SECRET, SUPABASE_JWT_AUDIENCE
+from ..config import (
+	SUPABASE_URL,
+	SUPABASE_JWT_SECRET,
+	SUPABASE_JWT_AUDIENCE,
+	admin_email_allowed,
+)
 from ..logging import log
 
 
@@ -128,9 +133,21 @@ async def current_admin(
 			headers={"WWW-Authenticate": "Bearer"},
 		)
 
+	email = payload.get("email")
+
+	# Access gate. The JWT proves a valid Supabase identity; the allow-list
+	# decides whether that identity is an OPERATOR. Critical once OAuth login is
+	# on — otherwise anyone with a Google account could self-provision admin.
+	if not admin_email_allowed(email):
+		log.warning("Admin access denied for %s — not in ADMIN_EMAIL_ALLOWLIST/DOMAINS", email)
+		raise HTTPException(
+			status_code=status.HTTP_403_FORBIDDEN,
+			detail="This account is not authorized for admin access.",
+		)
+
 	return AdminIdentity(
 		sub=payload.get("sub", ""),
-		email=payload.get("email"),
+		email=email,
 		role=payload.get("role"),
 	)
 

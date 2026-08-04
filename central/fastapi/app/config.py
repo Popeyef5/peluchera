@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 # Central place for env-vars and project constants
 FRAME_RATE           = 0.1
@@ -30,6 +31,37 @@ BYPASS_PAYMENT   = os.environ.get("BYPASS_PAYMENT", "false").lower() == "true"
 SUPABASE_URL          = os.environ.get("SUPABASE_URL")
 SUPABASE_JWT_SECRET   = os.environ.get("SUPABASE_JWT_SECRET")
 SUPABASE_JWT_AUDIENCE = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
+
+# Admin access allow-list. Once admin login can be social/OAuth, ANYONE with a
+# Google (etc.) account can obtain a valid Supabase session — so this is the gate
+# that decides who is actually an operator. Two optional knobs:
+#   ADMIN_EMAIL_ALLOWLIST — comma-separated exact emails
+#   ADMIN_EMAIL_DOMAINS   — comma-separated domains, e.g. "cl4ws.com"
+# If BOTH are empty the gate is OPEN — any valid Supabase JWT is an admin (the
+# legacy behaviour, safe ONLY while dashboard sign-ups are disabled / invite-only).
+# Set at least one before enabling OAuth login.
+ADMIN_EMAIL_ALLOWLIST = {
+    e.strip().lower()
+    for e in os.environ.get("ADMIN_EMAIL_ALLOWLIST", "").split(",")
+    if e.strip()
+}
+ADMIN_EMAIL_DOMAINS = {
+    d.strip().lower().lstrip("@")
+    for d in os.environ.get("ADMIN_EMAIL_DOMAINS", "").split(",")
+    if d.strip()
+}
+
+
+def admin_email_allowed(email: Optional[str]) -> bool:
+    """Whether this identity may act as an admin. Open when no allow-list is set."""
+    if not ADMIN_EMAIL_ALLOWLIST and not ADMIN_EMAIL_DOMAINS:
+        return True
+    if not email:
+        return False
+    email = email.lower()
+    if email in ADMIN_EMAIL_ALLOWLIST:
+        return True
+    return email.rsplit("@", 1)[-1] in ADMIN_EMAIL_DOMAINS
 
 # FREE PLAY — the pre-monetization mode.
 #

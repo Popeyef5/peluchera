@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
+import { apiFetch, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,12 +21,38 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If a session already exists (e.g., they hit /login by mistake), forward.
-  useEffect(() => {
-    getSupabase().auth.getSession().then(({ data }) => {
-      if (data.session) router.replace("/balls");
-    });
+  // Once there's a session (email/password OR an OAuth redirect back to here),
+  // confirm the identity is actually an authorized operator before forwarding —
+  // the backend allow-list is the real gate, /whoami 403s if not allowed.
+  const verifyAndForward = useCallback(async () => {
+    try {
+      await apiFetch("/admin/whoami");
+      router.replace("/balls");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        await getSupabase().auth.signOut();
+        setError("This account isn't authorized for admin access.");
+      } else if (!(e instanceof ApiError && e.status === 401)) {
+        setError(e instanceof ApiError ? e.message : String(e));
+      }
+    }
   }, [router]);
+
+  // Fires INITIAL_SESSION on mount (covers an existing session and the OAuth
+  // return) and SIGNED_IN after login.
+  useEffect(() => {
+    const { data: sub } = getSupabase().auth.onAuthStateChange((_event, session) => {
+      if (session) verifyAndForward();
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [verifyAndForward]);
+
+  // Surface the "bounced by RequireAuth" case (?denied=1).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("denied")) {
+      setError("This account isn't authorized for admin access.");
+    }
+  }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +64,16 @@ export default function LoginPage() {
       setError(error.message);
       return;
     }
-    router.replace("/balls");
+    await verifyAndForward();
+  };
+
+  const onGoogle = async () => {
+    setError(null);
+    const { error } = await getSupabase().auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/login` },
+    });
+    if (error) setError(error.message);
   };
 
   return (
@@ -47,7 +83,22 @@ export default function LoginPage() {
           <CardTitle>Sign in</CardTitle>
           <CardDescription>Garra admin console</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={onGoogle}
+          >
+            Continue with Google
+          </Button>
+
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">or</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
           <form onSubmit={onSubmit} className="space-y-3">
             <Input
               type="email"
