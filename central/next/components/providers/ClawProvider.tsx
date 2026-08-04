@@ -29,7 +29,7 @@ import { toaster } from "@/components/ui/toaster"
 import { erc20Abi } from 'viem';
 import { USDCAddress, treasuryAddress, ticketUsdcBaseUnits } from '@/lib/crypto/contracts';
 import { writeContract, waitForTransactionReceipt } from 'wagmi/actions';
-import { config } from '@/config';
+import { useConfig } from 'wagmi';
 import celebrate from '@/components/confetti';
 
 /* bit‑mask helpers */
@@ -257,6 +257,9 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	 * output so disconnected guests can play.
 	 */
 	const { address: walletAddress, chainId } = useWallet();
+	// Active wagmi config from the mounted provider stack (Reown or Privy), so
+	// writeContract/waitForTransactionReceipt always target the right connector.
+	const config = useConfig();
 	const guestAddress = useMemo(
 		() => (BYPASS_PAYMENT ? getOrCreateGuestAddress() : undefined),
 		[],

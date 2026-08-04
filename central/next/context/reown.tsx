@@ -6,7 +6,6 @@ import { createAppKit } from "@reown/appkit/react";
 import { baseSepolia } from "@reown/appkit/networks";
 import { cookieToInitialState, WagmiProvider, type Config } from "wagmi";
 import { wagmiAdapter, projectId } from "@/config";
-import { WALLET_PROVIDER } from "@/lib/wallet/provider";
 import { ReownWalletBridge } from "./ReownWalletBridge";
 
 const queryClient = new QueryClient();
@@ -18,11 +17,16 @@ const metadata = {
   icons: ["https://avatars.githubusercontent.com/u/179229932"],
 };
 
-// createAppKit is a global singleton side effect. Guard it on the flag so that
-// when the app is built for Privy this module (statically imported by the switch)
-// doesn't spin up WalletConnect. When it IS Reown, this runs once at module load,
-// exactly as before.
-if (WALLET_PROVIDER === "reown") {
+// createAppKit is a global singleton side effect. With the runtime selector this
+// module is statically imported even when Privy is active, so we must NOT run it
+// at module load — only lazily, the first time ReownStack actually mounts (i.e.
+// Reown was selected). Guarded so it runs exactly once. It executes at the top of
+// ReownStack's render, before the Wagmi/bridge children, so the Reown hooks in
+// ReownWalletBridge find the initialized modal.
+let appKitInited = false;
+function ensureAppKit() {
+  if (appKitInited) return;
+  appKitInited = true;
   if (!projectId) throw new Error("Project ID is not defined");
   createAppKit({
     adapters: [wagmiAdapter],
@@ -53,6 +57,7 @@ export default function ReownStack({
   children: ReactNode;
   cookies: string | null;
 }) {
+  ensureAppKit();
   const initialState = cookieToInitialState(
     wagmiAdapter.wagmiConfig as Config,
     cookies,

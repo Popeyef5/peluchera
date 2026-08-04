@@ -4,6 +4,7 @@ import "./globals.css";
 
 import { headers } from "next/headers"
 import ContextProvider from "@/context";
+import { normalizeWalletProvider } from "@/lib/wallet/provider";
 import ChakraProvider from "@/components/chakra/provider"
 import { Toaster } from "@/components/ui/toaster";
 import Script from "next/script"
@@ -32,6 +33,10 @@ export default async function RootLayout({
 
   const headersObj = await headers();
   const cookies = headersObj.get('cookie')
+
+  // Read the wallet provider server-side (runtime env, NOT baked) so it can be
+  // swapped with a restart instead of a rebuild. Defaults to Reown.
+  const walletProvider = normalizeWalletProvider(process.env.WALLET_PROVIDER);
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -68,7 +73,7 @@ export default async function RootLayout({
             zIndex: -1,
           }}
         />
-        <ContextProvider cookies={cookies}>
+        <ContextProvider cookies={cookies} walletProvider={walletProvider}>
           <ChakraProvider>
             {children}
             <Toaster />
