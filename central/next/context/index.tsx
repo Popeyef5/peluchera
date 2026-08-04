@@ -10,7 +10,11 @@ import type { WalletProviderKind } from "@/lib/wallet/provider";
 // runtime WALLET_PROVIDER swap + restart works without a rebuild. ssr stays on so
 // the provider tree still server-renders (wagmi cookie hydration, no flash).
 const ReownStack = dynamic(() => import("./reown"));
-const PrivyStack = dynamic(() => import("./privy"));
+// ssr:false on Privy: the Reown path keeps SSR (wagmi cookie hydration), while
+// the Privy chunk is client-only — so in the default Reown mode it is never
+// rendered and therefore never compiled in dev (a big cold-compile win). When
+// Privy IS selected the app renders client-side, which is fine for that path.
+const PrivyStack = dynamic(() => import("./privy"), { ssr: false });
 
 // Wallet-provider switch. `walletProvider` comes from the server (app/layout.tsx
 // reads WALLET_PROVIDER and passes it in), so flipping it is a restart, not a
