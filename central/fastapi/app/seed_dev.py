@@ -14,12 +14,14 @@ ENABLE_DEV_EVENTS=1) lets you trigger a win from the browser console:
 
 import asyncio
 import hashlib
+import sys
 from datetime import datetime
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from .db import async_session, engine, Base
 from .models import (
     CommitmentBatch, Ball, OpenedBooster, ClosedBooster, Card, CardType,
+    Win, LedgerEntry, Payment, QueueEntry,
     BallStatus, CardStatus, CardOrigin, CardRarity, PrizeKind,
 )
 
@@ -38,6 +40,23 @@ CARD_TEMPLATES = [
 
 def _fake_hash(*parts: str) -> str:
     return "0x" + hashlib.sha256("|".join(parts).encode()).hexdigest()
+
+
+# Game/inventory/queue tables, in FK-safe delete order (children first). Users,
+# rounds and withdrawals are intentionally left alone. Only reachable via the
+# explicit `--reset` flag, so a normal seed can never wipe data by accident.
+_RESET_ORDER = [
+    Win, LedgerEntry, Payment, QueueEntry,   # reference queue/ball/card
+    Ball, Card, OpenedBooster, ClosedBooster, CardType, CommitmentBatch,
+]
+
+
+async def reset():
+    async with async_session() as db:
+        for model in _RESET_ORDER:
+            await db.execute(delete(model))
+        await db.commit()
+    print("[seed] reset: cleared inventory, queue, payments, wins, ledger.")
 
 
 async def seed():
@@ -154,6 +173,8 @@ async def main():
     # Ensure tables/enums exist before inserting.
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    if "--reset" in sys.argv:
+        await reset()
     await seed()
 
 
