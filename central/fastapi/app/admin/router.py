@@ -83,6 +83,14 @@ async def list_balls(_: AdminIdentity = RequireAdmin):
 					"opened_booster_id": str(b.opened_booster_id) if b.opened_booster_id else None,
 					"opened_booster_sku": b.opened_booster.sku if b.opened_booster else None,
 					"prize_card_id": str(b.prize_card_id) if b.prize_card_id else None,
+					# The card's catalog SKU (via prize_card -> card_type), so a
+					# single-card ball shows a real SKU instead of a "(card)"
+					# placeholder — mirrors opened_booster_sku for booster balls.
+					"prize_card_sku": (
+						b.prize_card.card_type.sku
+						if b.prize_card and b.prize_card.card_type
+						else None
+					),
 				}
 				for b in balls
 			]

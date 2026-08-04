@@ -36,6 +36,7 @@ type Ball = {
   opened_booster_id: string | null;
   opened_booster_sku: string | null;
   prize_card_id: string | null;
+  prize_card_sku: string | null;
 };
 
 type OpenedBooster = {
@@ -179,6 +180,7 @@ export default function BallsPage() {
                       <TableCell>{b.prize_kind}</TableCell>
                       <TableCell className="font-mono text-xs">
                         {b.opened_booster_sku ??
+                          b.prize_card_sku ??
                           (b.prize_card_id ? "(card)" : "(unbound)")}
                       </TableCell>
                       <TableCell className="text-right">
