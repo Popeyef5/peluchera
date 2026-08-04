@@ -64,7 +64,7 @@ export const MOCK_DECK: Card[] = [
 	{ id: "shiny-vmax",   name: "Charizard VMAX (Shiny Vault)",      rarity: "rare holo vmax",            supertype: "pokémon", subtypes: ["vmax"],      image: `${TCG}/swsh45sv/SV107.png` },
 ];
 
-export const CARD_BACK_IMAGE = "/cards/back.png";
+export const CARD_BACK_IMAGE = "/cards/back.webp";
 
 /**
  * Maps a card to the tileable foil texture used as the first layer of its
@@ -77,8 +77,8 @@ export const CARD_BACK_IMAGE = "/cards/back.png";
  * Texture choices follow simey's etch+style buckets:
  *   sunpillar  → metal.png      (V, radiant, shiny V)
  *   swsecret   → galaxy.jpg     (VMAX, VSTAR, secret, rainbow alt, shiny VMAX)
- *   rainbow    → rainbow.jpg    (rainbow holo, trainer gallery default)
- *   swholo     → cosmos.png     (rare holo, rare holo cosmos)
+ *   rainbow    → rainbow.webp   (rainbow holo, trainer gallery default)
+ *   swholo     → cosmos.webp    (rare holo, rare holo cosmos)
  *   glitter    → glitter.png    (amazing rare, shiny)
  *   wave       → wave.png       (rare ultra full-art, reverse holo)
  */
@@ -89,13 +89,13 @@ export function getFoilTexture(
 		if (card.subtypes?.includes("vmax")) return "/img/galaxy.jpg";
 		if (card.subtypes?.includes("v"))    return "/img/metal.png";
 		if (card.rarity === "rare secret")   return "/img/galaxy.jpg";
-		return "/img/rainbow.jpg";
+		return "/img/rainbow.webp";
 	}
 	switch (card.rarity) {
 		case "common":                    return undefined;
 		case "rare reverse holo":         return "/img/wave.png";
-		case "rare holo":                 return "/img/cosmos.png";
-		case "rare holo cosmos":          return "/img/cosmos.png";
+		case "rare holo":                 return "/img/cosmos.webp";
+		case "rare holo cosmos":          return "/img/cosmos.webp";
 		// Drop the .shine:before texture layer entirely — every generic tile we
 		// have shows visible pattern artifacts here, and simey's hand-painted
 		// per-card swsecret texture isn't something we can fake. Leaving --foil
@@ -108,10 +108,10 @@ export function getFoilTexture(
 		case "rare ultra":                return "/img/wave.png";
 		case "rare holo vmax":            return "/img/galaxy.jpg";
 		case "rare holo vstar":           return "/img/galaxy.jpg";
-		case "rare rainbow":              return "/img/rainbow.jpg";
-		case "rare rainbow alt":          return "/img/rainbow.jpg";
+		case "rare rainbow":              return "/img/rainbow.webp";
+		case "rare rainbow alt":          return "/img/rainbow.webp";
 		case "rare secret":               return "/img/galaxy.jpg";
-		case "trainer gallery rare holo": return "/img/rainbow.jpg";
+		case "trainer gallery rare holo": return "/img/rainbow.webp";
 		case "rare shiny":                return "/img/glitter.png";
 		case "rare shiny v":              return "/img/metal.png";
 		case "rare shiny vmax":           return "/img/galaxy.jpg";

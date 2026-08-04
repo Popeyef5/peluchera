@@ -43,7 +43,7 @@ export default async function RootLayout({
       <head>
         {/* Preload the card back so the first auto-shuffle doesn't flash the
             simey CSS solid-blue fallback color while the bg-image fetches. */}
-        <link rel="preload" as="image" href="/cards/back.png" />
+        <link rel="preload" as="image" href="/cards/back.webp" />
       </head>
       {isProd && <Script defer src={process.env.NEXT_PUBLIC_UMAMI_SRC} data-website-id={process.env.NEXT_PUBLIC_UMAMI_WEBSITE_ID} />}
       <body
@@ -57,7 +57,7 @@ export default async function RootLayout({
             need the raw <img> with decoding="sync" + loading="eager". */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/cards/back.png"
+          src="/cards/back.webp"
           alt=""
           aria-hidden="true"
           decoding="sync"
