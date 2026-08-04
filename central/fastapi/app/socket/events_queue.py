@@ -19,6 +19,7 @@ from ..helpers import (
 )
 from ..payments import already_in_queue, initiate_payment, confirm_payment
 from ..win_transitions import get_or_create_user
+from .. import machine
 from ..logging import log
 
 
@@ -204,6 +205,14 @@ async def pay_free(sid, data=None):
     if not addr:
         return {"status": "error", "position": -1, "error": "not connected"}
 
+    # Same gate the scheduler applies before starting a turn: never let anyone
+    # into the queue for a play the machine cannot honour (fault / no claimable
+    # prize). Otherwise they sit at "you are next" forever.
+    fault = await machine.blocked()
+    if fault:
+        log.warning("Rejected player %s: machine unavailable (%s)", addr, fault.get("reason"))
+        return {"status": "error", "position": -1, "error": "machine is temporarily unavailable"}
+
     async with async_session() as db:
         round_ = await db.scalar(select(Round).order_by(Round.created_at.desc()))
         if await already_in_queue(db, addr, round_.id):
@@ -234,6 +243,13 @@ async def pay_crypto(sid, data):
     # it — so only a real FREE_PLAY deployment is refused.)
     if FREE_PLAY and not BYPASS_PAYMENT:
         return {"status": "error", "position": -1, "error": "payments are disabled — use pay_free"}
+
+    # Refuse before we verify (or take) any payment: a blocked machine can't
+    # honour the play, so don't let the player fund a turn that will never start.
+    fault = await machine.blocked()
+    if fault:
+        log.warning("Rejected player %s: machine unavailable (%s)", addr, fault.get("reason"))
+        return {"status": "error", "position": -1, "error": "machine is temporarily unavailable"}
 
     async with async_session() as db:
         round_ = await db.scalar(select(Round).order_by(Round.created_at.desc()))

@@ -14,6 +14,7 @@ from ..deps import async_session
 from ..logging import log
 from ..models import Round, PaymentMethod
 from ..payments import already_in_queue, initiate_payment
+from .. import machine
 from ..state import sid_to_addr
 from ..win_transitions import get_or_create_user
 from ..stripe_rail import (
@@ -68,6 +69,13 @@ async def pay_card(sid, data=None):
         return _err("payments are disabled")
     if not stripe_enabled():
         return _err("card payments disabled")
+
+    # Never charge a card for a play the machine can't honour (fault / no
+    # claimable prize) — the same gate the scheduler applies before a turn.
+    fault = await machine.blocked()
+    if fault:
+        log.warning("Rejected player %s: machine unavailable (%s)", addr, fault.get("reason"))
+        return _err("machine is temporarily unavailable")
 
     async with async_session() as db:
         round_ = await db.scalar(select(Round).order_by(Round.created_at.desc()))
