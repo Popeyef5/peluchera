@@ -16,7 +16,7 @@ import asyncio
 import hashlib
 import sys
 from datetime import datetime
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 
 from .db import async_session, engine, Base
 from .models import (
@@ -27,14 +27,17 @@ from .models import (
 
 SKU = "pkmn-151"
 
-# (set, number, rarity, image_url) — image URLs are placeholders.
+# Real card assets so the admin catalog (and, once wired, the win reveal) shows
+# the same cards + foil styles as the design demo. (set, number, rarity, holo
+# type, image) — `type` is a holo_type vocabulary value that maps to a foil.
+_TCG = "https://images.pokemontcg.io"
 CARD_TEMPLATES = [
-    ("151", "001", "COMMON",     "https://example.com/cards/151-001.png"),
-    ("151", "004", "COMMON",     "https://example.com/cards/151-004.png"),
-    ("151", "007", "COMMON",     "https://example.com/cards/151-007.png"),
-    ("151", "025", "RARE",       "https://example.com/cards/151-025.png"),
-    ("151", "150", "HOLO_RARE",  "https://example.com/cards/151-150.png"),
-    ("151", "151", "CHASE",      "https://example.com/cards/151-151.png"),
+    ("151", "001", "COMMON",     "holo",         f"{_TCG}/sm10/33.png"),
+    ("151", "004", "RARE",       "reverse-holo", f"{_TCG}/swsh12/127.png"),
+    ("151", "007", "HOLO_RARE",  "holo",         f"{_TCG}/pgo/24.png"),
+    ("151", "025", "HOLO_RARE",  "cosmos-holo",  f"{_TCG}/swshp/SWSH012.png"),
+    ("151", "150", "CHASE",      "rainbow",      f"{_TCG}/swsh4/188.png"),
+    ("151", "151", "ULTRA_RARE", "galaxy-holo",  f"{_TCG}/pgo/31.png"),
 ]
 
 
@@ -46,13 +49,16 @@ def _fake_hash(*parts: str) -> str:
 # rounds and withdrawals are intentionally left alone. Only reachable via the
 # explicit `--reset` flag, so a normal seed can never wipe data by accident.
 _RESET_ORDER = [
-    Win, LedgerEntry, Payment, QueueEntry,   # reference queue/ball/card
+    LedgerEntry, Win, Payment, QueueEntry,   # ledger refs win; win refs ball/card/queue
     Ball, Card, OpenedBooster, ClosedBooster, CardType, CommitmentBatch,
 ]
 
 
 async def reset():
     async with async_session() as db:
+        # Break the opened_booster -> win FK cycle first: a RESERVED opening
+        # points back at its Win, which would block deleting the Win rows.
+        await db.execute(update(OpenedBooster).values(reserved_by_win_id=None))
         for model in _RESET_ORDER:
             await db.execute(delete(model))
         await db.commit()
@@ -75,10 +81,10 @@ async def seed():
 
         # Card catalog (CardType), one per template — complete so cards bind.
         card_types = {}
-        for set_, num, rarity, image_url in CARD_TEMPLATES:
+        for set_, num, rarity, type_, image_url in CARD_TEMPLATES:
             ct = CardType(
                 sku=f"{set_}-{num}", name=f"Card {num}", image_url=image_url,
-                type="holo", rarity=rarity, set=set_, number=num,
+                type=type_, rarity=rarity, set=set_, number=num,
             )
             db.add(ct)
             card_types[ct.sku] = ct
@@ -108,7 +114,7 @@ async def seed():
             opened_list.append(ob)
 
             for j in range(3):
-                set_, num, rarity, image_url = CARD_TEMPLATES[(i + j) % len(CARD_TEMPLATES)]
+                set_, num, rarity, type_, image_url = CARD_TEMPLATES[(i + j) % len(CARD_TEMPLATES)]
                 db.add(Card(
                     card_type_id=card_types[f"{set_}-{num}"].id,
                     origin=CardOrigin.OPENED_BOOSTER,
@@ -120,7 +126,7 @@ async def seed():
         # 6 standalone single-prize Cards.
         single_cards = []
         for i in range(6):
-            set_, num, rarity, image_url = CARD_TEMPLATES[i % len(CARD_TEMPLATES)]
+            set_, num, rarity, type_, image_url = CARD_TEMPLATES[i % len(CARD_TEMPLATES)]
             card = Card(
                 card_type_id=card_types[f"{set_}-{num}"].id,
                 origin=CardOrigin.SINGLE_PRIZE,

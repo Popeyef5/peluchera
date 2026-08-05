@@ -122,7 +122,7 @@ async def open_booster_win(sid, data):
 				select(Card).where(
 					Card.opened_booster_id == opened_id,
 					Card.owner_user_id == user.id,
-				)
+				).order_by(Card.position)
 			)
 			cards = res.scalars().all()
 		return _ok(settled=True, cards=[_serialize_card(c) for c in cards])
