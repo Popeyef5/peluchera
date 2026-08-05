@@ -93,8 +93,10 @@ async def seed():
         # Closed-booster catalog for this SKU — complete (name, faces, count).
         closed = ClosedBooster(
             sku=SKU, name="Pokémon 151", card_count=3, in_stock=True,
-            image_front_url="https://example.com/boosters/151-front.png",
-            image_back_url="https://example.com/boosters/151-back.png",
+            # Local dev pack art (served from next/public) so the 3D reveal
+            # renders real front/back UV maps same-origin (no CORS, no 404).
+            image_front_url="/boosters/test/front.webp",
+            image_back_url="/boosters/test/back.webp",
         )
         db.add(closed)
         await db.flush()
