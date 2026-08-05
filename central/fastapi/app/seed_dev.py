@@ -35,10 +35,12 @@ SKU = "pkmn-151"
 BOOSTERS = [
     {
         "sku": SKU, "name": "Pokémon 151",
-        # Local dev pack art (served from next/public), SAME on both faces so
-        # the 3D reveal mesh is coherent (no CORS, no 404).
-        "front": "/boosters/test/front.webp",
-        "back": "/boosters/test/front.webp",
+        # Local dev pack art (served from next/public) — the classic Base Set
+        # Charizard pack, a coherent front/back pair (extracted from booster.glb's
+        # own baked faces). Distinct from the thunder SKU below so the two dev
+        # boosters don't look identical.
+        "front": "/boosters/test/charizard-front.webp",
+        "back": "/boosters/test/charizard-back.webp",
         "card_count": 3, "reveal": 3, "openings": 6, "ball_prefix": "B",
     },
     {
