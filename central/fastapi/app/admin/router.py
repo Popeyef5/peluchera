@@ -327,9 +327,13 @@ async def bind_ball_unified(body: BindV2Body, _: AdminIdentity = RequireAdmin):
 				raise HTTPException(status_code=409, detail=f"OpenedBooster is {ob.status.value}, not AVAILABLE")
 			if not ob.is_complete:
 				raise HTTPException(status_code=409, detail="OpenedBooster is incomplete")
-			owner = await db.scalar(select(Ball).where(Ball.opened_booster_id == ob_uuid, Ball.serial != serial))
+			owner = await db.scalar(select(Ball).where(
+				Ball.opened_booster_id == ob_uuid,
+				Ball.serial != serial,
+				Ball.status == BallStatus.LOADED,
+			))
 			if owner is not None:
-				raise HTTPException(status_code=409, detail=f"OpenedBooster already bound to ball {owner.serial}")
+				raise HTTPException(status_code=409, detail=f"OpenedBooster already bound to loaded ball {owner.serial}")
 			opened_booster_id = ob_uuid
 			seed = str(ob_uuid)
 
@@ -550,8 +554,11 @@ async def list_opened_boosters(
 	async with async_session() as db:
 		q = select(OpenedBooster).order_by(OpenedBooster.sku, OpenedBooster.id)
 		if bindable:
+			# Only a LOADED ball "occupies" an opening; a settled/voided ball's
+			# historical reference doesn't block rebinding the freed opening.
 			ball_already_bound = select(Ball.opened_booster_id).where(
-				Ball.opened_booster_id == OpenedBooster.id
+				Ball.opened_booster_id == OpenedBooster.id,
+				Ball.status == BallStatus.LOADED,
 			)
 			q = q.where(
 				and_(

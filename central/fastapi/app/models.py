@@ -1,7 +1,7 @@
 import enum
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, BigInteger, UniqueConstraint, Index, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, BigInteger, UniqueConstraint, Index, Enum, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -201,8 +201,13 @@ class Ball(Base):
     prize_kind          = Column(Enum(PrizeKind, name="prize_kind"), nullable=False)
 
     # Exactly one of these is set, matching prize_kind.
-    opened_booster_id   = Column(UUID(as_uuid=True), ForeignKey("opened_booster.id"), unique=True)
-    prize_card_id       = Column(UUID(as_uuid=True), ForeignKey("card.id"), unique=True)
+    # Not plain-unique: an OpenedBooster / Card can back many balls over their
+    # lifetime (a ball wins it, then buys back or ships sealed → the prize
+    # returns to the pool and a NEW ball may be bound). The invariant is only
+    # ONE *LOADED* ball per prize at a time, enforced by partial unique indexes
+    # (see __table_args__). A settled/voided ball keeps its reference for audit.
+    opened_booster_id   = Column(UUID(as_uuid=True), ForeignKey("opened_booster.id"))
+    prize_card_id       = Column(UUID(as_uuid=True), ForeignKey("card.id"))
     # A CLOSED_BOOSTER prize points at a sealed-pack catalog row. Unlike an
     # OpenedBooster (a unique physical opening) a sealed pack is fungible-by-SKU,
     # so this is NOT unique — many balls may award the same closed booster.
@@ -221,6 +226,15 @@ class Ball(Base):
     closed_booster      = relationship("ClosedBooster", foreign_keys=[closed_booster_id], lazy="selectin")
     batch               = relationship("CommitmentBatch", lazy="selectin")
     win                 = relationship("Win", back_populates="ball", uselist=False)
+
+    __table_args__ = (
+        # At most one LOADED ball may hold a given prize at a time; settled/
+        # voided balls keep their (historical) reference without blocking reuse.
+        Index("uq_ball_opened_booster_loaded", "opened_booster_id",
+              unique=True, postgresql_where=text("status = 'LOADED' AND opened_booster_id IS NOT NULL")),
+        Index("uq_ball_prize_card_loaded", "prize_card_id",
+              unique=True, postgresql_where=text("status = 'LOADED' AND prize_card_id IS NOT NULL")),
+    )
 
 
 class ClosedBooster(Base):
