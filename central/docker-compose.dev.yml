@@ -92,6 +92,9 @@ services:
   fastapi:
     build: ./fastapi
     container_name: claw_fastapi
+    # Dev-only: hot-reload on code changes (the code is bind-mounted below).
+    # Prod uses the Dockerfile CMD without --reload.
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]
     ports:
       - '5000:5000'
     volumes:
