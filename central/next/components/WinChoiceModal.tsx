@@ -23,7 +23,7 @@ const TIMINGS = {
 const AUTO_SHUFFLE_COUNT = SHUFFLE.count;
 
 const WinChoiceModal = () => {
-	const { pendingWin, openBoosterWin, resellPendingWin, keepCardWin, keepClosedBoosterWin, dismissPendingWin } = useClaw();
+	const { pendingWin, openBoosterWin, resellPendingWin, keepCardWin, dismissPendingWin } = useClaw();
 	const isMobile = useIsMobile();
 	// The win we've already shown the reveal for — so we open once per new win
 	// (keyed by win_id) rather than off the roundWon stat, which also jumps to
@@ -217,25 +217,6 @@ const WinChoiceModal = () => {
 		close();
 	};
 
-	// Keep a won sealed pack (no reveal — a closed booster is never opened).
-	const handleKeepClosed = async () => {
-		if (!pendingWin) { close(); return; }
-		const res = await keepClosedBoosterWin();
-		toaster.create(
-			res.ok
-				? { description: "Kept — we'll ship your sealed pack", type: "success", duration: 2500 }
-				: { description: `Couldn't keep: ${res.error ?? "unknown error"}`, type: "error", duration: 2500 },
-		);
-		close();
-	};
-
-	// The primary action depends on the prize kind:
-	//   OPENED_BOOSTER → "Open now" (the reveal animation; consumes the opening)
-	//   CLOSED_BOOSTER → "Keep (ship later)" (sealed pack, no reveal)
-	//   SINGLE_CARD    → "Add to collection"
-	// In every case "Resell" (buyback) and "Add to inventory" (decide later)
-	// stay available. For a closed booster, buyback/keep leave the underlying
-	// OpenedBooster untouched — only "Open now" ever consumes one.
 	// The real won cards to reveal (converted to the deck shape). undefined →
 	// CardStack falls back to the mock deck (design preview / no card previews).
 	const revealDeck = useMemo(
@@ -243,19 +224,17 @@ const WinChoiceModal = () => {
 		[pendingWin],
 	);
 
+	// The primary action per prize kind. "Resell" and "Add to inventory" stay
+	// available for all. A closed booster has no primary: it can't be opened,
+	// and "keep it" is just "Add to inventory" — so we hide the primary button
+	// for it (see the button row below).
+	//   OPENED_BOOSTER → "Open now" (reveal; consumes the opening)
+	//   SINGLE_CARD    → "Add to collection"
 	const kind = pendingWin?.prize_kind;
 	const isSingleCard = kind === 'SINGLE_CARD';
 	const isClosedBooster = kind === 'CLOSED_BOOSTER';
-	const primaryLabel = isClosedBooster
-		? "Keep (ship later)"
-		: isSingleCard
-			? "Add to collection"
-			: "Open now";
-	const onPrimary = isClosedBooster
-		? handleKeepClosed
-		: isSingleCard
-			? handleKeepCard
-			: openPack;
+	const primaryLabel = isSingleCard ? "Add to collection" : "Open now";
+	const onPrimary = isSingleCard ? handleKeepCard : openPack;
 
 	const onAutoShuffleComplete = () => {
 		setPhase("flipping");
@@ -425,7 +404,11 @@ const WinChoiceModal = () => {
 								>
 									<button className="lg-btn" onClick={handleResell}>Resell</button>
 									<button className="lg-btn" onClick={handleAddToInventory}>Add to inventory</button>
-									<button className="lg-btn" onClick={onPrimary}>{primaryLabel}</button>
+									{/* A closed booster has no "open"; keeping it == Add to inventory,
+									    so we don't show a redundant Keep button for it. */}
+									{!isClosedBooster && (
+										<button className="lg-btn" onClick={onPrimary}>{primaryLabel}</button>
+									)}
 								</HStack>
 
 								<HStack
