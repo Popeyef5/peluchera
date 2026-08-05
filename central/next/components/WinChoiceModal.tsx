@@ -29,6 +29,13 @@ const WinChoiceModal = () => {
 	const shownWinId = useRef<string | null>(null);
 	const [open, setOpen] = useState(false);
 	const [phase, setPhase] = useState<Phase>("pack");
+	// The won pack's face images, captured when the win first arrives and held
+	// for the life of the modal. We must NOT read these straight off pendingWin
+	// in the <Booster> below: opening the pack settles the win, which sets
+	// pendingWin to null MID-ANIMATION — the mesh would then lose its frontUrl and
+	// fall back to the bare GLB (its embedded pack) as it slides out. Freezing
+	// them here keeps the skinned faces on the mesh through the whole tear.
+	const [boosterFaces, setBoosterFaces] = useState<{ front?: string | null; back?: string | null }>({});
 	// The 3D pack's front/back faces come from pendingWin.booster_*_url (the won
 	// ClosedBooster's images); see the <Booster> render below.
 
@@ -59,6 +66,8 @@ const WinChoiceModal = () => {
 	useEffect(() => {
 		if (pendingWin?.win_id && pendingWin.win_id !== shownWinId.current) {
 			shownWinId.current = pendingWin.win_id;
+			// Snapshot the faces now, before opening the pack can null pendingWin.
+			setBoosterFaces({ front: pendingWin.booster_front_url, back: pendingWin.booster_back_url });
 			setPhase("pack");
 			setOpen(true);
 		}
@@ -70,6 +79,9 @@ const WinChoiceModal = () => {
 		const onTestWin = () => {
 			console.log("[WinChoiceModal] test-win received");
 			(window as Window & { __garraTestWin?: boolean }).__garraTestWin = false;
+			// Design preview uses the mock deck and the GLB's own pack — no real
+			// faces. Clear any snapshot from a prior real win.
+			setBoosterFaces({});
 			setPhase("pack");
 			setOpen(true);
 		};
@@ -367,8 +379,8 @@ const WinChoiceModal = () => {
 														floatIntensity={phase === "pack" ? 0.5 : 0}
 													>
 														<Booster
-														frontUrl={pendingWin?.booster_front_url}
-														backUrl={pendingWin?.booster_back_url}
+														frontUrl={boosterFaces.front}
+														backUrl={boosterFaces.back}
 														onReady={() => setMeshReady(true)}
 													/>
 													</Float>
