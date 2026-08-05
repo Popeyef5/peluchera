@@ -18,6 +18,7 @@ from sqlalchemy import select, exists, and_, func
 
 from .. import state as _state
 from .. import win_transitions as wt
+from .. import machine
 from ..pi_client import safe_pi_emit, turn_end, request_test_arm
 from .auth import AdminIdentity, RequireAdmin
 from ..deps import async_session
@@ -1317,11 +1318,37 @@ async def cabinet_status(_: AdminIdentity = RequireAdmin):
 				QueueEntry.status == "queued"
 			)
 		)
+		loaded_count = await db.scalar(
+			select(func.count()).select_from(Ball).where(Ball.status == BallStatus.LOADED)
+		)
+		bad_balls = await wt.unclaimable_loaded_balls(db)
+
+	# Authoritative "can a turn start right now?" — the same gate the scheduler
+	# applies, computed fresh (not the cached mirror), plus the can't-be-caught-
+	# by-blocked() case of an empty machine.
+	blocked = await machine.blocked()
+	reasons = []
+	if _state.version_fault:
+		reasons.append("Protocol mismatch (VPS/Pi/ESP versions out of sync).")
+	if _state.cabinet_fault:
+		reasons.append(f"Chute fault: {_state.cabinet_fault.get('reason', 'jammed')}.")
+	if bad_balls:
+		reasons.append(f"{len(bad_balls)} loaded ball(s) have an unclaimable prize.")
+	if not _state.pi_connected:
+		reasons.append("Cabinet controller (Pi) is offline.")
+	if int(loaded_count or 0) == 0:
+		reasons.append("No balls are loaded in the machine.")
+
 	return {
 		"pi_connected": _state.pi_connected,
+		# The bottom line for the ops page: can play proceed, and if not, why.
+		"can_play": not reasons,
+		"blocked_reasons": reasons,
+		"loaded_ball_count": int(loaded_count or 0),
+		"unclaimable_balls": bad_balls,
 		# Any of these pauses the queue until it's resolved.
 		"version_fault": _state.version_fault,
-		"inventory_fault": _state.inventory_fault,
+		"inventory_fault": blocked if (blocked and blocked.get("kind") == "unclaimable_prizes") else _state.inventory_fault,
 		"current_player": _state.current_player,
 		"queue_length": int(queue_length or 0),
 		"cabinet_fault": _state.cabinet_fault,

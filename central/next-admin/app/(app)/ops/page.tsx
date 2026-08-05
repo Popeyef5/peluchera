@@ -32,6 +32,10 @@ type Versions = {
 
 type CabinetStatus = {
   pi_connected: boolean;
+  can_play: boolean;
+  blocked_reasons: string[];
+  loaded_ball_count: number;
+  unclaimable_balls: { serial: string; reason: string }[];
   current_player: string | null;
   queue_length: number;
   cabinet_fault: { kind: string; reason: string | null } | null;
@@ -143,6 +147,48 @@ export default function OpsPage() {
           Live Pi/ESP status and operator overrides.
         </p>
       </div>
+
+      {/* Bottom-line playability: can a turn start right now, and if not, why. */}
+      {status && (
+        <div
+          className={
+            "rounded-lg border p-4 " +
+            (status.can_play
+              ? "border-green-600/30 bg-green-600/5"
+              : "border-destructive/30 bg-destructive/5")
+          }
+        >
+          <div className="flex items-center gap-2 font-medium">
+            <span
+              className={
+                "inline-block h-2.5 w-2.5 rounded-full " +
+                (status.can_play ? "bg-green-600" : "bg-destructive")
+              }
+            />
+            {status.can_play
+              ? "Play can proceed"
+              : "Play is paused — the machine can't start a turn"}
+          </div>
+          {!status.can_play && (
+            <ul className="mt-2 list-disc space-y-1 pl-6 text-sm text-muted-foreground">
+              {status.blocked_reasons.map((r, i) => (
+                <li key={i}>{r}</li>
+              ))}
+            </ul>
+          )}
+          {status.unclaimable_balls.length > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Unclaimable:{" "}
+              {status.unclaimable_balls
+                .map((b) => `${b.serial} (${b.reason})`)
+                .join(", ")}
+            </p>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            {status.loaded_ball_count} ball(s) loaded.
+          </p>
+        </div>
+      )}
 
       <Card>
         <CardHeader>

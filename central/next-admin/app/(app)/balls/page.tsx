@@ -35,6 +35,7 @@ type Ball = {
   prize_kind: string;
   opened_booster_id: string | null;
   opened_booster_sku: string | null;
+  closed_booster_sku: string | null;
   prize_card_id: string | null;
   prize_card_sku: string | null;
 };
@@ -59,7 +60,6 @@ export default function BallsPage() {
   const [balls, setBalls] = useState<Ball[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bindOpen, setBindOpen] = useState(false);
-  const [bindCardOpen, setBindCardOpen] = useState(false);
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [voiding, setVoiding] = useState<string | null>(null);
   const [hideVoided, setHideVoided] = useState(true);
@@ -117,10 +117,7 @@ export default function BallsPage() {
           <Button variant="outline" onClick={() => setEnrollOpen(true)}>
             Add ball physically
           </Button>
-          <Button variant="outline" onClick={() => setBindCardOpen(true)}>
-            Bind card
-          </Button>
-          <Button onClick={() => setBindOpen(true)}>Bind booster</Button>
+          <Button onClick={() => setBindOpen(true)}>Bind</Button>
         </div>
       </div>
 
@@ -180,6 +177,7 @@ export default function BallsPage() {
                       <TableCell>{b.prize_kind}</TableCell>
                       <TableCell className="font-mono text-xs">
                         {b.opened_booster_sku ??
+                          b.closed_booster_sku ??
                           b.prize_card_sku ??
                           (b.prize_card_id ? "(card)" : "(unbound)")}
                       </TableCell>
@@ -207,15 +205,6 @@ export default function BallsPage() {
         onClose={() => setBindOpen(false)}
         onBound={() => {
           setBindOpen(false);
-          refresh();
-        }}
-      />
-
-      <BindCardDialog
-        open={bindCardOpen}
-        onClose={() => setBindCardOpen(false)}
-        onBound={() => {
-          setBindCardOpen(false);
           refresh();
         }}
       />
@@ -444,6 +433,64 @@ function EnrollDialog({
   );
 }
 
+// A searchable single-select: a filter box over a scrollable option list.
+function SearchSelect({
+  options,
+  value,
+  onChange,
+  placeholder,
+  empty,
+}: {
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  empty: string;
+}) {
+  const [q, setQ] = useState("");
+  const filtered = options.filter((o) =>
+    o.label.toLowerCase().includes(q.toLowerCase()),
+  );
+  return (
+    <div className="space-y-1">
+      <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder} />
+      <div className="max-h-40 overflow-y-auto rounded-md border">
+        {options.length === 0 ? (
+          <div className="px-3 py-2 text-sm text-muted-foreground">{empty}</div>
+        ) : filtered.length === 0 ? (
+          <div className="px-3 py-2 text-sm text-muted-foreground">No matches</div>
+        ) : (
+          filtered.map((o) => (
+            <button
+              type="button"
+              key={o.value}
+              onClick={() => onChange(o.value)}
+              className={
+                "block w-full px-3 py-2 text-left text-sm hover:bg-accent " +
+                (o.value === value ? "bg-accent font-medium" : "")
+              }
+            >
+              {o.label}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+type BindKind = "BOOSTER_PAIR" | "CLOSED_BOOSTER" | "SINGLE_CARD";
+type ClosedBoosterRow = {
+  sku: string;
+  name: string | null;
+  in_stock: boolean;
+  is_complete: boolean;
+};
+type CardTypeRow = { sku: string; name: string | null; is_complete: boolean };
+type BindableBall = { serial: string; status: string };
+
+// One bind flow for all three prize kinds. Pick a ball (an existing free one or
+// a freshly scanned tag), choose the prize kind, then search-pick the target.
 function BindDialog({
   open,
   onClose,
@@ -453,36 +500,117 @@ function BindDialog({
   onClose: () => void;
   onBound: () => void;
 }) {
+  const [ballMode, setBallMode] = useState<"existing" | "scan">("existing");
   const [serial, setSerial] = useState("");
-  const [obId, setObId] = useState("");
-  const [obs, setObs] = useState<OpenedBooster[] | null>(null);
+  const [kind, setKind] = useState<BindKind>("BOOSTER_PAIR");
+  const [target, setTarget] = useState(""); // ob id / closed sku / card-type sku
+
+  const [freeBalls, setFreeBalls] = useState<BindableBall[] | null>(null);
+  const [obs, setObs] = useState<OpenedBooster[]>([]);
+  const [closed, setClosed] = useState<ClosedBoosterRow[]>([]);
+  const [cardTypes, setCardTypes] = useState<CardTypeRow[]>([]);
+
+  // Scan sub-flow (reuses the enroll scanner used by "Add ball physically").
+  const [scanning, setScanning] = useState(false);
+  const [scanErr, setScanErr] = useState<string | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch bindable OpenedBoosters when the dialog opens (cheap, fine to
-  // refetch each time so a binding made in another tab is reflected).
   useEffect(() => {
     if (!open) {
+      setBallMode("existing");
       setSerial("");
-      setObId("");
+      setKind("BOOSTER_PAIR");
+      setTarget("");
       setError(null);
+      setScanning(false);
+      setScanErr(null);
       return;
     }
-    apiFetch<{ opened_boosters: OpenedBooster[] }>(
-      "/admin/inventory/opened-boosters?bindable=true",
-    )
-      .then((r) => setObs(r.opened_boosters))
+    // Load everything the picker needs.
+    Promise.all([
+      apiFetch<{ balls: BindableBall[] }>("/admin/balls/bindable"),
+      apiFetch<{ opened_boosters: OpenedBooster[] }>(
+        "/admin/inventory/opened-boosters?bindable=true",
+      ),
+      apiFetch<{ closed_boosters: ClosedBoosterRow[] }>("/admin/inventory/closed-boosters"),
+      apiFetch<{ card_types: CardTypeRow[] }>("/admin/inventory/card-types"),
+    ])
+      .then(([b, o, c, ct]) => {
+        setFreeBalls(b.balls);
+        setObs(o.opened_boosters);
+        setClosed(c.closed_boosters.filter((x) => x.is_complete && x.in_stock));
+        setCardTypes(ct.card_types.filter((x) => x.is_complete));
+      })
       .catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
   }, [open]);
+
+  // Reset the chosen target when the kind changes (options differ per kind).
+  useEffect(() => setTarget(""), [kind]);
+
+  // Poll the enroll scanner while scanning; adopt the scanned serial.
+  useEffect(() => {
+    if (!scanning) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await apiFetch<{
+          status: string;
+          ball_serial?: string;
+        }>("/admin/balls/enroll/status");
+        if (cancelled) return;
+        if (r.status === "scanned" && r.ball_serial) {
+          setSerial(r.ball_serial);
+          setScanning(false);
+        } else if (r.status === "timeout" || r.status === "idle") {
+          setScanErr("Scan timed out — try again.");
+          setScanning(false);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setScanErr(e instanceof ApiError ? e.message : String(e));
+        setScanning(false);
+      }
+    };
+    const id = setInterval(tick, 500);
+    tick();
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [scanning]);
+
+  const startScan = async () => {
+    setScanErr(null);
+    setSerial("");
+    try {
+      await apiFetch("/admin/balls/enroll/start", { method: "POST" });
+      setScanning(true);
+    } catch (e) {
+      setScanErr(e instanceof ApiError ? e.message : String(e));
+    }
+  };
+
+  const targetOptions =
+    kind === "BOOSTER_PAIR"
+      ? obs.map((o) => ({ value: o.id, label: `${o.sku} — ${o.id.slice(0, 8)}…` }))
+      : kind === "CLOSED_BOOSTER"
+        ? closed.map((c) => ({ value: c.sku, label: `${c.sku}${c.name ? ` — ${c.name}` : ""}` }))
+        : cardTypes.map((c) => ({ value: c.sku, label: `${c.sku}${c.name ? ` — ${c.name}` : ""}` }));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+    const body: Record<string, string> = { serial, kind };
+    if (kind === "BOOSTER_PAIR") body.opened_booster_id = target;
+    else if (kind === "CLOSED_BOOSTER") body.closed_booster_sku = target;
+    else body.card_type_sku = target;
     try {
-      await apiFetch(`/admin/balls/${encodeURIComponent(serial)}/bind`, {
+      await apiFetch("/admin/balls/bind", {
         method: "POST",
-        body: JSON.stringify({ opened_booster_id: obId }),
+        body: JSON.stringify(body),
       });
       onBound();
     } catch (e) {
@@ -492,51 +620,104 @@ function BindDialog({
     }
   };
 
+  const KINDS: { key: BindKind; label: string }[] = [
+    { key: "BOOSTER_PAIR", label: "Booster pair" },
+    { key: "CLOSED_BOOSTER", label: "Closed booster" },
+    { key: "SINGLE_CARD", label: "Card" },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <form onSubmit={submit}>
         <DialogHeader>
-          <DialogTitle>Bind tag</DialogTitle>
+          <DialogTitle>Bind a ball</DialogTitle>
           <DialogDescription>
-            Scan or type a tag UID, then pick an OpenedBooster to bind.
-            Creates a new Ball if the serial is new, or rebinds an existing
-            one if it's already settled / voided.
+            Pick a free ball (or scan a new tag), choose the prize kind, then
+            search-pick the prize.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {/* Ball */}
           <div className="space-y-1">
-            <label className="text-sm font-medium">Tag UID</label>
-            <Input
-              value={serial}
-              onChange={(e) => setSerial(e.target.value)}
-              placeholder="BALL-B007"
-              autoFocus
-              required
-            />
+            <label className="text-sm font-medium">Ball</label>
+            <div className="mb-2 flex gap-2 text-sm">
+              <button
+                type="button"
+                onClick={() => setBallMode("existing")}
+                className={`rounded-md border px-2 py-1 ${ballMode === "existing" ? "bg-accent font-medium" : ""}`}
+              >
+                Pick existing
+              </button>
+              <button
+                type="button"
+                onClick={() => setBallMode("scan")}
+                className={`rounded-md border px-2 py-1 ${ballMode === "scan" ? "bg-accent font-medium" : ""}`}
+              >
+                Scan new tag
+              </button>
+            </div>
+
+            {ballMode === "existing" ? (
+              <SearchSelect
+                options={(freeBalls ?? []).map((b) => ({
+                  value: b.serial,
+                  label: `${b.serial} · ${b.status}`,
+                }))}
+                value={serial}
+                onChange={setSerial}
+                placeholder="Search free balls…"
+                empty={freeBalls === null ? "Loading…" : "No free balls — scan a new tag."}
+              />
+            ) : (
+              <div className="space-y-2">
+                {serial ? (
+                  <p className="font-mono text-sm">
+                    Scanned: <span className="font-semibold">{serial}</span>
+                  </p>
+                ) : (
+                  <Button type="button" variant="outline" onClick={startScan} disabled={scanning}>
+                    {scanning ? "Waiting for tag…" : "Start scan"}
+                  </Button>
+                )}
+                {scanErr && <p className="text-sm text-destructive">{scanErr}</p>}
+              </div>
+            )}
           </div>
 
+          {/* Prize kind */}
           <div className="space-y-1">
-            <label className="text-sm font-medium">OpenedBooster</label>
-            <select
-              value={obId}
-              onChange={(e) => setObId(e.target.value)}
-              required
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="" disabled>
-                {obs === null
-                  ? "Loading…"
-                  : obs.length === 0
-                    ? "(no bindable OpenedBoosters)"
-                    : "Choose one…"}
-              </option>
-              {obs?.map((ob) => (
-                <option key={ob.id} value={ob.id}>
-                  {ob.sku} — {ob.id.slice(0, 8)}…
-                </option>
+            <label className="text-sm font-medium">Prize</label>
+            <div className="flex flex-wrap gap-2 text-sm">
+              {KINDS.map((k) => (
+                <button
+                  type="button"
+                  key={k.key}
+                  onClick={() => setKind(k.key)}
+                  className={`rounded-md border px-3 py-1 ${kind === k.key ? "bg-accent font-medium" : ""}`}
+                >
+                  {k.label}
+                </button>
               ))}
-            </select>
+            </div>
+          </div>
+
+          {/* Target */}
+          <div className="space-y-1">
+            <label className="text-sm font-medium">
+              {kind === "BOOSTER_PAIR"
+                ? "Opened booster"
+                : kind === "CLOSED_BOOSTER"
+                  ? "Closed booster (in stock)"
+                  : "Card type"}
+            </label>
+            <SearchSelect
+              options={targetOptions}
+              value={target}
+              onChange={setTarget}
+              placeholder="Search…"
+              empty="Nothing available — create/complete one first."
+            />
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -546,116 +727,7 @@ function BindDialog({
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting || !serial || !obId}>
-            {submitting ? "Binding…" : "Bind"}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Dialog>
-  );
-}
-
-function BindCardDialog({
-  open,
-  onClose,
-  onBound,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onBound: () => void;
-}) {
-  const [serial, setSerial] = useState("");
-  const [cardId, setCardId] = useState("");
-  const [cards, setCards] = useState<CardRow[] | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Fetch IN_POOL cards when the dialog opens. The cards endpoint returns the
-  // whole pool (capped); filter to bindable ones client-side.
-  useEffect(() => {
-    if (!open) {
-      setSerial("");
-      setCardId("");
-      setError(null);
-      return;
-    }
-    apiFetch<{ cards: CardRow[] }>("/admin/inventory/cards")
-      .then((r) => setCards(r.cards.filter((c) => c.status === "IN_POOL")))
-      .catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
-  }, [open]);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      await apiFetch(`/admin/balls/${encodeURIComponent(serial)}/bind-card`, {
-        method: "POST",
-        body: JSON.stringify({ card_id: cardId }),
-      });
-      onBound();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <form onSubmit={submit}>
-        <DialogHeader>
-          <DialogTitle>Bind card</DialogTitle>
-          <DialogDescription>
-            Scan or type a tag UID, then pick an IN_POOL card to bind as a
-            single-card prize. Creates a new Ball if the serial is new, or
-            rebinds a settled / voided one.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Tag UID</label>
-            <Input
-              value={serial}
-              onChange={(e) => setSerial(e.target.value)}
-              placeholder="E007000012345601"
-              autoFocus
-              required
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Card</label>
-            <select
-              value={cardId}
-              onChange={(e) => setCardId(e.target.value)}
-              required
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="" disabled>
-                {cards === null
-                  ? "Loading…"
-                  : cards.length === 0
-                    ? "(no IN_POOL cards)"
-                    : "Choose one…"}
-              </option>
-              {cards?.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.set} {c.number} — {c.rarity}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={submitting || !serial || !cardId}>
+          <Button type="submit" disabled={submitting || !serial || !target}>
             {submitting ? "Binding…" : "Bind"}
           </Button>
         </DialogFooter>
