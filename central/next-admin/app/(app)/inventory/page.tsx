@@ -295,6 +295,7 @@ export default function InventoryPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Faces</TableHead>
                   <TableHead>Cards</TableHead>
+                  <TableHead title="Face-down cards fanned out by the open animation — falls back to Cards when unset">Reveal</TableHead>
                   <TableHead>Availability</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -314,6 +315,13 @@ export default function InventoryPage() {
                       </div>
                     </TableCell>
                     <TableCell>{c.card_count ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell>
+                      {c.reveal_card_count ?? (
+                        <span className="text-muted-foreground">
+                          {c.card_count != null ? `${c.card_count} (default)` : "—"}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <StatusPill value={c.in_stock ? "IN_STOCK" : "OUT"} />
                     </TableCell>
