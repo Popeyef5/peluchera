@@ -446,6 +446,9 @@ async def _record_win(key_str: str, winner: Optional[str], ball_serial: str):
                     "prize_kind": win.prize_kind.value,
                     "expires_at": int(win.expires_at.timestamp()),
                     "resell_price_cents": win.resell_price_cents,
+                    # Ordered card previews so the reveal can render the real
+                    # won cards (empty for non-booster wins).
+                    "cards": await wt.opened_booster_card_previews(db, win),
                 }
                 log.info(f"reserve_win OK: win_id={win.id} prize_kind={win.prize_kind.value}")
         except wt.BallNotAvailable as e:

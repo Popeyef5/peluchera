@@ -30,6 +30,10 @@ export type Card = {
 	subtypes?: string[];
 	mask?: string;
 	trainerGallery?: boolean; // sets data-trainer-gallery="true" — distinct simey CSS treatment
+	// Direct foil-texture override. Real won cards set this from their admin
+	// holo `type` (see foilForHoloType); the mock deck leaves it unset and the
+	// foil is derived from rarity/subtypes instead.
+	foil?: string;
 };
 
 // One card per visual rarity treatment, in the same order simey lists them
@@ -131,6 +135,47 @@ export const FOIL_TEXTURES = [
 	"/img/wave.png",
 	"/img/glitter.png",
 ] as const;
+
+// The foil overlay for an admin holo `type` (the managed vocabulary a card
+// type carries) — the real-win analogue of getFoilTexture, which keys off the
+// mock deck's TCG rarities. Unknown/plain types get no foil (a matte common).
+export function foilForHoloType(type: string | null | undefined): string | undefined {
+	switch ((type || "").toLowerCase()) {
+		case "cosmos-holo":
+		case "holo":                return "/img/cosmos.webp";
+		case "reverse-holo":        return "/img/wave.png";
+		case "radiant-holo":        return "/img/metal.png";
+		case "galaxy-holo":
+		case "secret":              return "/img/galaxy.jpg";
+		case "rainbow":
+		case "amazing":
+		case "trainer-gallery":     return "/img/rainbow.webp";
+		default:                    return undefined;
+	}
+}
+
+// A card as it arrives in the player_win / open-booster payload.
+export type WinRevealCard = {
+	id: string;
+	name: string | null;
+	image_url: string | null;
+	type: string | null;
+	rarity: string | null;
+	position?: number | null;
+};
+
+// Convert the won cards into the deck shape the reveal (CardStack/HoloCard)
+// renders. rarity is set to "common" because the foil is driven directly by
+// `foil` here, not derived from rarity.
+export function winCardsToDeck(cards: WinRevealCard[]): Card[] {
+	return cards.map((c) => ({
+		id: c.id,
+		name: c.name ?? "Card",
+		image: c.image_url ?? CARD_BACK_IMAGE,
+		rarity: "common" as Rarity,
+		foil: foilForHoloType(c.type),
+	}));
+}
 
 // Warm the browser cache for everything the win reveal paints, so nothing
 // fetches mid-animation on a slow machine. Images only (the GLB + booster

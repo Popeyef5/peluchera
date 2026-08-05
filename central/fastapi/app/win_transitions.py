@@ -309,6 +309,32 @@ async def _card_resell_price(session: AsyncSession, card: Card) -> int:
 
 # ─── Booster-pair settlements ───────────────────────────────────────────
 
+async def opened_booster_card_previews(session: AsyncSession, win: Win) -> list[dict]:
+    """The ordered cards an OPENED_BOOSTER win would reveal — a preview shown in
+    the win modal before the player decides. Empty for other prize kinds."""
+    if win.prize_kind != PrizeKind.OPENED_BOOSTER:
+        return []
+    ball = await session.get(Ball, win.ball_id)
+    ob_id = ball.opened_booster_id if ball else None
+    if ob_id is None:
+        return []
+    rows = (await session.execute(
+        select(Card).where(Card.opened_booster_id == ob_id).order_by(Card.position)
+    )).scalars().all()
+    out = []
+    for c in rows:
+        ct = c.card_type
+        out.append({
+            "id": str(c.id),
+            "name": ct.name if ct else None,
+            "image_url": ct.image_url if ct else None,
+            "type": ct.type if ct else None,
+            "rarity": ct.rarity if ct else None,
+            "position": c.position,
+        })
+    return out
+
+
 async def open_booster_win(session: AsyncSession, win_id: uuid.UUID) -> None:
     """User opens a booster digitally — consume the opened (filmed) booster and
     transfer its cards to the user's collection. The sealed pack stays in the

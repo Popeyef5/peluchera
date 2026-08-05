@@ -4,13 +4,16 @@ import React, { useState } from "react";
 import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import HoloCard from "@/components/HoloCard";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
-import { MOCK_DECK } from "@/lib/cards";
+import { MOCK_DECK, type Card } from "@/lib/cards";
 import { SHUFFLE, SWIPE } from "@/lib/animConfig";
 
 type Props = {
 	flipFirst: boolean; // when true, the cards in the open pack are face-up
 	autoShuffles?: number; // when set > 0, run that many face-down lift-and-back animations
 	onAutoShuffleComplete?: () => void;
+	// The real won cards to reveal. Falls back to the mock deck when absent
+	// (design preview / a win that carried no card previews).
+	cards?: Card[];
 };
 
 const SWIPE_COMMIT_PX = SWIPE.commitPx;
@@ -33,10 +36,10 @@ type Departing = {
  * the stack. The deck rotates immediately so the next card snaps into the
  * top slot, while the overlay plays out its animation independently.
  */
-export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComplete }: Props) {
+export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComplete, cards }: Props) {
 	const isMobile = useIsMobile();
 	const liftApex = isMobile ? SWIPE.liftApexMobile : SWIPE.liftApex;
-	const [deck, setDeck] = useState(MOCK_DECK);
+	const [deck, setDeck] = useState<Card[]>(cards && cards.length ? cards : MOCK_DECK);
 	const [departing, setDeparting] = useState<Departing | null>(null);
 	const [dragging, setDragging] = useState(false);
 	const x = useMotionValue(0);
@@ -143,6 +146,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						rarity={after.rarity}
 						supertype={after.supertype}
 						subtypes={after.subtypes}
+						foil={after.foil}
 						mask={after.mask}
 						trainerGallery={after.trainerGallery}
 						decorative
@@ -159,6 +163,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						rarity={next.rarity}
 						supertype={next.supertype}
 						subtypes={next.subtypes}
+						foil={next.foil}
 						mask={next.mask}
 						trainerGallery={next.trainerGallery}
 						suppressTilt={tiltSuppressed}
@@ -191,6 +196,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 						rarity={top.rarity}
 						supertype={top.supertype}
 						subtypes={top.subtypes}
+						foil={top.foil}
 						mask={top.mask}
 						trainerGallery={top.trainerGallery}
 						suppressTilt={tiltSuppressed}
@@ -243,6 +249,7 @@ export default function CardStack({ flipFirst, autoShuffles, onAutoShuffleComple
 							rarity={departing.card.rarity}
 							supertype={departing.card.supertype}
 							subtypes={departing.card.subtypes}
+							foil={departing.card.foil}
 							mask={departing.card.mask}
 							trainerGallery={departing.card.trainerGallery}
 							suppressTilt

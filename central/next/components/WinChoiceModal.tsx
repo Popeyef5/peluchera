@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Dialog, HStack, Portal, VStack } from "@chakra-ui/react";
 import { Canvas } from "@react-three/fiber";
 import { Float, PresentationControls } from "@react-three/drei";
@@ -9,6 +9,7 @@ import { toaster } from "@/components/ui/toaster";
 import { useIsMobile } from "@/components/hooks/useIsMobile";
 import Booster from "@/components/Booster";
 import CardStack from "@/components/CardStack";
+import { winCardsToDeck } from "@/lib/cards";
 import { PACK, SHUFFLE, FLIP, STACK_APPROACH } from "@/lib/animConfig";
 
 type Phase = "pack" | "tearing" | "revealing" | "shuffling" | "flipping" | "swiping";
@@ -240,6 +241,13 @@ const WinChoiceModal = () => {
 	// In every case "Resell" (buyback) and "Add to inventory" (decide later)
 	// stay available. For a closed booster, buyback/keep leave the underlying
 	// OpenedBooster untouched — only "Open now" ever consumes one.
+	// The real won cards to reveal (converted to the deck shape). undefined →
+	// CardStack falls back to the mock deck (design preview / no card previews).
+	const revealDeck = useMemo(
+		() => (pendingWin?.cards?.length ? winCardsToDeck(pendingWin.cards) : undefined),
+		[pendingWin],
+	);
+
 	const kind = pendingWin?.prize_kind;
 	const isSingleCard = kind === 'SINGLE_CARD';
 	const isClosedBooster = kind === 'CLOSED_BOOSTER';
@@ -318,6 +326,7 @@ const WinChoiceModal = () => {
 											flipFirst={phase === "flipping" || phase === "swiping"}
 											autoShuffles={phase === "shuffling" ? AUTO_SHUFFLE_COUNT : 0}
 											onAutoShuffleComplete={onAutoShuffleComplete}
+											cards={revealDeck}
 										/>
 									)}
 								</Box>

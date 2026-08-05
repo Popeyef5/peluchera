@@ -5,7 +5,7 @@ import React, {
 } from 'react';
 import { useSocket } from '@/components/providers/SocketProvider';
 import { useWallet } from '@/lib/wallet/context';
-import { preloadWinAssets } from '@/lib/cards';
+import { preloadWinAssets, type WinRevealCard } from '@/lib/cards';
 
 // Demo / public-session toggle — see central/fastapi/app/config.py for the
 // matching server flag. When on, the play flow skips wallet connect, permit
@@ -105,6 +105,8 @@ export interface PendingWin {
 	prize_kind: PrizeKind;
 	expires_at: number;          // unix seconds
 	resell_price_cents: number;
+	// Ordered card previews for an OPENED_BOOSTER win — what the reveal renders.
+	cards?: WinRevealCard[];
 }
 
 export interface WinCard {

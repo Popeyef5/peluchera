@@ -13,6 +13,9 @@ type Props = {
 	subtypes?: string[];
 	mask?: string;
 	trainerGallery?: boolean;
+	// Direct foil-texture override (real won cards pass this from their holo
+	// type). When set it wins over the rarity/subtype-derived getFoilTexture.
+	foil?: string;
 	className?: string;
 	// When true: skip the foil overlay layers and the orientation/pointer
 	// listener. Used for non-active stack slots and the in-flight departing
@@ -58,6 +61,7 @@ export default function HoloCard({
 	subtypes,
 	mask,
 	trainerGallery,
+	foil: foilOverride,
 	className,
 	decorative,
 	suppressTilt,
@@ -305,7 +309,7 @@ export default function HoloCard({
 			data-trainer-gallery={trainerGallery ? "true" : undefined}
 			data-face={faceUp ? "up" : "down"}
 			style={(() => {
-				const foil = getFoilTexture({ rarity, subtypes, trainerGallery });
+				const foil = foilOverride ?? getFoilTexture({ rarity, subtypes, trainerGallery });
 				if (!mask && !foil) return undefined;
 				const s: Record<string, string> = {};
 				if (mask) s["--mask"] = `url(${mask})`;
