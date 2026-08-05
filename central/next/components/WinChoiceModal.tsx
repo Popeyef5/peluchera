@@ -23,16 +23,16 @@ const TIMINGS = {
 const AUTO_SHUFFLE_COUNT = SHUFFLE.count;
 
 const WinChoiceModal = () => {
-	const { roundWon, pendingWin, openBoosterWin, resellPendingWin, keepCardWin, keepClosedBoosterWin, dismissPendingWin } = useClaw();
+	const { pendingWin, openBoosterWin, resellPendingWin, keepCardWin, keepClosedBoosterWin, dismissPendingWin } = useClaw();
 	const isMobile = useIsMobile();
-	const lastSeen = useRef(roundWon);
+	// The win we've already shown the reveal for — so we open once per new win
+	// (keyed by win_id) rather than off the roundWon stat, which also jumps to
+	// the historical total on connect and would open the modal spuriously.
+	const shownWinId = useRef<string | null>(null);
 	const [open, setOpen] = useState(false);
 	const [phase, setPhase] = useState<Phase>("pack");
-	// SKU drives per-pack artwork on the 3D booster. Real wins should set this
-	// from pendingWin once the backend adds `sku` to the player_win payload
-	// (see app/pi_client.py:on_turn_win); until then real wins fall back to the
-	// GLB's embedded textures. The /test-win route hardcodes "test" so designers
-	// can preview new pack art by dropping it at /public/boosters/test/.
+	// The 3D pack's front/back faces come from pendingWin.booster_*_url (the won
+	// ClosedBooster's images); see the <Booster> render below.
 
 	// `entered` gates the entry animation. We render the canvas Box at
 	// translateY(100vh) on the very first frame so the pack starts below the
@@ -59,12 +59,12 @@ const WinChoiceModal = () => {
 	}, [phase]);
 
 	useEffect(() => {
-		if (roundWon > lastSeen.current) {
-			lastSeen.current = roundWon;
+		if (pendingWin?.win_id && pendingWin.win_id !== shownWinId.current) {
+			shownWinId.current = pendingWin.win_id;
 			setPhase("pack");
 			setOpen(true);
 		}
-	}, [roundWon]);
+	}, [pendingWin]);
 
 	// Test hook — /test-win route dispatches this event 3s after mount so we can
 	// preview the win flow on mobile without going through the full claw cycle.
