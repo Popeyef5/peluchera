@@ -567,6 +567,27 @@ async def list_opened_boosters(
 				)
 			)
 		obs = (await db.execute(q)).scalars().all()
+
+		# Derived "bound" state: which LOADED ball (if any) currently occupies
+		# each opening. Not a stored status — computed from the ball table, so it
+		# can't drift. effective_status collapses raw status + this into the label
+		# the admin cares about: free / bound / reserved / consumed.
+		loaded = dict((await db.execute(
+			select(Ball.opened_booster_id, Ball.serial).where(
+				Ball.status == BallStatus.LOADED,
+				Ball.opened_booster_id.isnot(None),
+			)
+		)).all())
+
+		def _effective(ob) -> str:
+			if ob.status == InventoryStatus.CONSUMED:
+				return "consumed"
+			if ob.status == InventoryStatus.RESERVED:
+				return "reserved"
+			if ob.status == InventoryStatus.AVAILABLE:
+				return "bound" if ob.id in loaded else "free"
+			return ob.status.value.lower()
+
 		return {
 			"opened_boosters": [
 				{
@@ -574,6 +595,8 @@ async def list_opened_boosters(
 					"sku": ob.sku,
 					"closed_booster_sku": ob.closed_booster.sku if ob.closed_booster else None,
 					"status": ob.status.value,
+					"effective_status": _effective(ob),
+					"bound_ball": loaded.get(ob.id),
 					"video_url": ob.video_url,
 					"filmed_at": ob.filmed_at.isoformat() if ob.filmed_at else None,
 					"cards_count": len(ob.cards),

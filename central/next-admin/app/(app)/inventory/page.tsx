@@ -35,6 +35,10 @@ type OpenedBooster = {
   sku: string;
   closed_booster_sku: string | null;
   status: string;
+  // Derived (not stored): free / bound / reserved / consumed, plus the LOADED
+  // ball currently occupying it (if bound).
+  effective_status: string;
+  bound_ball: string | null;
   video_url: string | null;
   filmed_at: string | null;
   cards_count: number;
@@ -255,8 +259,13 @@ export default function InventoryPage() {
                     <TableCell className="font-mono">
                       {o.closed_booster_sku ?? <span className="text-muted-foreground">— unlinked</span>}
                     </TableCell>
-                    <TableCell>
-                      <StatusPill value={o.status} />
+                    <TableCell className="text-xs">
+                      <StatusPill value={o.effective_status} />
+                      {o.effective_status === "bound" && o.bound_ball && (
+                        <span className="ml-1.5 font-mono text-muted-foreground">
+                          {o.bound_ball}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs">
                       {o.video_url ? "✓" : <span className="text-muted-foreground">none</span>}
@@ -1021,17 +1030,19 @@ function CardTypeDialog({
 
 function StatusPill({ value }: { value: string }) {
   const style =
-    value === "AVAILABLE" || value === "IN_POOL" || value === "IN_STOCK"
+    value === "AVAILABLE" || value === "IN_POOL" || value === "IN_STOCK" || value === "free"
       ? "bg-green-100 text-green-900"
-      : value === "RESERVED"
+      : value === "RESERVED" || value === "reserved"
         ? "bg-yellow-100 text-yellow-900"
-        : value === "CONSUMED" || value === "SHIPPED" || value === "RESOLD"
-          ? "bg-secondary text-secondary-foreground"
-          : value === "RETIRED" || value === "OUT"
-            ? "bg-red-100 text-red-900"
-            : "bg-secondary text-secondary-foreground";
+        : value === "bound"
+          ? "bg-blue-100 text-blue-900"
+          : value === "CONSUMED" || value === "SHIPPED" || value === "RESOLD" || value === "consumed"
+            ? "bg-secondary text-secondary-foreground"
+            : value === "RETIRED" || value === "OUT"
+              ? "bg-red-100 text-red-900"
+              : "bg-secondary text-secondary-foreground";
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${style}`}>
+    <span className={`inline-block rounded-full px-2 py-0.5 text-xs capitalize ${style}`}>
       {value}
     </span>
   );
