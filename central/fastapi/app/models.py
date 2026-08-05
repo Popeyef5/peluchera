@@ -225,7 +225,8 @@ class Ball(Base):
     prize_card          = relationship("Card", foreign_keys=[prize_card_id], back_populates="ball", uselist=False, lazy="selectin")
     closed_booster      = relationship("ClosedBooster", foreign_keys=[closed_booster_id], lazy="selectin")
     batch               = relationship("CommitmentBatch", lazy="selectin")
-    win                 = relationship("Win", back_populates="ball", uselist=False)
+    # A reusable tag accrues many wins over its life (see Win.ball_id).
+    wins                = relationship("Win", back_populates="ball")
 
     __table_args__ = (
         # At most one LOADED ball may hold a given prize at a time; settled/
@@ -397,7 +398,10 @@ class Win(Base):
     id                = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id           = Column(UUID(as_uuid=True), ForeignKey("user_account.id"), nullable=False)
     queue_entry_id    = Column(Integer, ForeignKey("queue.id"), unique=True, nullable=False)
-    ball_id           = Column(UUID(as_uuid=True), ForeignKey("ball.id"), unique=True, nullable=False)
+    # NOT unique: a physical ball (RFID tag) is reusable — it's rebound to a new
+    # prize and re-won over its lifetime, so it accrues many Win rows. The
+    # queue_entry_id unique + the grab guard prevent a double-win within a turn.
+    ball_id           = Column(UUID(as_uuid=True), ForeignKey("ball.id"), nullable=False)
 
     prize_kind        = Column(Enum(PrizeKind, name="prize_kind"), nullable=False)
     status            = Column(Enum(WinStatus, name="win_status"), default=WinStatus.PENDING, nullable=False)
@@ -417,7 +421,7 @@ class Win(Base):
 
     user              = relationship("User", lazy="selectin")
     queue_entry       = relationship("QueueEntry", lazy="selectin")
-    ball              = relationship("Ball", back_populates="win", lazy="selectin")
+    ball              = relationship("Ball", back_populates="wins", lazy="selectin")
     opened_booster    = relationship("OpenedBooster", back_populates="reserved_by_win", uselist=False, foreign_keys="OpenedBooster.reserved_by_win_id", lazy="selectin")
     prize_card        = relationship("Card", back_populates="win", foreign_keys=[prize_card_id], lazy="selectin")
 
