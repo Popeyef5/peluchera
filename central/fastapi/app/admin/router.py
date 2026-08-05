@@ -29,7 +29,8 @@ from ..versioning import PI_VPS_PROTO
 
 from ..models import (
 	Ball, OpenedBooster, ClosedBooster, Card, CardType, CommitmentBatch, QueueEntry, Win,
-	BallStatus, InventoryStatus, PrizeKind, CardStatus, CardRarity, CardOrigin,
+	HoloType, Rarity,
+	BallStatus, InventoryStatus, PrizeKind, CardStatus, CardOrigin,
 )
 
 # Hard ceiling on the admin enrollment window — matches the ESP-side default.
@@ -491,7 +492,7 @@ async def list_cards(_: AdminIdentity = RequireAdmin):
 					"sku": r.card_type.sku if r.card_type else None,
 					"name": r.card_type.name if r.card_type else None,
 					"type": r.card_type.type if r.card_type else None,
-					"rarity": r.card_type.rarity.value if r.card_type and r.card_type.rarity else None,
+					"rarity": r.card_type.rarity if r.card_type else None,
 					"status": r.status.value,
 				}
 				for r in rows
@@ -515,12 +516,17 @@ def _parse_dt(value: Optional[str]) -> datetime:
 	return dt
 
 
-def _parse_rarity(value: str) -> CardRarity:
-	try:
-		return CardRarity(value)
-	except ValueError:
-		opts = [r.value for r in CardRarity]
-		raise HTTPException(status_code=400, detail=f"invalid rarity {value!r}; one of {opts}")
+async def _validate_card_vocab(db, *, type_: Optional[str], rarity: Optional[str]) -> None:
+	"""A card type's holo type and rarity must name a row in the managed
+	vocabularies (empty string = clearing the field, allowed)."""
+	if type_:
+		if not await db.scalar(select(HoloType).where(HoloType.name == type_)):
+			opts = [r.name for r in (await db.execute(select(HoloType).order_by(HoloType.sort_order))).scalars()]
+			raise HTTPException(status_code=400, detail=f"unknown holo type {type_!r}; one of {opts}")
+	if rarity:
+		if not await db.scalar(select(Rarity).where(Rarity.name == rarity)):
+			opts = [r.name for r in (await db.execute(select(Rarity).order_by(Rarity.sort_order))).scalars()]
+			raise HTTPException(status_code=400, detail=f"unknown rarity {rarity!r}; one of {opts}")
 
 
 def _new_opened_booster(db, data: dict) -> OpenedBooster:
@@ -691,7 +697,7 @@ def _serialize_card_type(t: CardType) -> dict:
 		"name": t.name,
 		"image_url": t.image_url,
 		"type": t.type,
-		"rarity": t.rarity.value if t.rarity else None,
+		"rarity": t.rarity,
 		"set": t.set,
 		"number": t.number,
 		"is_complete": t.is_complete,
@@ -723,11 +729,12 @@ async def create_card_type(body: CardTypeBody, _: AdminIdentity = RequireAdmin):
 	if not sku:
 		raise HTTPException(status_code=400, detail="card type needs sku")
 	async with async_session() as db:
+		await _validate_card_vocab(db, type_=body.type, rarity=body.rarity)
 		provided = {}
 		for f in _CT_FIELDS:
 			v = getattr(body, f)
 			if v is not None:
-				provided[f] = _parse_rarity(v) if f == "rarity" else v
+				provided[f] = v
 		stmt = pg_insert(CardType).values(sku=sku, **provided)
 		if provided:
 			stmt = stmt.on_conflict_do_update(index_elements=["sku"], set_=provided)
@@ -754,13 +761,146 @@ async def patch_card_type(sku: str, body: PatchCardTypeBody, _: AdminIdentity = 
 		row = await db.scalar(select(CardType).where(CardType.sku == sku))
 		if row is None:
 			raise HTTPException(status_code=404, detail=f"card type {sku} not found")
+		await _validate_card_vocab(db, type_=body.type, rarity=body.rarity)
 		for f in _CT_FIELDS:
 			v = getattr(body, f)
 			if v is not None:
-				setattr(row, f, _parse_rarity(v) if f == "rarity" else v)
+				setattr(row, f, v)
 		await db.commit()
 		await db.refresh(row)
 		return {"ok": True, "card_type": _serialize_card_type(row)}
+
+
+# ─── Managed vocabularies: holo types + rarities ─────────────────────────
+# Editable lists the card-type form's dropdowns read from. A value can't be
+# deleted while a card type still references it (delete guards below).
+
+def _serialize_holo_type(h: HoloType) -> dict:
+	return {"id": str(h.id), "name": h.name, "sort_order": h.sort_order}
+
+
+def _serialize_rarity(r: Rarity) -> dict:
+	return {
+		"id": str(r.id),
+		"name": r.name,
+		"resell_price_cents": r.resell_price_cents,
+		"sort_order": r.sort_order,
+	}
+
+
+@router.get("/inventory/holo-types")
+async def list_holo_types(_: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		rows = (await db.execute(
+			select(HoloType).order_by(HoloType.sort_order, HoloType.name)
+		)).scalars().all()
+		return {"holo_types": [_serialize_holo_type(h) for h in rows]}
+
+
+class HoloTypeBody(BaseModel):
+	name: str
+	sort_order: Optional[int] = None
+
+
+@router.post("/inventory/holo-types")
+async def create_holo_type(body: HoloTypeBody, _: AdminIdentity = RequireAdmin):
+	name = (body.name or "").strip()
+	if not name:
+		raise HTTPException(status_code=400, detail="holo type needs a name")
+	async with async_session() as db:
+		if await db.scalar(select(HoloType).where(HoloType.name == name)):
+			raise HTTPException(status_code=409, detail=f"holo type {name!r} already exists")
+		h = HoloType(name=name, sort_order=body.sort_order or 0)
+		db.add(h)
+		await db.commit()
+		await db.refresh(h)
+		return {"ok": True, "holo_type": _serialize_holo_type(h)}
+
+
+@router.delete("/inventory/holo-types/{name}")
+async def delete_holo_type(name: str, _: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		in_use = await db.scalar(
+			select(func.count()).select_from(CardType).where(CardType.type == name)
+		)
+		if in_use:
+			raise HTTPException(status_code=409, detail=f"{in_use} card type(s) use {name!r}; reassign them first")
+		h = await db.scalar(select(HoloType).where(HoloType.name == name))
+		if h is None:
+			raise HTTPException(status_code=404, detail=f"holo type {name!r} not found")
+		await db.delete(h)
+		await db.commit()
+		return {"ok": True}
+
+
+@router.get("/inventory/rarities")
+async def list_rarities(_: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		rows = (await db.execute(
+			select(Rarity).order_by(Rarity.sort_order, Rarity.name)
+		)).scalars().all()
+		return {"rarities": [_serialize_rarity(r) for r in rows]}
+
+
+class RarityBody(BaseModel):
+	name: str
+	resell_price_cents: Optional[int] = None
+	sort_order: Optional[int] = None
+
+
+@router.post("/inventory/rarities")
+async def create_rarity(body: RarityBody, _: AdminIdentity = RequireAdmin):
+	name = (body.name or "").strip()
+	if not name:
+		raise HTTPException(status_code=400, detail="rarity needs a name")
+	async with async_session() as db:
+		if await db.scalar(select(Rarity).where(Rarity.name == name)):
+			raise HTTPException(status_code=409, detail=f"rarity {name!r} already exists")
+		r = Rarity(
+			name=name,
+			resell_price_cents=body.resell_price_cents or 0,
+			sort_order=body.sort_order or 0,
+		)
+		db.add(r)
+		await db.commit()
+		await db.refresh(r)
+		return {"ok": True, "rarity": _serialize_rarity(r)}
+
+
+class PatchRarityBody(BaseModel):
+	resell_price_cents: Optional[int] = None
+	sort_order: Optional[int] = None
+
+
+@router.patch("/inventory/rarities/{name}")
+async def patch_rarity(name: str, body: PatchRarityBody, _: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		r = await db.scalar(select(Rarity).where(Rarity.name == name))
+		if r is None:
+			raise HTTPException(status_code=404, detail=f"rarity {name!r} not found")
+		if body.resell_price_cents is not None:
+			r.resell_price_cents = body.resell_price_cents
+		if body.sort_order is not None:
+			r.sort_order = body.sort_order
+		await db.commit()
+		await db.refresh(r)
+		return {"ok": True, "rarity": _serialize_rarity(r)}
+
+
+@router.delete("/inventory/rarities/{name}")
+async def delete_rarity(name: str, _: AdminIdentity = RequireAdmin):
+	async with async_session() as db:
+		in_use = await db.scalar(
+			select(func.count()).select_from(CardType).where(CardType.rarity == name)
+		)
+		if in_use:
+			raise HTTPException(status_code=409, detail=f"{in_use} card type(s) use {name!r}; reassign them first")
+		r = await db.scalar(select(Rarity).where(Rarity.name == name))
+		if r is None:
+			raise HTTPException(status_code=404, detail=f"rarity {name!r} not found")
+		await db.delete(r)
+		await db.commit()
+		return {"ok": True}
 
 
 # ─── Card instances ──────────────────────────────────────────────────────
@@ -858,7 +998,7 @@ def _serialize_ob_card(c: Card) -> dict:
 		"card_type_sku": ct.sku if ct else None,
 		"name": ct.name if ct else None,
 		"image_url": ct.image_url if ct else None,
-		"rarity": ct.rarity.value if ct and ct.rarity else None,
+		"rarity": ct.rarity if ct else None,
 	}
 
 
@@ -986,11 +1126,11 @@ def _describe_prize(w: Win) -> dict:
 		c = w.prize_card
 		ct = c.card_type if c is not None else None
 		if ct is not None:
-			rarity = ct.rarity.value if ct.rarity else "—"
+			rarity = ct.rarity or "—"
 			info["label"] = f"{ct.name or ct.sku} · {rarity}"
 			info["card"] = {
 				"sku": ct.sku, "name": ct.name, "set": ct.set, "number": ct.number,
-				"type": ct.type, "rarity": ct.rarity.value if ct.rarity else None,
+				"type": ct.type, "rarity": ct.rarity,
 				"image_url": ct.image_url,
 			}
 		else:

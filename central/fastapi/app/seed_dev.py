@@ -22,19 +22,19 @@ from .db import async_session, engine, Base
 from .models import (
     CommitmentBatch, Ball, OpenedBooster, ClosedBooster, Card, CardType,
     Win, LedgerEntry, Payment, QueueEntry,
-    BallStatus, CardStatus, CardOrigin, CardRarity, PrizeKind,
+    BallStatus, CardStatus, CardOrigin, PrizeKind,
 )
 
 SKU = "pkmn-151"
 
 # (set, number, rarity, image_url) — image URLs are placeholders.
 CARD_TEMPLATES = [
-    ("151", "001", CardRarity.COMMON,     "https://example.com/cards/151-001.png"),
-    ("151", "004", CardRarity.COMMON,     "https://example.com/cards/151-004.png"),
-    ("151", "007", CardRarity.COMMON,     "https://example.com/cards/151-007.png"),
-    ("151", "025", CardRarity.RARE,       "https://example.com/cards/151-025.png"),
-    ("151", "150", CardRarity.HOLO_RARE,  "https://example.com/cards/151-150.png"),
-    ("151", "151", CardRarity.CHASE,      "https://example.com/cards/151-151.png"),
+    ("151", "001", "COMMON",     "https://example.com/cards/151-001.png"),
+    ("151", "004", "COMMON",     "https://example.com/cards/151-004.png"),
+    ("151", "007", "COMMON",     "https://example.com/cards/151-007.png"),
+    ("151", "025", "RARE",       "https://example.com/cards/151-025.png"),
+    ("151", "150", "HOLO_RARE",  "https://example.com/cards/151-150.png"),
+    ("151", "151", "CHASE",      "https://example.com/cards/151-151.png"),
 ]
 
 

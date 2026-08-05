@@ -125,16 +125,8 @@ def ticket_usdc_base_units() -> int:
 # processor's dispute window.
 CHARGEBACK_HOLD_DAYS = int(os.environ.get("CHARGEBACK_HOLD_DAYS", 7))
 
-# Resell prices per CardRarity, in cents. Placeholder — operator should
-# eventually drive this from an admin-config table or a per-card snapshot.
-RESELL_PRICE_BY_RARITY_CENTS = {
-	"COMMON":     50,
-	"UNCOMMON":   150,
-	"RARE":       400,
-	"HOLO_RARE":  900,
-	"ULTRA_RARE": 2500,
-	"CHASE":      8000,
-}
+# Card resell prices are now operator-managed per rarity in the `rarity` table
+# (admin: Inventory → Types), read at settlement via rarity_resell_price().
 
 # Resell price per booster SKU, in cents. "default" is the fallback when an
 # unknown SKU shows up. Same placeholder caveat as above.

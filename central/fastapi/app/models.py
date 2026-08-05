@@ -121,15 +121,6 @@ class CardOrigin(str, enum.Enum):
     SINGLE_PRIZE   = "SINGLE_PRIZE"
 
 
-class CardRarity(str, enum.Enum):
-    COMMON      = "COMMON"
-    UNCOMMON    = "UNCOMMON"
-    RARE        = "RARE"
-    HOLO_RARE   = "HOLO_RARE"
-    ULTRA_RARE  = "ULTRA_RARE"
-    CHASE       = "CHASE"
-
-
 class WinStatus(str, enum.Enum):
     PENDING        = "PENDING"
     SETTLED_OPEN   = "SETTLED_OPEN"
@@ -304,6 +295,30 @@ class OpenedBooster(Base):
     )
 
 
+class HoloType(Base):
+    """Editable vocabulary of holo/foil rendering categories (holo, reverse-holo,
+    galaxy-holo…). Managed in the admin; CardType.type stores one of these names.
+    A plain lookup table so operators can add/remove effects without a migration."""
+    __tablename__ = "holo_type"
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name       = Column(String, unique=True, nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Rarity(Base):
+    """Editable vocabulary of card rarities (common, rare, chase…) plus the
+    resell price paid when a won card of this rarity is sold back. Managed in the
+    admin; CardType.rarity stores one of these names and the price is read at
+    settlement time — no code change or deploy to add a rarity or reprice one."""
+    __tablename__ = "rarity"
+    id                 = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name               = Column(String, unique=True, nullable=False)
+    resell_price_cents = Column(Integer, default=0, nullable=False)
+    sort_order         = Column(Integer, default=0, nullable=False)
+    created_at         = Column(DateTime, default=datetime.utcnow)
+
+
 class CardType(Base):
     """Catalog of cards — one row per distinct card (the 'what card is this'):
     SKU, name, image, holo/foil `type` and rarity. Card instances reference a
@@ -313,10 +328,10 @@ class CardType(Base):
     sku       = Column(String, unique=True, index=True, nullable=False)
     name      = Column(String)
     image_url = Column(String)
-    # Holo/foil rendering category (e.g. "reverse-holo", "trainer-gallery") —
-    # free string so new effects don't need a migration; UI offers a datalist.
+    # Holo/foil rendering category — a HoloType.name (managed vocabulary).
     type      = Column(String)
-    rarity    = Column(Enum(CardRarity, name="card_rarity"))
+    # A Rarity.name (managed vocabulary); its resell price is read from `rarity`.
+    rarity    = Column(String)
     set       = Column(String)
     number    = Column(String)
 

@@ -7,8 +7,8 @@ Each handler is a thin wrapper over a `win_transitions.py` function:
 - maps typed errors to {status: "error", error: "..."} acks.
 
 Pricing for buybacks: win-resells use the price snapshotted on the Win row
-at win time. Collection-card resells look up the price from
-RESELL_PRICE_BY_RARITY_CENTS in config (placeholder).
+at win time. Collection-card resells look up the current price from the
+operator-managed `rarity` table via wt.rarity_resell_price().
 
 Note on balance: the existing flow reads balance from the on-chain contract
 via `user_account_data`. LedgerEntry rows written here are the off-chain
@@ -26,7 +26,6 @@ from .sio_instance import sio
 from ..deps import async_session
 from ..state import sid_to_addr
 from ..logging import log
-from ..config import RESELL_PRICE_BY_RARITY_CENTS
 from ..models import (
 	User, Win, Card, OpenedBooster, Shipment,
 	WinStatus, CardStatus, PrizeKind,
@@ -67,7 +66,7 @@ def _serialize_card(c: Card) -> dict:
 		"set": ct.set if ct else None,
 		"number": ct.number if ct else None,
 		"type": ct.type if ct else None,
-		"rarity": ct.rarity.value if ct and ct.rarity else None,
+		"rarity": ct.rarity if ct else None,
 		"image_url": ct.image_url if ct else None,
 		"condition": c.condition,
 		"status": c.status.value,
@@ -98,9 +97,6 @@ def _serialize_pending_win(w: Win) -> dict:
 	return base
 
 
-def _resell_price_for_card(c: Card) -> int:
-	ct = c.card_type
-	return RESELL_PRICE_BY_RARITY_CENTS.get(ct.rarity.value, 0) if ct and ct.rarity else 0
 
 
 # ─── Win settlements: booster pair ──────────────────────────────────────
@@ -311,7 +307,7 @@ async def resell_card_from_collection(sid, data):
 			card = await db.get(Card, uuid.UUID(card_id))
 			if card is None or card.owner_user_id != user.id:
 				return _err("card not found", "not_found")
-			price = _resell_price_for_card(card)
+			price = await wt.rarity_resell_price(db, card.card_type.rarity if card.card_type else None)
 			await wt.resell_card_from_collection(
 				db, card_id=card.id, user_id=user.id, resell_price_cents=price,
 			)

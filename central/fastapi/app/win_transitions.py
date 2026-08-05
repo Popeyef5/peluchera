@@ -16,8 +16,9 @@ from typing import Optional, TypedDict, Literal
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .config import RESELL_PRICE_BY_RARITY_CENTS, RESELL_PRICE_BY_BOOSTER_SKU_CENTS
+from .config import RESELL_PRICE_BY_BOOSTER_SKU_CENTS
 from .models import (
+    Rarity,
     User, Win, Ball, ClosedBooster, OpenedBooster, Card, Shipment, LedgerEntry,
     QueueEntry,
     WinStatus, BallStatus, InventoryStatus, CardStatus, PrizeKind,
@@ -242,7 +243,7 @@ async def reserve_win(
         ball_id=ball.id,
         prize_kind=ball.prize_kind,
         expires_at=_expiry_from_now(),
-        resell_price_cents=_card_resell_price(card_row),
+        resell_price_cents=await _card_resell_price(session, card_row),
         prize_card_id=card_id,
     )
     session.add(win)
@@ -256,9 +257,18 @@ def _booster_resell_price(sku: str) -> int:
     )
 
 
-def _card_resell_price(card: Card) -> int:
+async def rarity_resell_price(session: AsyncSession, rarity_name: Optional[str]) -> int:
+    """Resell price (cents) for a rarity name, read from the admin-managed
+    `rarity` table. 0 for an unknown/unset rarity."""
+    if not rarity_name:
+        return 0
+    r = await session.scalar(select(Rarity).where(Rarity.name == rarity_name))
+    return r.resell_price_cents if r else 0
+
+
+async def _card_resell_price(session: AsyncSession, card: Card) -> int:
     ct = card.card_type
-    return RESELL_PRICE_BY_RARITY_CENTS.get(ct.rarity.value, 0) if ct and ct.rarity else 0
+    return await rarity_resell_price(session, ct.rarity if ct else None)
 
 
 # ─── Booster-pair settlements ───────────────────────────────────────────

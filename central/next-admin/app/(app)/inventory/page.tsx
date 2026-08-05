@@ -71,40 +71,22 @@ type ObCard = {
   rarity: string | null;
 };
 
-// Common Pokémon holo/foil rendering categories (free-text; datalist suggestion).
-const HOLO_TYPES = [
-  "normal",
-  "reverse-holo",
-  "holo",
-  "cosmos-holo",
-  "galaxy-holo",
-  "amazing-rare",
-  "radiant-holo",
-  "v",
-  "v-full-art",
-  "v-max",
-  "v-star",
-  "trainer-gallery",
-  "trainer-full-art",
-  "rainbow-rare",
-  "gold-secret",
-  "shiny-vault",
-];
+// Managed vocabularies (admin: Inventory → Types). The card-type form's
+// dropdowns and the Types tab both read from these.
+type HoloTypeRow = { id: string; name: string; sort_order: number };
+type RarityRow = {
+  id: string;
+  name: string;
+  resell_price_cents: number;
+  sort_order: number;
+};
 
-const RARITIES = [
-  "COMMON",
-  "UNCOMMON",
-  "RARE",
-  "HOLO_RARE",
-  "ULTRA_RARE",
-  "CHASE",
-];
-
-type Tab = "opened" | "closed" | "cards";
+type Tab = "opened" | "closed" | "cards" | "types";
 const TABS: { key: Tab; label: string }[] = [
   { key: "opened", label: "Opened boosters" },
   { key: "closed", label: "Closed boosters" },
   { key: "cards", label: "Card types" },
+  { key: "types", label: "Types" },
 ];
 
 export default function InventoryPage() {
@@ -112,6 +94,8 @@ export default function InventoryPage() {
   const [opened, setOpened] = useState<OpenedBooster[] | null>(null);
   const [closed, setClosed] = useState<ClosedBooster[] | null>(null);
   const [cards, setCards] = useState<CardRow[] | null>(null);
+  const [holoTypes, setHoloTypes] = useState<HoloTypeRow[] | null>(null);
+  const [rarities, setRarities] = useState<RarityRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [newOpen, setNewOpen] = useState(false);
@@ -161,11 +145,23 @@ export default function InventoryPage() {
           "/admin/inventory/closed-boosters",
         );
         setClosed(r.closed_boosters);
+      } else if (tab === "cards") {
+        // The card-type form's Type/Rarity dropdowns read from the vocab.
+        const [ct, ht, rr] = await Promise.all([
+          apiFetch<{ card_types: CardRow[] }>("/admin/inventory/card-types"),
+          apiFetch<{ holo_types: HoloTypeRow[] }>("/admin/inventory/holo-types"),
+          apiFetch<{ rarities: RarityRow[] }>("/admin/inventory/rarities"),
+        ]);
+        setCards(ct.card_types);
+        setHoloTypes(ht.holo_types);
+        setRarities(rr.rarities);
       } else {
-        const r = await apiFetch<{ card_types: CardRow[] }>(
-          "/admin/inventory/card-types",
-        );
-        setCards(r.card_types);
+        const [ht, rr] = await Promise.all([
+          apiFetch<{ holo_types: HoloTypeRow[] }>("/admin/inventory/holo-types"),
+          apiFetch<{ rarities: RarityRow[] }>("/admin/inventory/rarities"),
+        ]);
+        setHoloTypes(ht.holo_types);
+        setRarities(rr.rarities);
       }
       setError(null);
     } catch (e) {
@@ -193,12 +189,14 @@ export default function InventoryPage() {
             Opened/closed booster pools and the single-card pool.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            Import JSON
-          </Button>
-          <Button onClick={() => setNewOpen(true)}>New</Button>
-        </div>
+        {tab !== "types" && (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              Import JSON
+            </Button>
+            <Button onClick={() => setNewOpen(true)}>New</Button>
+          </div>
+        )}
       </div>
 
       <nav className="flex items-center gap-1">
@@ -363,6 +361,14 @@ export default function InventoryPage() {
               </TableBody>
             </Table>
           )}
+          {tab === "types" && (
+            <TypesManager
+              holoTypes={holoTypes}
+              rarities={rarities}
+              onChanged={refresh}
+              onError={setError}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -370,6 +376,8 @@ export default function InventoryPage() {
       <CardTypeDialog
         open={(newOpen && tab === "cards") || editCard !== null}
         editing={editCard}
+        holoTypeNames={(holoTypes ?? []).map((h) => h.name)}
+        rarityNames={(rarities ?? []).map((r) => r.name)}
         onClose={() => {
           setNewOpen(false);
           setEditCard(null);
@@ -878,11 +886,15 @@ function OpenedBoosterDialog({
 function CardTypeDialog({
   open,
   editing,
+  holoTypeNames,
+  rarityNames,
   onClose,
   onSaved,
 }: {
   open: boolean;
   editing: CardRow | null;
+  holoTypeNames: string[];
+  rarityNames: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -890,7 +902,7 @@ function CardTypeDialog({
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
   const [type, setType] = useState("");
-  const [rarity, setRarity] = useState("COMMON");
+  const [rarity, setRarity] = useState("");
   const [setName_, setSetName] = useState("");
   const [number, setNumber] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -902,7 +914,7 @@ function CardTypeDialog({
     setName(editing?.name ?? "");
     setImage(editing?.image_url ?? "");
     setType(editing?.type ?? "");
-    setRarity(editing?.rarity ?? "COMMON");
+    setRarity(editing?.rarity ?? "");
     setSetName(editing?.set ?? "");
     setNumber(editing?.number ?? "");
     setError(null);
@@ -968,20 +980,20 @@ function CardTypeDialog({
           </Field>
           <ImageField label="Image" value={image} folder="cards" onChange={setImage} />
           <Field label="Type (holo / foil)">
-            <Input
+            <VocabSelect
               value={type}
-              onChange={(e) => setType(e.target.value)}
-              placeholder="reverse-holo"
-              list="holo-types"
+              onChange={setType}
+              options={holoTypeNames}
+              placeholder="— select type —"
             />
-            <datalist id="holo-types">
-              {HOLO_TYPES.map((t) => (
-                <option key={t} value={t} />
-              ))}
-            </datalist>
           </Field>
           <Field label="Rarity">
-            <RaritySelect value={rarity} onChange={setRarity} />
+            <VocabSelect
+              value={rarity}
+              onChange={setRarity}
+              options={rarityNames}
+              placeholder="— select rarity —"
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Set (optional)">
@@ -1040,25 +1052,211 @@ function Field({
   );
 }
 
-function RaritySelect({
+// A select bound to a managed vocabulary (holo types / rarities). Includes the
+// current value even if it's not in `options` (e.g. a value whose vocab row was
+// removed) so editing an existing card type never silently drops its type.
+function VocabSelect({
   value,
   onChange,
+  options,
+  placeholder,
 }: {
   value: string;
   onChange: (v: string) => void;
+  options: string[];
+  placeholder: string;
 }) {
+  const all = value && !options.includes(value) ? [value, ...options] : options;
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
     >
-      {RARITIES.map((r) => (
-        <option key={r} value={r}>
-          {r}
+      <option value="">{placeholder}</option>
+      {all.map((o) => (
+        <option key={o} value={o}>
+          {o}
         </option>
       ))}
     </select>
+  );
+}
+
+// ── Types tab: manage the holo-type + rarity vocabularies ──────────────────
+function TypesManager({
+  holoTypes,
+  rarities,
+  onChanged,
+  onError,
+}: {
+  holoTypes: HoloTypeRow[] | null;
+  rarities: RarityRow[] | null;
+  onChanged: () => void;
+  onError: (msg: string) => void;
+}) {
+  const [newType, setNewType] = useState("");
+  const [newRarity, setNewRarity] = useState("");
+  const [newPrice, setNewPrice] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await fn();
+      onChanged();
+    } catch (e) {
+      onError(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addType = () => {
+    const name = newType.trim();
+    if (!name) return;
+    run(async () => {
+      await apiFetch("/admin/inventory/holo-types", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      });
+      setNewType("");
+    });
+  };
+  const delType = (name: string) =>
+    run(() =>
+      apiFetch(`/admin/inventory/holo-types/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+      }),
+    );
+
+  const addRarity = () => {
+    const name = newRarity.trim();
+    if (!name) return;
+    const cents = Math.round(parseFloat(newPrice || "0") * 100);
+    run(async () => {
+      await apiFetch("/admin/inventory/rarities", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          resell_price_cents: Number.isFinite(cents) ? cents : 0,
+        }),
+      });
+      setNewRarity("");
+      setNewPrice("");
+    });
+  };
+  const setRarityPrice = (name: string, dollars: string) => {
+    const cents = Math.round(parseFloat(dollars || "0") * 100);
+    run(() =>
+      apiFetch(`/admin/inventory/rarities/${encodeURIComponent(name)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ resell_price_cents: Number.isFinite(cents) ? cents : 0 }),
+      }),
+    );
+  };
+  const delRarity = (name: string) =>
+    run(() =>
+      apiFetch(`/admin/inventory/rarities/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+      }),
+    );
+
+  return (
+    <div className="grid gap-8 md:grid-cols-2">
+      {/* Holo / foil types */}
+      <div>
+        <h3 className="mb-2 text-sm font-semibold">Holo / foil types</h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          The rendering categories a card type can use. A type in use by a card
+          type can&apos;t be removed.
+        </p>
+        <div className="mb-3 flex gap-2">
+          <Input
+            value={newType}
+            onChange={(e) => setNewType(e.target.value)}
+            placeholder="e.g. galaxy-holo"
+            onKeyDown={(e) => e.key === "Enter" && addType()}
+          />
+          <Button onClick={addType} disabled={busy || !newType.trim()}>
+            Add
+          </Button>
+        </div>
+        <ul className="divide-y rounded-md border">
+          {(holoTypes ?? []).map((h) => (
+            <li key={h.id} className="flex items-center justify-between px-3 py-2">
+              <span className="text-sm">{h.name}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => delType(h.name)}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+          {holoTypes && holoTypes.length === 0 && (
+            <li className="px-3 py-2 text-sm text-muted-foreground">None yet.</li>
+          )}
+        </ul>
+      </div>
+
+      {/* Rarities */}
+      <div>
+        <h3 className="mb-2 text-sm font-semibold">Rarities</h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Each rarity sets the resale price paid when a won card of that rarity
+          is sold back. In use = can&apos;t be removed.
+        </p>
+        <div className="mb-3 flex gap-2">
+          <Input
+            value={newRarity}
+            onChange={(e) => setNewRarity(e.target.value)}
+            placeholder="e.g. SECRET_RARE"
+          />
+          <Input
+            value={newPrice}
+            onChange={(e) => setNewPrice(e.target.value)}
+            placeholder="$ price"
+            inputMode="decimal"
+            className="w-24"
+          />
+          <Button onClick={addRarity} disabled={busy || !newRarity.trim()}>
+            Add
+          </Button>
+        </div>
+        <ul className="divide-y rounded-md border">
+          {(rarities ?? []).map((r) => (
+            <li key={r.id} className="flex items-center gap-2 px-3 py-2">
+              <span className="flex-1 text-sm">{r.name}</span>
+              <span className="text-xs text-muted-foreground">$</span>
+              <Input
+                defaultValue={(r.resell_price_cents / 100).toFixed(2)}
+                inputMode="decimal"
+                className="h-8 w-20"
+                disabled={busy}
+                onBlur={(e) => {
+                  const next = Math.round(parseFloat(e.target.value || "0") * 100);
+                  if (next !== r.resell_price_cents) setRarityPrice(r.name, e.target.value);
+                }}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => delRarity(r.name)}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+          {rarities && rarities.length === 0 && (
+            <li className="px-3 py-2 text-sm text-muted-foreground">None yet.</li>
+          )}
+        </ul>
+      </div>
+    </div>
   );
 }
 
