@@ -22,7 +22,7 @@ const TIMINGS = {
 const AUTO_SHUFFLE_COUNT = SHUFFLE.count;
 
 const WinChoiceModal = () => {
-	const { roundWon, pendingWin, openBoosterWin, resellPendingWin, keepCardWin, dismissPendingWin } = useClaw();
+	const { roundWon, pendingWin, openBoosterWin, resellPendingWin, keepCardWin, keepClosedBoosterWin, dismissPendingWin } = useClaw();
 	const isMobile = useIsMobile();
 	const lastSeen = useRef(roundWon);
 	const [open, setOpen] = useState(false);
@@ -221,12 +221,38 @@ const WinChoiceModal = () => {
 		close();
 	};
 
-	// "Open now" is the booster-pack reveal animation. For single-card wins
-	// the same button position becomes "Add to collection" — different
-	// backend call, no animation, since there's nothing to "open."
-	const isSingleCard = pendingWin?.prize_kind === 'SINGLE_CARD';
-	const primaryLabel = isSingleCard ? "Add to collection" : "Open now";
-	const onPrimary = isSingleCard ? handleKeepCard : openPack;
+	// Keep a won sealed pack (no reveal — a closed booster is never opened).
+	const handleKeepClosed = async () => {
+		if (!pendingWin) { close(); return; }
+		const res = await keepClosedBoosterWin();
+		toaster.create(
+			res.ok
+				? { description: "Kept — we'll ship your sealed pack", type: "success", duration: 2500 }
+				: { description: `Couldn't keep: ${res.error ?? "unknown error"}`, type: "error", duration: 2500 },
+		);
+		close();
+	};
+
+	// The primary action depends on the prize kind:
+	//   OPENED_BOOSTER → "Open now" (the reveal animation; consumes the opening)
+	//   CLOSED_BOOSTER → "Keep (ship later)" (sealed pack, no reveal)
+	//   SINGLE_CARD    → "Add to collection"
+	// In every case "Resell" (buyback) and "Add to inventory" (decide later)
+	// stay available. For a closed booster, buyback/keep leave the underlying
+	// OpenedBooster untouched — only "Open now" ever consumes one.
+	const kind = pendingWin?.prize_kind;
+	const isSingleCard = kind === 'SINGLE_CARD';
+	const isClosedBooster = kind === 'CLOSED_BOOSTER';
+	const primaryLabel = isClosedBooster
+		? "Keep (ship later)"
+		: isSingleCard
+			? "Add to collection"
+			: "Open now";
+	const onPrimary = isClosedBooster
+		? handleKeepClosed
+		: isSingleCard
+			? handleKeepCard
+			: openPack;
 
 	const onAutoShuffleComplete = () => {
 		setPhase("flipping");

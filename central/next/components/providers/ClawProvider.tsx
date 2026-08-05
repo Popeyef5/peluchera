@@ -188,6 +188,7 @@ interface ClawCtx {
 	openBoosterWin: () => Promise<SettleResult<{ cards: WinCard[] }>>;
 	resellPendingWin: () => Promise<SettleResult<{ credited_cents: number }>>;
 	keepCardWin: () => Promise<SettleResult<{ card: WinCard }>>;
+	keepClosedBoosterWin: () => Promise<SettleResult>;
 	dismissPendingWin: () => void;
 	// Inventory — works on any Win/Card the user owns, not just pendingWin.
 	getInventory: () => Promise<SettleResult<{ pendingWins: InventoryWin[]; cards: WinCard[] }>>;
@@ -704,6 +705,23 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		return r;
 	}, [pendingWin, keepCardByWinId]);
 
+	// Keep a won sealed pack (owed for shipment). No reveal — a closed booster
+	// is never opened; the OpenedBooster it would have used stays free to bind.
+	const keepClosedBoosterWin = useCallback(async (): Promise<SettleResult> => {
+		if (!pendingWin?.win_id) return { ok: false, error: "no pending win" };
+		if (pendingWin.prize_kind !== 'CLOSED_BOOSTER') return { ok: false, error: "not a closed-booster win" };
+		const r = await emitAck<Record<string, never>>(
+			'keep_closed_booster_win',
+			{ win_id: pendingWin.win_id },
+			(resp, resolve) => {
+				if (resp.status === 'ok') resolve({ ok: true, data: {} });
+				else resolve({ ok: false, error: resp.error as string | undefined, code: resp.code as string | undefined });
+			},
+		);
+		if (r.ok) setPendingWin(null);
+		return r;
+	}, [pendingWin]);
+
 	const dismissPendingWin = useCallback(() => {
 		setPendingWin(null);
 	}, []);
@@ -779,6 +797,7 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		openBoosterWin,
 		resellPendingWin,
 		keepCardWin,
+		keepClosedBoosterWin,
 		dismissPendingWin,
 		getInventory,
 		openBoosterByWinId,

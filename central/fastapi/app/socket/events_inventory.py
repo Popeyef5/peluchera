@@ -187,6 +187,57 @@ async def ship_booster_win(sid, data):
 		return _err(str(e))
 
 
+# ─── Win settlements: closed booster (sealed pack — kept or sold back) ───
+
+@sio.on("keep_closed_booster_win")
+async def keep_closed_booster_win(sid, data):
+	addr = await _require_addr(sid)
+	if not addr: return _err("not authenticated", "no_auth")
+	win_id = data.get("win_id")
+	if not win_id: return _err("win_id required")
+	try:
+		async with async_session() as db:
+			user = await wt.get_or_create_user(db, addr)
+			win = await db.get(Win, uuid.UUID(win_id))
+			if win is None or win.user_id != user.id:
+				return _err("win not found", "not_found")
+			await wt.keep_closed_booster_win(db, win.id)
+			await db.commit()
+		return _ok(settled=True)
+	except wt.WinAlreadySettled as e:
+		return _err(str(e), "already_settled")
+	except wt.WinKindMismatch as e:
+		return _err(str(e), "wrong_kind")
+	except Exception as e:
+		log.exception("keep_closed_booster_win failed")
+		return _err(str(e))
+
+
+@sio.on("resell_closed_booster_win")
+async def resell_closed_booster_win(sid, data):
+	addr = await _require_addr(sid)
+	if not addr: return _err("not authenticated", "no_auth")
+	win_id = data.get("win_id")
+	if not win_id: return _err("win_id required")
+	try:
+		async with async_session() as db:
+			user = await wt.get_or_create_user(db, addr)
+			win = await db.get(Win, uuid.UUID(win_id))
+			if win is None or win.user_id != user.id:
+				return _err("win not found", "not_found")
+			credited = win.resell_price_cents
+			await wt.resell_closed_booster_win(db, win.id)
+			await db.commit()
+		return _ok(settled=True, credited_cents=credited)
+	except wt.WinAlreadySettled as e:
+		return _err(str(e), "already_settled")
+	except wt.WinKindMismatch as e:
+		return _err(str(e), "wrong_kind")
+	except Exception as e:
+		log.exception("resell_closed_booster_win failed")
+		return _err(str(e))
+
+
 # ─── Win settlements: single card ───────────────────────────────────────
 
 @sio.on("keep_card_win")
