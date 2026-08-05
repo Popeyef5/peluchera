@@ -3,8 +3,10 @@ from typing import Optional
 
 # Central place for env-vars and project constants
 FRAME_RATE           = 0.1
-TURN_DURATION        = 30
-INTER_TURN_DELAY     = 3
+# Env-overridable so a load simulation can compress the turn cadence (see
+# scripts/sim). Production leaves them at the defaults.
+TURN_DURATION        = int(os.environ.get("TURN_DURATION", 30))
+INTER_TURN_DELAY     = int(os.environ.get("INTER_TURN_DELAY", 3))
 SYNC_PERIOD          = 15
 
 DATABASE_URL     = os.environ.get("DATABASE_URL")
