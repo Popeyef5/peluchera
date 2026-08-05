@@ -90,8 +90,9 @@ class KycStatus(str, enum.Enum):
 
 
 class PrizeKind(str, enum.Enum):
-    BOOSTER_PAIR = "BOOSTER_PAIR"
-    SINGLE_CARD  = "SINGLE_CARD"
+    BOOSTER_PAIR   = "BOOSTER_PAIR"    # a filmed OpenedBooster (can be opened)
+    CLOSED_BOOSTER = "CLOSED_BOOSTER"  # a sealed pack only (keep or sell back)
+    SINGLE_CARD    = "SINGLE_CARD"
 
 
 class BallStatus(str, enum.Enum):
@@ -202,6 +203,10 @@ class Ball(Base):
     # Exactly one of these is set, matching prize_kind.
     opened_booster_id   = Column(UUID(as_uuid=True), ForeignKey("opened_booster.id"), unique=True)
     prize_card_id       = Column(UUID(as_uuid=True), ForeignKey("card.id"), unique=True)
+    # A CLOSED_BOOSTER prize points at a sealed-pack catalog row. Unlike an
+    # OpenedBooster (a unique physical opening) a sealed pack is fungible-by-SKU,
+    # so this is NOT unique — many balls may award the same closed booster.
+    closed_booster_id   = Column(UUID(as_uuid=True), ForeignKey("closed_booster.id"))
 
     secret              = Column(String, nullable=False)
     commitment_hash     = Column(String, unique=True, nullable=False)
@@ -213,6 +218,7 @@ class Ball(Base):
 
     opened_booster      = relationship("OpenedBooster", foreign_keys=[opened_booster_id], back_populates="ball", uselist=False, lazy="selectin")
     prize_card          = relationship("Card", foreign_keys=[prize_card_id], back_populates="ball", uselist=False, lazy="selectin")
+    closed_booster      = relationship("ClosedBooster", foreign_keys=[closed_booster_id], lazy="selectin")
     batch               = relationship("CommitmentBatch", lazy="selectin")
     win                 = relationship("Win", back_populates="ball", uselist=False)
 

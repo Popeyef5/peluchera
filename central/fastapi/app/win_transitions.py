@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import Optional, TypedDict, Literal
 
 from sqlalchemy import select, update
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .config import RESELL_PRICE_BY_BOOSTER_SKU_CENTS
@@ -93,16 +94,18 @@ async def unclaimable_loaded_balls(session: AsyncSession) -> list[dict]:
         sealed-pack SKU it needs is out of stock (e.g. the set went out of print);
       - SINGLE_CARD:  its bound Card has left the pool.
     """
+    cb_direct = aliased(ClosedBooster)  # the pack a CLOSED_BOOSTER ball points at
     rows = (await session.execute(
-        select(Ball, OpenedBooster, Card, ClosedBooster.in_stock)
+        select(Ball, OpenedBooster, Card, ClosedBooster.in_stock, cb_direct)
         .outerjoin(OpenedBooster, OpenedBooster.id == Ball.opened_booster_id)
         .outerjoin(Card, Card.id == Ball.prize_card_id)
         .outerjoin(ClosedBooster, ClosedBooster.sku == OpenedBooster.sku)
+        .outerjoin(cb_direct, cb_direct.id == Ball.closed_booster_id)
         .where(Ball.status == BallStatus.LOADED)
     )).all()
 
     bad: list[dict] = []
-    for ball, booster, card, in_stock in rows:
+    for ball, booster, card, in_stock, closed in rows:
         if ball.prize_kind == PrizeKind.BOOSTER_PAIR:
             if booster is None:
                 bad.append({"serial": ball.serial, "reason": "no bound booster"})
@@ -112,6 +115,15 @@ async def unclaimable_loaded_balls(session: AsyncSession) -> list[dict]:
             elif not in_stock:
                 bad.append({"serial": ball.serial,
                             "reason": f"sealed pack {booster.sku} is out of stock"})
+        elif ball.prize_kind == PrizeKind.CLOSED_BOOSTER:
+            if closed is None:
+                bad.append({"serial": ball.serial, "reason": "no bound closed booster"})
+            elif not closed.is_complete:
+                bad.append({"serial": ball.serial,
+                            "reason": f"closed booster {closed.sku} is incomplete"})
+            elif not closed.in_stock:
+                bad.append({"serial": ball.serial,
+                            "reason": f"sealed pack {closed.sku} is out of stock"})
         else:  # SINGLE_CARD
             if card is None:
                 bad.append({"serial": ball.serial, "reason": "no bound card"})
@@ -220,6 +232,30 @@ async def reserve_win(
             .where(OpenedBooster.id == opened_id)
             .values(reserved_by_win_id=win.id)
         )
+        return win
+
+    if ball.prize_kind == PrizeKind.CLOSED_BOOSTER:
+        # A sealed pack, kept or sold back — never opened. Fungible-by-SKU like
+        # the booster pair's pack, so nothing to reserve per-unit; just confirm
+        # a pack of this SKU is in stock and snapshot its resell price.
+        cb_id = ball.closed_booster_id
+        cb = await session.scalar(
+            select(ClosedBooster).where(ClosedBooster.id == cb_id)
+        ) if cb_id else None
+        if cb is None:
+            raise PoolExhausted(f"Ball {ball_serial} has no bound closed booster")
+        if not cb.in_stock:
+            raise PoolExhausted(f"No sealed pack in stock for SKU {cb.sku}")
+        win = Win(
+            user_id=user.id,
+            queue_entry_id=queue_entry_id,
+            ball_id=ball.id,
+            prize_kind=ball.prize_kind,
+            expires_at=_expiry_from_now(),
+            resell_price_cents=_booster_resell_price(cb.sku),
+        )
+        session.add(win)
+        await session.flush()
         return win
 
     # SINGLE_CARD
@@ -354,6 +390,51 @@ async def _settle_booster_as_resell(
     )
     win.settled_at = datetime.utcnow()
     win.settled_by = settled_by
+
+
+# ─── Closed-booster settlements (kept or sold back; never opened) ───────
+
+async def _load_pending_closed_booster_win(session: AsyncSession, win_id: uuid.UUID) -> Win:
+    win = await session.get(Win, win_id)
+    if win is None or win.status != WinStatus.PENDING:
+        raise WinAlreadySettled(f"Win {win_id} is not PENDING")
+    if win.prize_kind != PrizeKind.CLOSED_BOOSTER:
+        raise WinKindMismatch(f"Win {win_id} is not a closed booster")
+    return win
+
+
+async def keep_closed_booster_win(session: AsyncSession, win_id: uuid.UUID) -> None:
+    """Keep the sealed pack for shipment. Sealed packs are fungible-by-SKU, so
+    there's no per-unit inventory to move — the settled Win is the record that
+    this user is owed one pack of its SKU."""
+    win = await _load_pending_closed_booster_win(session, win_id)
+    win.status = WinStatus.SETTLED_KEEP
+    win.settled_at = datetime.utcnow()
+    win.settled_by = SettlementKind.USER_KEEP
+
+
+async def _settle_closed_booster_as_resell(
+    session: AsyncSession,
+    win_id: uuid.UUID,
+    settled_by: SettlementKind,
+) -> None:
+    win = await _load_pending_closed_booster_win(session, win_id)
+    session.add(LedgerEntry(
+        user_id=win.user_id,
+        kind=(LedgerKind.AUTO_RESELL if settled_by == SettlementKind.AUTO_RESELL else LedgerKind.RESELL),
+        amount_cents=win.resell_price_cents,
+        win_id=win.id,
+    ))
+    win.status = (
+        WinStatus.EXPIRED if settled_by == SettlementKind.AUTO_RESELL
+        else WinStatus.SETTLED_RESELL
+    )
+    win.settled_at = datetime.utcnow()
+    win.settled_by = settled_by
+
+
+async def resell_closed_booster_win(session: AsyncSession, win_id: uuid.UUID) -> None:
+    await _settle_closed_booster_as_resell(session, win_id, SettlementKind.USER_RESELL)
 
 
 # ─── Single-card settlements ────────────────────────────────────────────
@@ -536,6 +617,8 @@ async def run_auto_resell_expired(
                 async with session.begin():
                     if prize_kind == PrizeKind.BOOSTER_PAIR:
                         await _settle_booster_as_resell(session, win_id, SettlementKind.AUTO_RESELL)
+                    elif prize_kind == PrizeKind.CLOSED_BOOSTER:
+                        await _settle_closed_booster_as_resell(session, win_id, SettlementKind.AUTO_RESELL)
                     else:
                         await _settle_card_as_resell(session, win_id, SettlementKind.AUTO_RESELL)
             settled += 1

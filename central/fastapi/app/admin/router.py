@@ -83,6 +83,7 @@ async def list_balls(_: AdminIdentity = RequireAdmin):
 					"prize_kind": b.prize_kind.value,
 					"opened_booster_id": str(b.opened_booster_id) if b.opened_booster_id else None,
 					"opened_booster_sku": b.opened_booster.sku if b.opened_booster else None,
+					"closed_booster_sku": b.closed_booster.sku if b.closed_booster else None,
 					"prize_card_id": str(b.prize_card_id) if b.prize_card_id else None,
 					# The card's catalog SKU (via prize_card -> card_type), so a
 					# single-card ball shows a real SKU instead of a "(card)"
@@ -274,6 +275,128 @@ async def bind_ball_card(
 				"prize_card_id": str(card_uuid),
 			},
 		}
+
+
+@router.get("/balls/bindable")
+async def bindable_balls(_: AdminIdentity = RequireAdmin):
+	"""Balls free to (re)bind — everything not currently LOADED (voided or
+	already grabbed/settled). The redesigned bind modal lists these; a brand-new
+	serial is handled by the scan/create path."""
+	async with async_session() as db:
+		rows = (await db.execute(
+			select(Ball).where(Ball.status != BallStatus.LOADED).order_by(Ball.serial)
+		)).scalars().all()
+		return {
+			"balls": [
+				{"serial": b.serial, "status": b.status.value} for b in rows
+			]
+		}
+
+
+class BindV2Body(BaseModel):
+	serial: str
+	kind: str  # BOOSTER_PAIR | CLOSED_BOOSTER | SINGLE_CARD
+	opened_booster_id: Optional[str] = None
+	closed_booster_sku: Optional[str] = None
+	card_type_sku: Optional[str] = None
+
+
+@router.post("/balls/bind")
+async def bind_ball_unified(body: BindV2Body, _: AdminIdentity = RequireAdmin):
+	"""One bind endpoint for all three prize kinds. Create-or-rebind on the
+	serial: creates a new LOADED Ball, or rebinds one that isn't currently
+	LOADED (grabbed/voided). Refuses to clobber a still-LOADED binding."""
+	serial = (body.serial or "").strip()
+	if not serial:
+		raise HTTPException(status_code=400, detail="serial required")
+
+	async with async_session() as db:
+		opened_booster_id = closed_booster_id = prize_card_id = None
+		seed = ""
+
+		if body.kind == PrizeKind.BOOSTER_PAIR.value:
+			try:
+				ob_uuid = uuid.UUID(body.opened_booster_id or "")
+			except ValueError:
+				raise HTTPException(status_code=400, detail="opened_booster_id required")
+			ob = await db.scalar(select(OpenedBooster).where(OpenedBooster.id == ob_uuid))
+			if ob is None:
+				raise HTTPException(status_code=404, detail="OpenedBooster not found")
+			if ob.status != InventoryStatus.AVAILABLE:
+				raise HTTPException(status_code=409, detail=f"OpenedBooster is {ob.status.value}, not AVAILABLE")
+			if not ob.is_complete:
+				raise HTTPException(status_code=409, detail="OpenedBooster is incomplete")
+			owner = await db.scalar(select(Ball).where(Ball.opened_booster_id == ob_uuid, Ball.serial != serial))
+			if owner is not None:
+				raise HTTPException(status_code=409, detail=f"OpenedBooster already bound to ball {owner.serial}")
+			opened_booster_id = ob_uuid
+			seed = str(ob_uuid)
+
+		elif body.kind == PrizeKind.CLOSED_BOOSTER.value:
+			cb = await db.scalar(select(ClosedBooster).where(ClosedBooster.sku == (body.closed_booster_sku or "")))
+			if cb is None:
+				raise HTTPException(status_code=404, detail="ClosedBooster not found")
+			if not cb.is_complete:
+				raise HTTPException(status_code=409, detail="ClosedBooster is incomplete — set name, both images and card count first.")
+			if not cb.in_stock:
+				raise HTTPException(status_code=409, detail=f"ClosedBooster {cb.sku} is out of stock")
+			closed_booster_id = cb.id  # fungible: no already-bound check
+			seed = str(cb.id)
+
+		elif body.kind == PrizeKind.SINGLE_CARD.value:
+			ct = await db.scalar(select(CardType).where(CardType.sku == (body.card_type_sku or "")))
+			if ct is None:
+				raise HTTPException(status_code=404, detail="Card type not found")
+			if not ct.is_complete:
+				raise HTTPException(status_code=409, detail="Card type is incomplete — set name, image, type and rarity first.")
+			# One IN_POOL instance per bound ball.
+			card = await _new_card(db, {"card_type_sku": ct.sku})
+			await db.flush()
+			prize_card_id = card.id
+			seed = str(card.id)
+
+		else:
+			raise HTTPException(status_code=400, detail=f"unknown kind {body.kind!r}")
+
+		ball = await db.scalar(select(Ball).where(Ball.serial == serial))
+		batch = await _ensure_batch(db)
+		secret = _placeholder_hash("admin-secret", serial, seed, str(datetime.utcnow()))
+		kind = PrizeKind(body.kind)
+
+		if ball is None:
+			ball = Ball(
+				serial=serial,
+				prize_kind=kind,
+				opened_booster_id=opened_booster_id,
+				closed_booster_id=closed_booster_id,
+				prize_card_id=prize_card_id,
+				secret=secret,
+				commitment_hash=_placeholder_hash(secret, seed),
+				merkle_proof={"siblings": [], "index": 0, "note": "placeholder"},
+				batch_id=batch.id,
+				status=BallStatus.LOADED,
+			)
+			db.add(ball)
+			created = True
+		else:
+			if ball.status == BallStatus.LOADED and (
+				ball.opened_booster_id or ball.prize_card_id or ball.closed_booster_id
+			):
+				raise HTTPException(status_code=409, detail=f"Ball {serial} is LOADED and already bound — void it before rebinding")
+			ball.prize_kind = kind
+			ball.opened_booster_id = opened_booster_id
+			ball.closed_booster_id = closed_booster_id
+			ball.prize_card_id = prize_card_id
+			ball.secret = secret
+			ball.commitment_hash = _placeholder_hash(secret, seed)
+			ball.merkle_proof = {"siblings": [], "index": 0, "note": "placeholder"}
+			ball.batch_id = batch.id
+			ball.status = BallStatus.LOADED
+			ball.voided_at = None
+			created = False
+
+		await db.commit()
+		return {"ok": True, "created": created, "serial": serial, "prize_kind": kind.value}
 
 
 @router.post("/balls/{serial}/void")
