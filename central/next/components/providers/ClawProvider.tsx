@@ -107,6 +107,9 @@ export interface PendingWin {
 	resell_price_cents: number;
 	// Ordered card previews for an OPENED_BOOSTER win — what the reveal renders.
 	cards?: WinRevealCard[];
+	// Number of cards in the sealed pack (won ClosedBooster SKU's card_count).
+	// Drives how many cards the open animation flips to the back. Booster only.
+	card_count?: number | null;
 	// Sealed-pack face images (from the won ClosedBooster) to skin the 3D mesh.
 	booster_front_url?: string | null;
 	booster_back_url?: string | null;

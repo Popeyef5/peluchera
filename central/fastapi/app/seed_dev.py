@@ -32,12 +32,15 @@ SKU = "pkmn-151"
 # type, image) — `type` is a holo_type vocabulary value that maps to a foil.
 _TCG = "https://images.pokemontcg.io"
 CARD_TEMPLATES = [
-    ("151", "001", "COMMON",     "holo",         f"{_TCG}/sm10/33.png"),
-    ("151", "004", "RARE",       "reverse-holo", f"{_TCG}/swsh12/127.png"),
-    ("151", "007", "HOLO_RARE",  "holo",         f"{_TCG}/pgo/24.png"),
-    ("151", "025", "HOLO_RARE",  "cosmos-holo",  f"{_TCG}/swshp/SWSH012.png"),
-    ("151", "150", "CHASE",      "rainbow",      f"{_TCG}/swsh4/188.png"),
-    ("151", "151", "ULTRA_RARE", "galaxy-holo",  f"{_TCG}/pgo/31.png"),
+    # A spread across simey categories, each paired with a matching real card so
+    # the win reveal showcases distinct holo effects (see next/lib/cards.ts
+    # HOLO_STYLES). `type` is the holo_type vocabulary value that drives the CSS.
+    ("151", "001", "HOLO_RARE",  "holo",         f"{_TCG}/pgo/24.png"),        # Articuno — holofoil
+    ("151", "004", "RARE",       "reverse-holo", f"{_TCG}/swsh12/127.png"),    # Togedemaru — reverse holo
+    ("151", "007", "HOLO_RARE",  "cosmos-holo",  f"{_TCG}/swshp/SWSH012.png"), # Morpeko — cosmos holo
+    ("151", "025", "ULTRA_RARE", "v",            f"{_TCG}/swsh7/110.png"),     # Rayquaza V
+    ("151", "150", "ULTRA_RARE", "vmax",         f"{_TCG}/swsh7/29.png"),      # Gyarados VMAX
+    ("151", "151", "CHASE",      "rainbow",      f"{_TCG}/swsh4/188.png"),     # Pikachu VMAX — rainbow
 ]
 
 

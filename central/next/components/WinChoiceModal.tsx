@@ -20,8 +20,6 @@ const TIMINGS = {
 	flipping: FLIP.desktopMs,
 };
 
-const AUTO_SHUFFLE_COUNT = SHUFFLE.count;
-
 const WinChoiceModal = () => {
 	const { pendingWin, openBoosterWin, resellPendingWin, keepCardWin, dismissPendingWin } = useClaw();
 	const isMobile = useIsMobile();
@@ -224,6 +222,12 @@ const WinChoiceModal = () => {
 		[pendingWin],
 	);
 
+	// How many cards flip face-down to the back during the open animation. This
+	// is a property of the pack itself — the won ClosedBooster SKU's card_count
+	// — so a 3-card pack shuffles 3 and a 10-card pack shuffles 10. Falls back to
+	// the number of revealed cards, then the animConfig default.
+	const shuffleCount = pendingWin?.card_count ?? revealDeck?.length ?? SHUFFLE.count;
+
 	// The primary action per prize kind. "Resell" and "Add to inventory" stay
 	// available for all. A closed booster has no primary: it can't be opened,
 	// and "keep it" is just "Add to inventory" — so we hide the primary button
@@ -298,7 +302,7 @@ const WinChoiceModal = () => {
 									{phase !== "pack" && (
 										<CardStack
 											flipFirst={phase === "flipping" || phase === "swiping"}
-											autoShuffles={phase === "shuffling" ? AUTO_SHUFFLE_COUNT : 0}
+											autoShuffles={phase === "shuffling" ? shuffleCount : 0}
 											onAutoShuffleComplete={onAutoShuffleComplete}
 											cards={revealDeck}
 										/>

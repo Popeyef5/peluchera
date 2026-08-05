@@ -455,6 +455,10 @@ async def _record_win(key_str: str, winner: Optional[str], ball_serial: str):
                 front, back = await wt.booster_face_images(db, win)
                 win_payload["booster_front_url"] = front
                 win_payload["booster_back_url"] = back
+                # How many cards the reveal flips to the back — the pack SKU's
+                # card_count (None for card wins; the reveal then falls back to
+                # the number of revealed cards).
+                win_payload["card_count"] = await wt.booster_card_count(db, win)
                 log.info(f"reserve_win OK: win_id={win.id} prize_kind={win.prize_kind.value}")
         except wt.BallNotAvailable as e:
             log.warning("_record_win: ball not available: %s", e)

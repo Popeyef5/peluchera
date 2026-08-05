@@ -309,23 +309,38 @@ async def _card_resell_price(session: AsyncSession, card: Card) -> int:
 
 # ─── Booster-pair settlements ───────────────────────────────────────────
 
+async def _closed_booster_for_win(session: AsyncSession, win: Win) -> Optional[ClosedBooster]:
+    """The sealed pack (ClosedBooster) behind a booster win — reached via the
+    opening for an OPENED_BOOSTER, or directly for a CLOSED_BOOSTER. None for
+    card wins (or if the chain is incomplete)."""
+    ball = await session.get(Ball, win.ball_id)
+    if ball is None:
+        return None
+    if win.prize_kind == PrizeKind.OPENED_BOOSTER and ball.opened_booster_id:
+        ob = await session.get(OpenedBooster, ball.opened_booster_id)
+        if ob and ob.closed_booster_id:
+            return await session.get(ClosedBooster, ob.closed_booster_id)
+    elif win.prize_kind == PrizeKind.CLOSED_BOOSTER and ball.closed_booster_id:
+        return await session.get(ClosedBooster, ball.closed_booster_id)
+    return None
+
+
 async def booster_face_images(session: AsyncSession, win: Win) -> tuple[Optional[str], Optional[str]]:
     """(front_url, back_url) of the sealed-pack faces to skin the win-reveal
     mesh — from the ClosedBooster behind an OPENED_BOOSTER (via its opening) or
     a CLOSED_BOOSTER win. (None, None) for card wins."""
-    ball = await session.get(Ball, win.ball_id)
-    if ball is None:
-        return None, None
-    cb = None
-    if win.prize_kind == PrizeKind.OPENED_BOOSTER and ball.opened_booster_id:
-        ob = await session.get(OpenedBooster, ball.opened_booster_id)
-        if ob and ob.closed_booster_id:
-            cb = await session.get(ClosedBooster, ob.closed_booster_id)
-    elif win.prize_kind == PrizeKind.CLOSED_BOOSTER and ball.closed_booster_id:
-        cb = await session.get(ClosedBooster, ball.closed_booster_id)
+    cb = await _closed_booster_for_win(session, win)
     if cb is None:
         return None, None
     return cb.image_front_url, cb.image_back_url
+
+
+async def booster_card_count(session: AsyncSession, win: Win) -> Optional[int]:
+    """The number of cards in the sealed pack behind a booster win — the won
+    ClosedBooster SKU's `card_count`. The reveal animation flips this many
+    cards to the back before turning the pile. None for card wins."""
+    cb = await _closed_booster_for_win(session, win)
+    return cb.card_count if cb else None
 
 
 async def opened_booster_card_previews(session: AsyncSession, win: Win) -> list[dict]:

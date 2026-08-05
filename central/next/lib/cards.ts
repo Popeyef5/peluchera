@@ -136,22 +136,61 @@ export const FOIL_TEXTURES = [
 	"/img/glitter.png",
 ] as const;
 
-// The foil overlay for an admin holo `type` (the managed vocabulary a card
-// type carries) — the real-win analogue of getFoilTexture, which keys off the
-// mock deck's TCG rarities. Unknown/plain types get no foil (a matte common).
+// ─── Holo type → simey render treatment ──────────────────────────────────
+//
+// Single source of truth mapping an admin holo `type` (the managed `holo_type`
+// vocabulary) to the simeydotme/pokemon-cards-css treatment: the data-rarity /
+// data-subtypes / data-supertype / trainer-gallery attributes the ported CSS
+// keys off (see globals.css), plus the tiled foil texture. Keys are holo_type
+// names (kebab-case). The categories mirror https://poke-holo.simey.me, so a
+// card lights up with the right effect the instant it's shown — instead of the
+// old behavior, which flattened every won card to a matte common.
+export type HoloStyle = {
+	rarity: Rarity;
+	subtypes?: string[];
+	supertype?: Supertype;
+	trainerGallery?: boolean;
+	foil?: string;
+};
+
+export const HOLO_STYLES: Record<string, HoloStyle> = {
+	// Non-foil base
+	"basic":            { rarity: "common", subtypes: ["basic"], supertype: "pokémon" },
+	"common":           { rarity: "common", subtypes: ["basic"], supertype: "pokémon" },
+	// Classic holofoils
+	"reverse-holo":     { rarity: "rare reverse holo",          foil: "/img/wave.png" },
+	"holo":             { rarity: "rare holo",                  foil: "/img/cosmos.webp" },
+	"cosmos-holo":      { rarity: "rare holo cosmos",           foil: "/img/cosmos.webp" },
+	"amazing":          { rarity: "amazing rare" },
+	"radiant-holo":     { rarity: "radiant rare",     subtypes: ["basic"],      foil: "/img/metal.png" },
+	// V / VMAX / VSTAR line
+	"v":                { rarity: "rare holo v",       subtypes: ["basic", "v"], foil: "/img/metal.png" },
+	"v-full-art":       { rarity: "rare ultra",        subtypes: ["basic", "v"], foil: "/img/wave.png" },
+	"ultra":            { rarity: "rare ultra",        subtypes: ["basic", "v"], foil: "/img/wave.png" },
+	"vmax":             { rarity: "rare holo vmax",    subtypes: ["vmax"],       foil: "/img/galaxy.jpg" },
+	"vmax-alt":         { rarity: "rare rainbow alt",  subtypes: ["vmax"],       foil: "/img/rainbow.webp" },
+	"vstar":            { rarity: "rare holo vstar",   subtypes: ["vstar"],      foil: "/img/galaxy.jpg" },
+	// Rainbow / secret / gold
+	"rainbow":          { rarity: "rare rainbow",      subtypes: ["vmax"],       foil: "/img/rainbow.webp" },
+	"galaxy-holo":      { rarity: "rare secret",       foil: "/img/galaxy.jpg" },
+	"secret":           { rarity: "rare secret",       foil: "/img/galaxy.jpg" },
+	// Trainer gallery / full art
+	"trainer-gallery":  { rarity: "trainer gallery rare holo", trainerGallery: true, foil: "/img/rainbow.webp" },
+	"trainer-full-art": { rarity: "rare ultra", supertype: "trainer", subtypes: ["supporter"], foil: "/img/wave.png" },
+	// Shiny vault
+	"shiny":            { rarity: "rare shiny",        subtypes: ["basic"],      foil: "/img/glitter.png" },
+	"shiny-v":          { rarity: "rare shiny v",      subtypes: ["basic", "v"], foil: "/img/metal.png" },
+};
+
+// The simey treatment for an admin holo `type`. Unknown/empty → a matte common.
+export function holoStyle(type: string | null | undefined): HoloStyle {
+	return HOLO_STYLES[(type || "").toLowerCase()] ?? { rarity: "common" };
+}
+
+// Back-compat: the foil texture alone for a holo `type` — now read from the
+// HOLO_STYLES map above so there's one place to keep in sync.
 export function foilForHoloType(type: string | null | undefined): string | undefined {
-	switch ((type || "").toLowerCase()) {
-		case "cosmos-holo":
-		case "holo":                return "/img/cosmos.webp";
-		case "reverse-holo":        return "/img/wave.png";
-		case "radiant-holo":        return "/img/metal.png";
-		case "galaxy-holo":
-		case "secret":              return "/img/galaxy.jpg";
-		case "rainbow":
-		case "amazing":
-		case "trainer-gallery":     return "/img/rainbow.webp";
-		default:                    return undefined;
-	}
+	return holoStyle(type).foil;
 }
 
 // A card as it arrives in the player_win / open-booster payload.
@@ -165,16 +204,23 @@ export type WinRevealCard = {
 };
 
 // Convert the won cards into the deck shape the reveal (CardStack/HoloCard)
-// renders. rarity is set to "common" because the foil is driven directly by
-// `foil` here, not derived from rarity.
+// renders. The holo `type` drives the full simey treatment — data-rarity,
+// subtypes, supertype, trainer-gallery and the foil texture — so each card
+// shows the effect for its own category instead of rendering flat.
 export function winCardsToDeck(cards: WinRevealCard[]): Card[] {
-	return cards.map((c) => ({
-		id: c.id,
-		name: c.name ?? "Card",
-		image: c.image_url ?? CARD_BACK_IMAGE,
-		rarity: "common" as Rarity,
-		foil: foilForHoloType(c.type),
-	}));
+	return cards.map((c) => {
+		const s = holoStyle(c.type);
+		return {
+			id: c.id,
+			name: c.name ?? "Card",
+			image: c.image_url ?? CARD_BACK_IMAGE,
+			rarity: s.rarity,
+			subtypes: s.subtypes,
+			supertype: s.supertype,
+			trainerGallery: s.trainerGallery,
+			foil: s.foil,
+		};
+	});
 }
 
 // Warm the browser cache for everything the win reveal paints, so nothing
