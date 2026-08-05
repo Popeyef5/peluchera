@@ -25,7 +25,7 @@ from .. import machine
 def _ball_sku(b: Ball):
     """The catalog SKU behind a loaded ball's prize — booster SKU for a pair,
     card-type SKU for a single card (both relationships are lazy='selectin')."""
-    if b.prize_kind == PrizeKind.BOOSTER_PAIR:
+    if b.prize_kind == PrizeKind.OPENED_BOOSTER:
         return b.opened_booster.sku if b.opened_booster else None
     if b.prize_card and b.prize_card.card_type:
         return b.prize_card.card_type.sku

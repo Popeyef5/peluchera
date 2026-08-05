@@ -83,7 +83,7 @@ def _serialize_pending_win(w: Win) -> dict:
 		"resell_price_cents": w.resell_price_cents,
 		"ball_serial": w.ball.serial if w.ball else None,
 	}
-	if w.prize_kind == PrizeKind.BOOSTER_PAIR:
+	if w.prize_kind == PrizeKind.OPENED_BOOSTER:
 		# The sealed pack is fungible-by-SKU (ClosedBooster); its SKU is
 		# the opened booster's SKU, surfaced below.
 		base["opened_booster"] = {

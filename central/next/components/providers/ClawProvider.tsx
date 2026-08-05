@@ -98,7 +98,7 @@ interface RoundStartData {
 	round_info: [number, number]; // [MaxFee, FeeGrowth]
 }
 
-export type PrizeKind = 'BOOSTER_PAIR' | 'SINGLE_CARD';
+export type PrizeKind = 'OPENED_BOOSTER' | 'CLOSED_BOOSTER' | 'SINGLE_CARD';
 
 export interface PendingWin {
 	win_id: string;
@@ -637,7 +637,10 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 	const resellWinByWinId = useCallback(
 		(winId: string, prizeKind: PrizeKind) => {
-			const event = prizeKind === 'BOOSTER_PAIR' ? 'resell_booster_win' : 'resell_card_win';
+			const event =
+				prizeKind === 'OPENED_BOOSTER' ? 'resell_booster_win'
+				: prizeKind === 'CLOSED_BOOSTER' ? 'resell_closed_booster_win'
+				: 'resell_card_win';
 			return emitAck<{ credited_cents: number }>(event, { win_id: winId }, (r, resolve) => {
 				if (r.status === 'ok') resolve({ ok: true, data: { credited_cents: (r.credited_cents as number | undefined) ?? 0 } });
 				else resolve({ ok: false, error: r.error as string | undefined, code: r.code as string | undefined });

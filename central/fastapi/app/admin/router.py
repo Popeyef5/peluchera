@@ -152,7 +152,7 @@ async def bind_ball(
 		if ball is None:
 			ball = Ball(
 				serial=serial,
-				prize_kind=PrizeKind.BOOSTER_PAIR,
+				prize_kind=PrizeKind.OPENED_BOOSTER,
 				opened_booster_id=ob_uuid,
 				secret=secret,
 				commitment_hash=_placeholder_hash(secret, str(ob_uuid)),
@@ -168,7 +168,7 @@ async def bind_ball(
 					status_code=409,
 					detail=f"Ball {serial} is LOADED and already bound — void it before rebinding",
 				)
-			ball.prize_kind = PrizeKind.BOOSTER_PAIR
+			ball.prize_kind = PrizeKind.OPENED_BOOSTER
 			ball.opened_booster_id = ob_uuid
 			ball.prize_card_id = None
 			ball.secret = secret
@@ -296,7 +296,7 @@ async def bindable_balls(_: AdminIdentity = RequireAdmin):
 
 class BindV2Body(BaseModel):
 	serial: str
-	kind: str  # BOOSTER_PAIR | CLOSED_BOOSTER | SINGLE_CARD
+	kind: str  # OPENED_BOOSTER | CLOSED_BOOSTER | SINGLE_CARD
 	opened_booster_id: Optional[str] = None
 	closed_booster_sku: Optional[str] = None
 	card_type_sku: Optional[str] = None
@@ -315,7 +315,7 @@ async def bind_ball_unified(body: BindV2Body, _: AdminIdentity = RequireAdmin):
 		opened_booster_id = closed_booster_id = prize_card_id = None
 		seed = ""
 
-		if body.kind == PrizeKind.BOOSTER_PAIR.value:
+		if body.kind == PrizeKind.OPENED_BOOSTER.value:
 			try:
 				ob_uuid = uuid.UUID(body.opened_booster_id or "")
 			except ValueError:
@@ -515,7 +515,7 @@ async def create_ball(body: CreateBallBody, _: AdminIdentity = RequireAdmin):
 		secret = _placeholder_hash("admin-create", serial, str(datetime.utcnow()))
 		ball = Ball(
 			serial=serial,
-			prize_kind=PrizeKind.BOOSTER_PAIR,   # provisional; rebind sets the real kind
+			prize_kind=PrizeKind.OPENED_BOOSTER,   # provisional; rebind sets the real kind
 			opened_booster_id=None,
 			secret=secret,
 			commitment_hash=_placeholder_hash(secret, serial),
@@ -1242,7 +1242,7 @@ def _describe_prize(w: Win) -> dict:
 		"resell_price_cents": w.resell_price_cents,
 		"expires_at": w.expires_at.isoformat() if w.expires_at else None,
 	}
-	if w.prize_kind == PrizeKind.BOOSTER_PAIR:
+	if w.prize_kind == PrizeKind.OPENED_BOOSTER:
 		ob = w.ball.opened_booster if w.ball else None
 		info["sku"] = ob.sku if ob else None
 		info["label"] = f"Booster pair · {ob.sku}" if ob else "Booster pair"

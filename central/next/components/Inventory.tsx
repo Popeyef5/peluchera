@@ -176,7 +176,7 @@ const PendingRow: React.FC<{
 	onResell: () => void;
 	onShip: () => void;
 }> = ({ win, busy, onOpen, onKeep, onResell, onShip }) => {
-	const isBooster = win.prize_kind === 'BOOSTER_PAIR';
+	const isBooster = win.prize_kind === 'OPENED_BOOSTER';
 	const title = isBooster
 		? (win.opened_booster?.sku ?? win.closed_booster?.sku ?? 'Booster')
 		: (win.card_preview ? `${RARITY_LABEL[win.card_preview.rarity] ?? win.card_preview.rarity} card` : 'Card');

@@ -168,7 +168,7 @@ const WinChoiceModal = () => {
 		// response carries the actual revealed cards but we don't yet feed
 		// them into CardStack (it still uses the mock seed in lib/cards.ts);
 		// that's the next polish slice.
-		if (pendingWin?.prize_kind === 'BOOSTER_PAIR') {
+		if (pendingWin?.prize_kind === 'OPENED_BOOSTER') {
 			openBoosterWin().then((res) => {
 				if (!res.ok) console.warn('openBoosterWin failed:', res.error, res.code);
 			});

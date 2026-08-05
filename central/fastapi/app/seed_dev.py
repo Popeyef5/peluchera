@@ -130,14 +130,14 @@ async def seed():
             await db.flush()
             single_cards.append(card)
 
-        # 12 Balls — 6 bound to OpenedBoosters (BOOSTER_PAIR), 6 bound to
+        # 12 Balls — 6 bound to OpenedBoosters (OPENED_BOOSTER), 6 bound to
         # single Cards (SINGLE_CARD). Secrets and commitments are fake but
         # well-formed; merkle_proof is a stub.
         for i, ob in enumerate(opened_list):
             secret = _fake_hash(f"secret-booster-{i}")
             db.add(Ball(
                 serial=f"BALL-B{i:03d}",
-                prize_kind=PrizeKind.BOOSTER_PAIR,
+                prize_kind=PrizeKind.OPENED_BOOSTER,
                 opened_booster_id=ob.id,
                 secret=secret,
                 commitment_hash=_fake_hash(secret, str(ob.id)),

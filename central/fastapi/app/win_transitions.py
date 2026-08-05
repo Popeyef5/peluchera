@@ -90,7 +90,7 @@ async def unclaimable_loaded_balls(session: AsyncSession) -> list[dict]:
     thought to guard.
 
     A ball is unclaimable when:
-      - BOOSTER_PAIR: its bound OpenedBooster is no longer AVAILABLE, or the
+      - OPENED_BOOSTER: its bound OpenedBooster is no longer AVAILABLE, or the
         sealed-pack SKU it needs is out of stock (e.g. the set went out of print);
       - SINGLE_CARD:  its bound Card has left the pool.
     """
@@ -106,7 +106,7 @@ async def unclaimable_loaded_balls(session: AsyncSession) -> list[dict]:
 
     bad: list[dict] = []
     for ball, booster, card, in_stock, closed in rows:
-        if ball.prize_kind == PrizeKind.BOOSTER_PAIR:
+        if ball.prize_kind == PrizeKind.OPENED_BOOSTER:
             if booster is None:
                 bad.append({"serial": ball.serial, "reason": "no bound booster"})
             elif booster.status != InventoryStatus.AVAILABLE:
@@ -151,7 +151,7 @@ async def reserve_win(
 
     Atomically:
     - Marks the ball GRABBED.
-    - For BOOSTER_PAIR: reserves the bound OpenedBooster (single-row) and
+    - For OPENED_BOOSTER: reserves the bound OpenedBooster (single-row) and
       confirms a sealed pack of the same SKU is in stock (ClosedBooster
       is a per-SKU availability flag — fungible, nothing to decrement).
     - For SINGLE_CARD: reserves the bound Card.
@@ -190,7 +190,7 @@ async def reserve_win(
     ball.status = BallStatus.GRABBED
     await session.commit()
 
-    if ball.prize_kind == PrizeKind.BOOSTER_PAIR:
+    if ball.prize_kind == PrizeKind.OPENED_BOOSTER:
         opened_id = ball.opened_booster_id
         r1 = await session.execute(
             update(OpenedBooster)
@@ -578,7 +578,7 @@ async def void_ball(session: AsyncSession, ball_id: uuid.UUID) -> None:
     if ball.status != BallStatus.LOADED:
         raise BallNotAvailable(f"Cannot void ball in status {ball.status}")
 
-    if ball.prize_kind == PrizeKind.BOOSTER_PAIR and ball.opened_booster_id:
+    if ball.prize_kind == PrizeKind.OPENED_BOOSTER and ball.opened_booster_id:
         await session.execute(
             update(OpenedBooster)
             .where(OpenedBooster.id == ball.opened_booster_id)
@@ -615,7 +615,7 @@ async def run_auto_resell_expired(
         try:
             async with session_factory() as session:
                 async with session.begin():
-                    if prize_kind == PrizeKind.BOOSTER_PAIR:
+                    if prize_kind == PrizeKind.OPENED_BOOSTER:
                         await _settle_booster_as_resell(session, win_id, SettlementKind.AUTO_RESELL)
                     elif prize_kind == PrizeKind.CLOSED_BOOSTER:
                         await _settle_closed_booster_as_resell(session, win_id, SettlementKind.AUTO_RESELL)
@@ -636,7 +636,7 @@ async def _load_pending_booster_win(session: AsyncSession, win_id: uuid.UUID) ->
     win = await session.get(Win, win_id)
     if win is None or win.status != WinStatus.PENDING:
         raise WinAlreadySettled(f"Win {win_id} is not PENDING")
-    if win.prize_kind != PrizeKind.BOOSTER_PAIR:
+    if win.prize_kind != PrizeKind.OPENED_BOOSTER:
         raise WinKindMismatch(f"Win {win_id} is not a booster pair")
     return win
 

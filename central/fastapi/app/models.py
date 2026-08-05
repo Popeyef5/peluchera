@@ -90,7 +90,7 @@ class KycStatus(str, enum.Enum):
 
 
 class PrizeKind(str, enum.Enum):
-    BOOSTER_PAIR   = "BOOSTER_PAIR"    # a filmed OpenedBooster (can be opened)
+    OPENED_BOOSTER   = "OPENED_BOOSTER"    # a filmed OpenedBooster (can be opened)
     CLOSED_BOOSTER = "CLOSED_BOOSTER"  # a sealed pack only (keep or sell back)
     SINGLE_CARD    = "SINGLE_CARD"
 

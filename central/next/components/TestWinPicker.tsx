@@ -126,7 +126,7 @@ export function TestWinPicker() {
 									/>
 									<span className="tw-serial">{b.serial}</span>
 									<span className="tw-kind">
-										{b.prize_kind === "BOOSTER_PAIR" ? "Booster" : "Card"}
+										{b.prize_kind === "OPENED_BOOSTER" ? "Booster" : "Card"}
 									</span>
 									<span className="tw-sku">{b.sku ?? "—"}</span>
 								</label>

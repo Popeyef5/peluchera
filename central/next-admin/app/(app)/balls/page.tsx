@@ -479,7 +479,7 @@ function SearchSelect({
   );
 }
 
-type BindKind = "BOOSTER_PAIR" | "CLOSED_BOOSTER" | "SINGLE_CARD";
+type BindKind = "OPENED_BOOSTER" | "CLOSED_BOOSTER" | "SINGLE_CARD";
 type ClosedBoosterRow = {
   sku: string;
   name: string | null;
@@ -502,7 +502,7 @@ function BindDialog({
 }) {
   const [ballMode, setBallMode] = useState<"existing" | "scan">("existing");
   const [serial, setSerial] = useState("");
-  const [kind, setKind] = useState<BindKind>("BOOSTER_PAIR");
+  const [kind, setKind] = useState<BindKind>("OPENED_BOOSTER");
   const [target, setTarget] = useState(""); // ob id / closed sku / card-type sku
 
   const [freeBalls, setFreeBalls] = useState<BindableBall[] | null>(null);
@@ -521,7 +521,7 @@ function BindDialog({
     if (!open) {
       setBallMode("existing");
       setSerial("");
-      setKind("BOOSTER_PAIR");
+      setKind("OPENED_BOOSTER");
       setTarget("");
       setError(null);
       setScanning(false);
@@ -593,7 +593,7 @@ function BindDialog({
   };
 
   const targetOptions =
-    kind === "BOOSTER_PAIR"
+    kind === "OPENED_BOOSTER"
       ? obs.map((o) => ({ value: o.id, label: `${o.sku} — ${o.id.slice(0, 8)}…` }))
       : kind === "CLOSED_BOOSTER"
         ? closed.map((c) => ({ value: c.sku, label: `${c.sku}${c.name ? ` — ${c.name}` : ""}` }))
@@ -604,7 +604,7 @@ function BindDialog({
     setError(null);
     setSubmitting(true);
     const body: Record<string, string> = { serial, kind };
-    if (kind === "BOOSTER_PAIR") body.opened_booster_id = target;
+    if (kind === "OPENED_BOOSTER") body.opened_booster_id = target;
     else if (kind === "CLOSED_BOOSTER") body.closed_booster_sku = target;
     else body.card_type_sku = target;
     try {
@@ -621,7 +621,7 @@ function BindDialog({
   };
 
   const KINDS: { key: BindKind; label: string }[] = [
-    { key: "BOOSTER_PAIR", label: "Booster pair" },
+    { key: "OPENED_BOOSTER", label: "Opened booster" },
     { key: "CLOSED_BOOSTER", label: "Closed booster" },
     { key: "SINGLE_CARD", label: "Card" },
   ];
@@ -705,7 +705,7 @@ function BindDialog({
           {/* Target */}
           <div className="space-y-1">
             <label className="text-sm font-medium">
-              {kind === "BOOSTER_PAIR"
+              {kind === "OPENED_BOOSTER"
                 ? "Opened booster"
                 : kind === "CLOSED_BOOSTER"
                   ? "Closed booster (in stock)"
