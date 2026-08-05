@@ -27,6 +27,30 @@ from .models import (
 
 SKU = "pkmn-151"
 
+# Sealed-pack SKUs to seed. Each becomes a ClosedBooster plus `openings` filmed
+# OpenedBoosters (every one carrying `card_count` ordered cards) and one loaded
+# OPENED_BOOSTER ball per opening (serial BALL-<ball_prefix><nnn>). `reveal`
+# is the ClosedBooster.reveal_card_count — how many face-down cards the open
+# animation fans out, independent of the real card_count.
+BOOSTERS = [
+    {
+        "sku": SKU, "name": "Pokémon 151",
+        # Local dev pack art (served from next/public), SAME on both faces so
+        # the 3D reveal mesh is coherent (no CORS, no 404).
+        "front": "/boosters/test/front.webp",
+        "back": "/boosters/test/front.webp",
+        "card_count": 3, "reveal": 3, "openings": 6, "ball_prefix": "B",
+    },
+    {
+        "sku": "thunder", "name": "Raging Pokemons",
+        # Supabase-hosted pack art. card_count is 5 but the reveal fans only 2 —
+        # a live example of reveal_card_count being independent of pack size.
+        "front": "https://cjuryopztkipqqkivsge.supabase.co/storage/v1/object/public/assets/boosters/aecrkn95.jpeg",
+        "back": "https://cjuryopztkipqqkivsge.supabase.co/storage/v1/object/public/assets/boosters/ke34synt.jpeg",
+        "card_count": 5, "reveal": 2, "openings": 3, "ball_prefix": "T",
+    },
+]
+
 # Real card assets so the admin catalog (and, once wired, the win reveal) shows
 # the same cards + foil styles as the design demo. (set, number, rarity, holo
 # type, image) — `type` is a holo_type vocabulary value that maps to a foil.
@@ -93,46 +117,40 @@ async def seed():
             card_types[ct.sku] = ct
         await db.flush()
 
-        # Closed-booster catalog for this SKU — complete (name, faces, count).
-        closed = ClosedBooster(
-            sku=SKU, name="Pokémon 151", card_count=3, in_stock=True,
-            # How many face-down cards the open animation fans out — independent
-            # of card_count. Here they happen to match (3).
-            reveal_card_count=3,
-            # Local dev pack art (served from next/public) so the 3D reveal
-            # renders real front/back UV maps same-origin (no CORS, no 404).
-            # Both faces use the SAME pack so the mesh is coherent — the previous
-            # placeholders were two DIFFERENT packs (a Phantasmal Flames front
-            # and a Base Set back), which looked like the art swapped mid-reveal.
-            image_front_url="/boosters/test/front.webp",
-            image_back_url="/boosters/test/front.webp",
-        )
-        db.add(closed)
-        await db.flush()
-
-        # 6 OpenedBoosters, each linked to the ClosedBooster with 3 ordered cards.
-        opened_list = []
-        for i in range(6):
-            ob = OpenedBooster(
-                closed_booster_id=closed.id,
-                sku=SKU,
-                video_url=f"https://example.com/videos/opened_{i}.mp4",
-                video_hash=_fake_hash(f"opened-video-{i}"),
-                filmed_at=datetime.utcnow(),
+        # Closed-booster catalog + filmed openings + cards, one set per SKU in
+        # BOOSTERS. Each opening carries exactly card_count cards (so it's
+        # complete and its ball can bind).
+        opened_balls = []  # (ball_prefix, opening_index, OpenedBooster)
+        for spec in BOOSTERS:
+            closed = ClosedBooster(
+                sku=spec["sku"], name=spec["name"], in_stock=True,
+                card_count=spec["card_count"], reveal_card_count=spec["reveal"],
+                image_front_url=spec["front"], image_back_url=spec["back"],
             )
-            db.add(ob)
+            db.add(closed)
             await db.flush()
-            opened_list.append(ob)
 
-            for j in range(3):
-                set_, num, rarity, type_, image_url = CARD_TEMPLATES[(i + j) % len(CARD_TEMPLATES)]
-                db.add(Card(
-                    card_type_id=card_types[f"{set_}-{num}"].id,
-                    origin=CardOrigin.OPENED_BOOSTER,
-                    opened_booster_id=ob.id,
-                    position=j,
-                    status=CardStatus.IN_POOL,
-                ))
+            for i in range(spec["openings"]):
+                ob = OpenedBooster(
+                    closed_booster_id=closed.id,
+                    sku=spec["sku"],
+                    video_url=f"https://example.com/videos/{spec['sku']}_{i}.mp4",
+                    video_hash=_fake_hash(f"opened-{spec['sku']}-{i}"),
+                    filmed_at=datetime.utcnow(),
+                )
+                db.add(ob)
+                await db.flush()
+                opened_balls.append((spec["ball_prefix"], i, ob))
+
+                for j in range(spec["card_count"]):
+                    set_, num, rarity, type_, image_url = CARD_TEMPLATES[(i + j) % len(CARD_TEMPLATES)]
+                    db.add(Card(
+                        card_type_id=card_types[f"{set_}-{num}"].id,
+                        origin=CardOrigin.OPENED_BOOSTER,
+                        opened_booster_id=ob.id,
+                        position=j,
+                        status=CardStatus.IN_POOL,
+                    ))
 
         # 6 standalone single-prize Cards.
         single_cards = []
@@ -147,21 +165,23 @@ async def seed():
             await db.flush()
             single_cards.append(card)
 
-        # 12 Balls — 6 bound to OpenedBoosters (OPENED_BOOSTER), 6 bound to
-        # single Cards (SINGLE_CARD). Secrets and commitments are fake but
-        # well-formed; merkle_proof is a stub.
-        for i, ob in enumerate(opened_list):
-            secret = _fake_hash(f"secret-booster-{i}")
+        # Balls — one OPENED_BOOSTER ball per opening (serial by SKU prefix),
+        # plus one SINGLE_CARD ball per standalone card. Secrets and commitments
+        # are fake but well-formed; merkle_proof is a stub.
+        idx = 0
+        for prefix, i, ob in opened_balls:
+            secret = _fake_hash(f"secret-booster-{prefix}-{i}")
             db.add(Ball(
-                serial=f"BALL-B{i:03d}",
+                serial=f"BALL-{prefix}{i:03d}",
                 prize_kind=PrizeKind.OPENED_BOOSTER,
                 opened_booster_id=ob.id,
                 secret=secret,
                 commitment_hash=_fake_hash(secret, str(ob.id)),
-                merkle_proof={"siblings": [], "index": i},
+                merkle_proof={"siblings": [], "index": idx},
                 batch_id=batch.id,
                 status=BallStatus.LOADED,
             ))
+            idx += 1
 
         for i, card in enumerate(single_cards):
             secret = _fake_hash(f"secret-card-{i}")
@@ -171,7 +191,7 @@ async def seed():
                 prize_card_id=card.id,
                 secret=secret,
                 commitment_hash=_fake_hash(secret, str(card.id)),
-                merkle_proof={"siblings": [], "index": 6 + i},
+                merkle_proof={"siblings": [], "index": idx + i},
                 batch_id=batch.id,
                 status=BallStatus.LOADED,
             ))
@@ -180,10 +200,12 @@ async def seed():
 
     print("[seed] done:")
     print("  1 commitment batch")
-    print("  6 booster-pair balls   (BALL-B000 .. BALL-B005)")
+    for spec in BOOSTERS:
+        p, n = spec["ball_prefix"], spec["openings"]
+        print(f"  {n} booster balls  (BALL-{p}000 .. BALL-{p}{n-1:03d})  "
+              f"SKU={spec['sku']} card_count={spec['card_count']} reveal={spec['reveal']}")
     print("  6 single-card balls    (BALL-C000 .. BALL-C005)")
-    print(f"  12 closed boosters     (SKU={SKU})")
-    print("  18 booster-internal cards + 6 standalone")
+    print("  + booster-internal cards & 6 standalone")
 
 
 async def main():
