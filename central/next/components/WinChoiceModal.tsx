@@ -223,10 +223,11 @@ const WinChoiceModal = () => {
 	);
 
 	// How many cards flip face-down to the back during the open animation. This
-	// is a property of the pack itself — the won ClosedBooster SKU's card_count
-	// — so a 3-card pack shuffles 3 and a 10-card pack shuffles 10. Falls back to
-	// the number of revealed cards, then the animConfig default.
-	const shuffleCount = pendingWin?.card_count ?? revealDeck?.length ?? SHUFFLE.count;
+	// is a property of the pack itself — the won ClosedBooster SKU's
+	// reveal_card_count (an independent presentation field; the backend falls
+	// back to the real card_count when it's unset). Falls back further to the
+	// number of revealed cards, then the animConfig default.
+	const shuffleCount = pendingWin?.reveal_card_count ?? revealDeck?.length ?? SHUFFLE.count;
 
 	// The primary action per prize kind. "Resell" and "Add to inventory" stay
 	// available for all. A closed booster has no primary: it can't be opened,

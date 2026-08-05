@@ -96,10 +96,16 @@ async def seed():
         # Closed-booster catalog for this SKU — complete (name, faces, count).
         closed = ClosedBooster(
             sku=SKU, name="Pokémon 151", card_count=3, in_stock=True,
+            # How many face-down cards the open animation fans out — independent
+            # of card_count. Here they happen to match (3).
+            reveal_card_count=3,
             # Local dev pack art (served from next/public) so the 3D reveal
             # renders real front/back UV maps same-origin (no CORS, no 404).
+            # Both faces use the SAME pack so the mesh is coherent — the previous
+            # placeholders were two DIFFERENT packs (a Phantasmal Flames front
+            # and a Base Set back), which looked like the art swapped mid-reveal.
             image_front_url="/boosters/test/front.webp",
-            image_back_url="/boosters/test/back.webp",
+            image_back_url="/boosters/test/front.webp",
         )
         db.add(closed)
         await db.flush()

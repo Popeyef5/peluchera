@@ -335,12 +335,15 @@ async def booster_face_images(session: AsyncSession, win: Win) -> tuple[Optional
     return cb.image_front_url, cb.image_back_url
 
 
-async def booster_card_count(session: AsyncSession, win: Win) -> Optional[int]:
-    """The number of cards in the sealed pack behind a booster win — the won
-    ClosedBooster SKU's `card_count`. The reveal animation flips this many
-    cards to the back before turning the pile. None for card wins."""
+async def booster_reveal_card_count(session: AsyncSession, win: Win) -> Optional[int]:
+    """How many face-down cards the reveal animation flips to the back before
+    turning the pile — the won ClosedBooster SKU's `reveal_card_count`, an
+    independent presentation field. Falls back to `card_count` (the real pack
+    size) when unset. None for card wins."""
     cb = await _closed_booster_for_win(session, win)
-    return cb.card_count if cb else None
+    if cb is None:
+        return None
+    return cb.reveal_card_count if cb.reveal_card_count is not None else cb.card_count
 
 
 async def opened_booster_card_previews(session: AsyncSession, win: Win) -> list[dict]:

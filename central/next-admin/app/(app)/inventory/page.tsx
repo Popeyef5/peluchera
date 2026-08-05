@@ -51,6 +51,7 @@ type ClosedBooster = {
   image_front_url: string | null;
   image_back_url: string | null;
   card_count: number | null;
+  reveal_card_count: number | null;
   in_stock: boolean;
   is_complete: boolean;
 };
@@ -539,6 +540,7 @@ function ClosedBoosterDialog({
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [cardCount, setCardCount] = useState("");
+  const [revealCardCount, setRevealCardCount] = useState("");
   const [inStock, setInStock] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -550,6 +552,9 @@ function ClosedBoosterDialog({
     setFront(editing?.image_front_url ?? "");
     setBack(editing?.image_back_url ?? "");
     setCardCount(editing?.card_count != null ? String(editing.card_count) : "");
+    setRevealCardCount(
+      editing?.reveal_card_count != null ? String(editing.reveal_card_count) : "",
+    );
     setInStock(editing?.in_stock ?? true);
     setError(null);
     setSubmitting(false);
@@ -564,6 +569,7 @@ function ClosedBoosterDialog({
       image_front_url: front || null,
       image_back_url: back || null,
       card_count: cardCount ? Number(cardCount) : null,
+      reveal_card_count: revealCardCount ? Number(revealCardCount) : null,
       in_stock: inStock,
     };
     try {
@@ -627,6 +633,15 @@ function ClosedBoosterDialog({
               value={cardCount}
               onChange={(e) => setCardCount(e.target.value)}
               placeholder="e.g. 10"
+            />
+          </Field>
+          <Field label="Reveal cards (open animation)">
+            <Input
+              type="number"
+              min={1}
+              value={revealCardCount}
+              onChange={(e) => setRevealCardCount(e.target.value)}
+              placeholder="face-down cards fanned out — defaults to cards per pack"
             />
           </Field>
           <Field label="Availability">

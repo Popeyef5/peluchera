@@ -615,6 +615,7 @@ def _serialize_closed_booster(r: ClosedBooster) -> dict:
 		"image_front_url": r.image_front_url,
 		"image_back_url": r.image_back_url,
 		"card_count": r.card_count,
+		"reveal_card_count": r.reveal_card_count,
 		"in_stock": r.in_stock,
 		"is_complete": r.is_complete,
 	}
@@ -710,7 +711,7 @@ def _new_opened_booster(db, data: dict) -> OpenedBooster:
 	return ob
 
 
-_CB_FIELDS = ("name", "image_front_url", "image_back_url", "card_count", "in_stock")
+_CB_FIELDS = ("name", "image_front_url", "image_back_url", "card_count", "reveal_card_count", "in_stock")
 
 
 async def _upsert_closed_booster(db, data: dict):
@@ -778,6 +779,7 @@ class CreateClosedBoosterBody(BaseModel):
 	image_front_url: Optional[str] = None
 	image_back_url: Optional[str] = None
 	card_count: Optional[int] = None
+	reveal_card_count: Optional[int] = None
 	in_stock: Optional[bool] = None
 
 
@@ -789,7 +791,8 @@ async def create_closed_booster(body: CreateClosedBoosterBody, _: AdminIdentity 
 		row = await _upsert_closed_booster(db, {
 			"sku": body.sku, "name": body.name,
 			"image_front_url": body.image_front_url, "image_back_url": body.image_back_url,
-			"card_count": body.card_count, "in_stock": body.in_stock,
+			"card_count": body.card_count, "reveal_card_count": body.reveal_card_count,
+			"in_stock": body.in_stock,
 		})
 		await db.commit()
 		await db.refresh(row)
@@ -801,6 +804,7 @@ class PatchClosedBoosterBody(BaseModel):
 	image_front_url: Optional[str] = None
 	image_back_url: Optional[str] = None
 	card_count: Optional[int] = None
+	reveal_card_count: Optional[int] = None
 	in_stock: Optional[bool] = None
 
 

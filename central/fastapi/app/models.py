@@ -262,6 +262,11 @@ class ClosedBooster(Base):
     # How many cards a pack of this SKU yields — used to validate that an
     # OpenedBooster of this SKU has the right number of cards.
     card_count      = Column(Integer)
+    # How many face-down cards the win-reveal animation fans to the back before
+    # turning the pile. A presentation choice, independent of card_count (the
+    # real pack size) — a 10-card pack may still reveal 3. Nullable; the reveal
+    # falls back to card_count when unset.
+    reveal_card_count = Column(Integer)
     in_stock        = Column(Boolean, default=True, nullable=False)
 
     @property
