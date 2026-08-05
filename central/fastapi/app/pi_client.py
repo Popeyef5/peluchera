@@ -450,6 +450,11 @@ async def _record_win(key_str: str, winner: Optional[str], ball_serial: str):
                     # won cards (empty for non-booster wins).
                     "cards": await wt.opened_booster_card_previews(db, win),
                 }
+                # Sealed-pack face images to skin the 3D reveal mesh (booster
+                # wins only).
+                front, back = await wt.booster_face_images(db, win)
+                win_payload["booster_front_url"] = front
+                win_payload["booster_back_url"] = back
                 log.info(f"reserve_win OK: win_id={win.id} prize_kind={win.prize_kind.value}")
         except wt.BallNotAvailable as e:
             log.warning("_record_win: ball not available: %s", e)

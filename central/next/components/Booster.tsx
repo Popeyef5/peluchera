@@ -6,27 +6,17 @@ import { useGLTF, useTexture, RoundedBox, Center } from "@react-three/drei";
 
 const GLB_URL = "/booster.glb";
 
-// Per-SKU artwork registry. Drop new packs at
-//   /public/boosters/<sku>/{front,back}.png
-// and add the entry below. Source images should match the original UV layout —
-// the front/back faces in the GLB are UV-mapped to fill the full image
-// rectangle (~0.54 portrait aspect). Higher resolution than the embedded
-// 238x441 is encouraged since the pack is the focal element of the win modal.
-const BOOSTER_TEXTURES: Record<string, { front: string; back: string }> = {
-	test: { front: "/boosters/test/front.webp", back: "/boosters/test/back.webp" },
-};
+// The won pack's face textures now come from its ClosedBooster (front/back
+// image URLs in the win payload) and are applied to the GLB's UV-mapped 'front'
+// and 'back' materials. Source images should match the original UV layout — the
+// faces fill the full image rectangle (~0.54 portrait aspect). Higher-res than
+// the embedded 238x441 is encouraged; the pack is the focal element.
 
-// Warm caches as soon as this module is imported (page load via
-// WinChoiceModal). By the time the user wins, both the mesh and every known
-// SKU's textures are parsed and ready — useGLTF / useTexture resolve
-// synchronously and the rise animation doesn't race the fetch.
+// Warm the mesh as soon as this module imports (page load via WinChoiceModal)
+// so useGLTF resolves synchronously by win time and the rise doesn't race the
+// fetch. Per-win face textures are fetched on demand (they're not known ahead).
 if (typeof window !== "undefined") {
 	useGLTF.preload(GLB_URL);
-	for (const sku of Object.keys(BOOSTER_TEXTURES)) {
-		const t = BOOSTER_TEXTURES[sku];
-		useTexture.preload(t.front);
-		useTexture.preload(t.back);
-	}
 }
 
 // Tweak if the model imports with a different "up" axis. The defaults below
@@ -100,10 +90,9 @@ function GLTFBoosterBare({ onReady }: { onReady?: () => void }) {
 	);
 }
 
-function GLTFBoosterSkinned({ sku, onReady }: { sku: string; onReady?: () => void }) {
+function GLTFBoosterSkinned({ frontUrl, backUrl, onReady }: { frontUrl: string; backUrl: string; onReady?: () => void }) {
 	const { scene } = useGLTF(GLB_URL);
-	const skin = BOOSTER_TEXTURES[sku];
-	const [front, back] = useTexture([skin.front, skin.back]) as THREE.Texture[];
+	const [front, back] = useTexture([frontUrl, backUrl]) as THREE.Texture[];
 	const cloned = useMemo(() => {
 		const c = cloneSceneWithMaterials(scene);
 		applyMaterialTextures(c, front, back);
@@ -119,9 +108,11 @@ function GLTFBoosterSkinned({ sku, onReady }: { sku: string; onReady?: () => voi
 	);
 }
 
-function GLTFBooster({ sku, onReady }: { sku?: string; onReady?: () => void }) {
-	if (sku && BOOSTER_TEXTURES[sku]) {
-		return <GLTFBoosterSkinned sku={sku} onReady={onReady} />;
+function GLTFBooster({ frontUrl, backUrl, onReady }: { frontUrl?: string | null; backUrl?: string | null; onReady?: () => void }) {
+	// Skin the mesh with the won pack's own faces when we have both; otherwise
+	// render the GLB's embedded texture.
+	if (frontUrl && backUrl) {
+		return <GLTFBoosterSkinned frontUrl={frontUrl} backUrl={backUrl} onReady={onReady} />;
 	}
 	return <GLTFBoosterBare onReady={onReady} />;
 }
@@ -186,11 +177,11 @@ class GLBErrorBoundary extends React.Component<
 // procedural pack) so a slow-loading GLB shows transparency instead of popping
 // a different mesh mid-rise; the parent gates the rise animation on this
 // callback.
-export default function Booster({ sku, onReady }: { sku?: string; onReady?: () => void }) {
+export default function Booster({ frontUrl, backUrl, onReady }: { frontUrl?: string | null; backUrl?: string | null; onReady?: () => void }) {
 	return (
 		<GLBErrorBoundary fallback={<ProceduralBooster />} onFailed={onReady}>
 			<Suspense fallback={null}>
-				<GLTFBooster sku={sku} onReady={onReady} />
+				<GLTFBooster frontUrl={frontUrl} backUrl={backUrl} onReady={onReady} />
 			</Suspense>
 		</GLBErrorBoundary>
 	);

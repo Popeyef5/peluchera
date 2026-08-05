@@ -309,6 +309,25 @@ async def _card_resell_price(session: AsyncSession, card: Card) -> int:
 
 # ─── Booster-pair settlements ───────────────────────────────────────────
 
+async def booster_face_images(session: AsyncSession, win: Win) -> tuple[Optional[str], Optional[str]]:
+    """(front_url, back_url) of the sealed-pack faces to skin the win-reveal
+    mesh — from the ClosedBooster behind an OPENED_BOOSTER (via its opening) or
+    a CLOSED_BOOSTER win. (None, None) for card wins."""
+    ball = await session.get(Ball, win.ball_id)
+    if ball is None:
+        return None, None
+    cb = None
+    if win.prize_kind == PrizeKind.OPENED_BOOSTER and ball.opened_booster_id:
+        ob = await session.get(OpenedBooster, ball.opened_booster_id)
+        if ob and ob.closed_booster_id:
+            cb = await session.get(ClosedBooster, ob.closed_booster_id)
+    elif win.prize_kind == PrizeKind.CLOSED_BOOSTER and ball.closed_booster_id:
+        cb = await session.get(ClosedBooster, ball.closed_booster_id)
+    if cb is None:
+        return None, None
+    return cb.image_front_url, cb.image_back_url
+
+
 async def opened_booster_card_previews(session: AsyncSession, win: Win) -> list[dict]:
     """The ordered cards an OPENED_BOOSTER win would reveal — a preview shown in
     the win modal before the player decides. Empty for other prize kinds."""

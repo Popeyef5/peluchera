@@ -33,7 +33,6 @@ const WinChoiceModal = () => {
 	// (see app/pi_client.py:on_turn_win); until then real wins fall back to the
 	// GLB's embedded textures. The /test-win route hardcodes "test" so designers
 	// can preview new pack art by dropping it at /public/boosters/test/.
-	const [boosterSku, setBoosterSku] = useState<string | undefined>(undefined);
 
 	// `entered` gates the entry animation. We render the canvas Box at
 	// translateY(100vh) on the very first frame so the pack starts below the
@@ -63,9 +62,6 @@ const WinChoiceModal = () => {
 		if (roundWon > lastSeen.current) {
 			lastSeen.current = roundWon;
 			setPhase("pack");
-			// TODO: pull from pendingWin.closed_booster?.sku once the backend
-			// includes it in the player_win payload.
-			setBoosterSku(undefined);
 			setOpen(true);
 		}
 	}, [roundWon]);
@@ -77,7 +73,6 @@ const WinChoiceModal = () => {
 			console.log("[WinChoiceModal] test-win received");
 			(window as Window & { __garraTestWin?: boolean }).__garraTestWin = false;
 			setPhase("pack");
-			setBoosterSku("test");
 			setOpen(true);
 		};
 		window.addEventListener("garra:test-win", onTestWin);
@@ -387,7 +382,11 @@ const WinChoiceModal = () => {
 														rotationIntensity={phase === "pack" ? 0.35 : 0}
 														floatIntensity={phase === "pack" ? 0.5 : 0}
 													>
-														<Booster sku={boosterSku} onReady={() => setMeshReady(true)} />
+														<Booster
+														frontUrl={pendingWin?.booster_front_url}
+														backUrl={pendingWin?.booster_back_url}
+														onReady={() => setMeshReady(true)}
+													/>
 													</Float>
 												</PresentationControls>
 											</Suspense>
