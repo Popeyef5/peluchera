@@ -3790,3 +3790,33 @@ Shine & Glare Effects
 .dark .inv-btn--primary { color: #14120f; background: linear-gradient(180deg, rgba(236,230,216,0.96) 0%, rgba(198,191,176,0.85) 100%); border-color: rgba(255,255,255,0.35); }
 .inv-btn--muted { color: var(--ink-soft, #5a564f); }
 .dark .inv-btn--muted { color: var(--ink-soft, #a59f93); background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.025) 100%); border-color: rgba(255,255,255,0.08); }
+
+/* Grouped rows: a count badge + an accordion that expands to instances. */
+.inv-group { display: flex; flex-direction: column; }
+.inv-row--group { cursor: pointer; width: 100%; text-align: left; font: inherit; appearance: none; -webkit-appearance: none; }
+
+.inv-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.45rem; height: 1.2rem; padding: 0 0.4rem; margin-left: 0.5rem;
+  border-radius: 999px; font-family: var(--lg-mono); font-size: 0.68rem; font-weight: 600;
+  color: var(--ink, #1f1d1a); background: rgba(0,0,0,0.09);
+  border: 1px solid rgba(255,255,255,0.4); vertical-align: middle; flex-shrink: 0;
+}
+.dark .inv-badge { color: var(--ink, #ece6d8); background: rgba(255,255,255,0.13); border-color: rgba(255,255,255,0.18); }
+
+.inv-chevron { flex-shrink: 0; margin-left: 0.4rem; color: var(--ink-soft, #5a564f); font-size: 0.85rem; line-height: 1; transition: transform 200ms ease; }
+.inv-chevron--open { transform: rotate(180deg); }
+
+/* Accordion body — grid-rows trick animates open/close with no fixed height. */
+.inv-instances-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 220ms ease; }
+.inv-instances-wrap[data-open="true"] { grid-template-rows: 1fr; }
+.inv-instances { overflow: hidden; }
+.inv-instances-inner { min-height: 0; display: flex; flex-direction: column; gap: 0.4rem; padding: 0.45rem 0 0.15rem 1.15rem; }
+
+.inv-subrow {
+  display: flex; align-items: center; gap: 0.6rem; width: 100%;
+  padding: 0.4rem 0.55rem 0.4rem 0.7rem; border-radius: 11px;
+  background: rgba(255,255,255,0.30); border: 1px solid rgba(255,255,255,0.5);
+}
+.dark .inv-subrow { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.09); }
+.inv-subrow__meta { flex: 1 1 auto; min-width: 0; }
