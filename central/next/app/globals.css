@@ -3712,3 +3712,81 @@ Shine & Glare Effects
   transform: translateX(-50%);
   min-width: 9rem;
 }
+
+/* ── Account / Inventory list ───────────────────────────────────────────
+   Matches the liquid-glass language (see .lg-btn / .glass in app/page.tsx):
+   light default + a .dark override, driven by the --ink / --ink-soft tokens. */
+.inv-scroll { scrollbar-width: thin; scrollbar-color: rgba(120,120,120,0.35) transparent; }
+.inv-scroll::-webkit-scrollbar { width: 8px; }
+.inv-scroll::-webkit-scrollbar-track { background: transparent; }
+.inv-scroll::-webkit-scrollbar-thumb { background: rgba(120,120,120,0.32); border-radius: 999px; }
+.inv-scroll:hover::-webkit-scrollbar-thumb { background: rgba(120,120,120,0.5); }
+.dark .inv-scroll { scrollbar-color: rgba(255,255,255,0.18) transparent; }
+.dark .inv-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); }
+.dark .inv-scroll:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.28); }
+
+.inv-row {
+  display: flex; align-items: center; gap: 0.8rem; width: 100%;
+  padding: 0.55rem 0.7rem; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.32) 100%);
+  border: 1px solid rgba(255,255,255,0.6);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 2px 8px rgba(31,29,26,0.07);
+  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+.inv-row:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(31,29,26,0.12); }
+.dark .inv-row {
+  background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.035) 100%);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 3px 12px rgba(0,0,0,0.32);
+}
+.dark .inv-row:hover {
+  background: linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 8px 22px rgba(0,0,0,0.42);
+}
+
+.inv-thumb {
+  width: 2.5rem; height: 3.5rem; flex-shrink: 0;
+  border-radius: 8px; overflow: hidden;
+  background-color: rgba(0,0,0,0.22); background-size: cover; background-position: center;
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+}
+
+.inv-meta { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1 1 auto; }
+.inv-title {
+  font-family: var(--lg-display); font-weight: 600; font-size: 0.95rem; line-height: 1.2;
+  color: var(--ink, #1f1d1a);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.inv-sub {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-family: var(--lg-mono); font-size: 0.72rem; color: var(--ink-soft, #5a564f);
+}
+.inv-sub__dot { opacity: 0.45; }
+.inv-price { color: var(--ink, #1f1d1a); font-weight: 500; }
+
+.inv-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.inv-btn {
+  padding: 0.34rem 0.72rem; border-radius: 10px; white-space: nowrap;
+  font-family: var(--lg-display); font-weight: 600; font-size: 0.74rem; letter-spacing: 0.01em;
+  color: var(--ink, #1f1d1a); cursor: pointer;
+  background: linear-gradient(180deg, rgba(255,255,255,0.7) 0%, rgba(220,216,206,0.42) 100%);
+  border: 1px solid rgba(255,255,255,0.7);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 2px 6px rgba(31,29,26,0.10);
+  transition: transform 140ms ease, background 140ms ease;
+}
+.inv-btn:hover { transform: translateY(-1px); }
+.inv-btn:active { transform: translateY(0); }
+.inv-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+.dark .inv-btn {
+  color: var(--ink, #ece6d8);
+  background: linear-gradient(180deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.055) 100%);
+  border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 2px 6px rgba(0,0,0,0.4);
+}
+.dark .inv-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,0.19) 0%, rgba(255,255,255,0.09) 100%); }
+.inv-btn--primary { color: #1f1d1a; background: linear-gradient(180deg, #fff 0%, rgba(236,230,216,0.9) 100%); border-color: rgba(255,255,255,0.9); }
+.dark .inv-btn--primary { color: #14120f; background: linear-gradient(180deg, rgba(236,230,216,0.96) 0%, rgba(198,191,176,0.85) 100%); border-color: rgba(255,255,255,0.35); }
+.inv-btn--muted { color: var(--ink-soft, #5a564f); }
+.dark .inv-btn--muted { color: var(--ink-soft, #a59f93); background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.025) 100%); border-color: rgba(255,255,255,0.08); }

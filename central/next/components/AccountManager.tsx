@@ -178,9 +178,10 @@ export const AccountManager = (
 						className="glass holo-rim"
 						borderBottomRadius={"1.5rem"}
 						borderTopRadius={isMobile ? "0" : "1.5rem"}
+						maxH="100dvh"
 					>
 						<button className="lg-drawer__close" onClick={() => setDrawerOpen(false)} aria-label="Close">✕</button>
-						<Drawer.Body>
+						<Drawer.Body overflowY="auto">
 							<VStack gap={6} pt={2} pb={4}>
 								<HStack justify="space-between" w="full" px={2}>
 									<Text

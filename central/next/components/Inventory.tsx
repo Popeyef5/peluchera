@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Flex, HStack, Skeleton, Text, VStack } from "@chakra-ui/react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Box, Flex, HStack, Skeleton, Text, VStack } from "@chakra-ui/react";
 import { toaster } from "@/components/ui/toaster";
 import { useClaw, type InventoryWin, type WinCard, type PrizeKind } from "@/components/providers";
 
@@ -113,8 +112,11 @@ const Inventory: React.FC = () => {
 	});
 
 	return (
-		<ScrollArea className="h-[200px]">
-			<VStack gap={4} align="stretch" w="full" pe={4}>
+		// Grow with the content — up to (almost) the full viewport, then scroll —
+		// so a big collection fills the screen instead of being boxed into a
+		// short pane. dvh keeps it honest on mobile browsers.
+		<Box className="inv-scroll" w="full" maxH="calc(100dvh - 15rem)" overflowY="auto" pe={2}>
+			<VStack gap={3} align="stretch" w="full">
 				<SectionHeader label="Pending" count={pending?.length ?? 0} />
 				{pending === null ? (
 					<VStack gap={2}><Skeleton h="2.5rem" w="100%" /><Skeleton h="2.5rem" w="100%" /></VStack>
@@ -151,9 +153,17 @@ const Inventory: React.FC = () => {
 					))
 				)}
 			</VStack>
-		</ScrollArea>
+		</Box>
 	);
 };
+
+// A small pack/card thumbnail. Shows the card art when we have it, otherwise a
+// glyph badge (📦 booster / 🃏 card) so the row still reads at a glance.
+const Thumb: React.FC<{ image?: string | null; glyph: string }> = ({ image, glyph }) => (
+	<div className="inv-thumb" style={image ? { backgroundImage: `url(${image})` } : undefined}>
+		{image ? null : glyph}
+	</div>
+);
 
 const SectionHeader: React.FC<{ label: string; count: number }> = ({ label, count }) => (
 	<HStack justify="space-between" w="full" pe={4}>
@@ -182,27 +192,22 @@ const PendingRow: React.FC<{
 		: (win.card_preview ? `${RARITY_LABEL[win.card_preview.rarity] ?? win.card_preview.rarity} card` : 'Card');
 
 	return (
-		<HStack
-			w="full"
-			p={2}
-			borderRadius="lg"
-			bg="rgba(255,255,255,0.30)"
-			justify="space-between"
-			gap={2}
-			wrap="wrap"
-		>
-			<VStack align="start" gap={0} flex="1 1 auto" minW="9rem">
-				<Text fontWeight="500" fontFamily="var(--lg-display)" color="var(--ink)">{title}</Text>
-				<Text fontSize="xs" color="var(--ink-soft)" fontFamily="var(--lg-mono)">
-					{fmtExpiresIn(win.expires_at)} · {fmtCents(win.resell_price_cents)}
-				</Text>
-			</VStack>
-			<HStack gap={1} flexShrink={0}>
-				<MiniBtn label={isBooster ? "Open" : "Keep"} onClick={isBooster ? onOpen : onKeep} disabled={busy} />
+		<div className="inv-row">
+			<Thumb image={isBooster ? undefined : win.card_preview?.image_url} glyph={isBooster ? "📦" : "🃏"} />
+			<div className="inv-meta">
+				<span className="inv-title">{title}</span>
+				<span className="inv-sub">
+					{fmtExpiresIn(win.expires_at)}
+					<span className="inv-sub__dot">·</span>
+					<span className="inv-price">{fmtCents(win.resell_price_cents)}</span>
+				</span>
+			</div>
+			<div className="inv-actions">
+				<MiniBtn label={isBooster ? "Open" : "Keep"} onClick={isBooster ? onOpen : onKeep} disabled={busy} variant="primary" />
 				<MiniBtn label="Resell" onClick={onResell} disabled={busy} />
-				<MiniBtn label="Ship" onClick={onShip} disabled={busy} muted />
-			</HStack>
-		</HStack>
+				<MiniBtn label="Ship" onClick={onShip} disabled={busy} variant="muted" />
+			</div>
+		</div>
 	);
 };
 
@@ -212,49 +217,30 @@ const CardRow: React.FC<{
 	onResell: () => void;
 	onShip: () => void;
 }> = ({ card, busy, onResell, onShip }) => (
-	<HStack
-		w="full"
-		p={2}
-		borderRadius="lg"
-		bg="rgba(255,255,255,0.20)"
-		justify="space-between"
-		gap={2}
-		wrap="wrap"
-	>
-		<VStack align="start" gap={0} flex="1 1 auto" minW="9rem">
-			<Text fontWeight="500" fontFamily="var(--lg-display)" color="var(--ink)">
-				{RARITY_LABEL[card.rarity] ?? card.rarity}
-			</Text>
-			<Text fontSize="xs" color="var(--ink-soft)" fontFamily="var(--lg-mono)">
-				{card.set} · #{card.number}
-			</Text>
-		</VStack>
-		<HStack gap={1} flexShrink={0}>
+	<div className="inv-row">
+		<Thumb image={card.image_url} glyph="🃏" />
+		<div className="inv-meta">
+			<span className="inv-title">{RARITY_LABEL[card.rarity] ?? card.rarity}</span>
+			<span className="inv-sub">{card.set} · #{card.number}</span>
+		</div>
+		<div className="inv-actions">
 			<MiniBtn label="Resell" onClick={onResell} disabled={busy} />
-			<MiniBtn label="Ship" onClick={onShip} disabled={busy} muted />
-		</HStack>
-	</HStack>
+			<MiniBtn label="Ship" onClick={onShip} disabled={busy} variant="muted" />
+		</div>
+	</div>
 );
 
-const MiniBtn: React.FC<{ label: string; onClick: () => void; disabled?: boolean; muted?: boolean }> = ({
-	label, onClick, disabled, muted,
-}) => (
+const MiniBtn: React.FC<{
+	label: string;
+	onClick: () => void;
+	disabled?: boolean;
+	variant?: "primary" | "muted";
+}> = ({ label, onClick, disabled, variant }) => (
 	<button
 		type="button"
 		onClick={onClick}
 		disabled={disabled}
-		style={{
-			padding: "0.25rem 0.75rem",
-			borderRadius: "0.375rem",
-			fontSize: "0.75rem",
-			fontFamily: "var(--lg-display)",
-			color: muted ? "var(--ink-soft)" : "var(--ink)",
-			background: "rgba(255,255,255,0.45)",
-			border: "1px solid rgba(255,255,255,0.65)",
-			opacity: disabled ? 0.5 : 1,
-			cursor: disabled ? "not-allowed" : "pointer",
-			transition: "transform 200ms ease",
-		}}
+		className={`inv-btn${variant ? ` inv-btn--${variant}` : ""}`}
 	>
 		{label}
 	</button>
