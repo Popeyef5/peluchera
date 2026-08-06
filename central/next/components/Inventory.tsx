@@ -112,10 +112,11 @@ const Inventory: React.FC = () => {
 	});
 
 	return (
-		// Grow with the content — up to (almost) the full viewport, then scroll —
-		// so a big collection fills the screen instead of being boxed into a
-		// short pane. dvh keeps it honest on mobile browsers.
-		<Box className="inv-scroll" w="full" maxH="calc(100dvh - 15rem)" overflowY="auto" pe={2}>
+		// Fill the space the account modal gives us (it flex-caps at the host
+		// column's height) and scroll within — so a big collection fills the
+		// panel instead of being boxed into a short pane, and the modal keeps its
+		// symmetric top/bottom margins.
+		<Box className="inv-scroll" w="full" minH="0" overflowY="auto" pe={2}>
 			<VStack gap={3} align="stretch" w="full">
 				<SectionHeader label="Pending" count={pending?.length ?? 0} />
 				{pending === null ? (

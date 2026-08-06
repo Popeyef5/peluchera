@@ -178,11 +178,18 @@ export const AccountManager = (
 						className="glass holo-rim"
 						borderBottomRadius={"1.5rem"}
 						borderTopRadius={isMobile ? "0" : "1.5rem"}
-						maxH="100dvh"
+						// Cap at the host column's height (which is inset a symmetric
+						// 3.2vh top & bottom), not 100dvh — otherwise the modal grows
+						// past the column and the bottom gap shrinks. Flex column so the
+						// list can scroll inside instead of pushing the modal taller.
+						maxH="100%"
+						display="flex"
+						flexDirection="column"
+						overflow="hidden"
 					>
-						<button className="lg-drawer__close" onClick={() => setDrawerOpen(false)} aria-label="Close">✕</button>
-						<Drawer.Body overflowY="auto">
-							<VStack gap={6} pt={2} pb={4}>
+						<Drawer.Body display="flex" flexDirection="column" minH="0" overflow="hidden">
+							<VStack gap={6} pt={2} pb={4} minH="0" w="full">
+								<VStack gap={6} flexShrink={0} w="full">
 								<HStack justify="space-between" w="full" px={2}>
 									<Text
 										fontFamily="var(--lg-mono)"
@@ -216,18 +223,23 @@ export const AccountManager = (
 								>
 									{withdrawing ? "Withdrawing…" : "WITHDRAW"}
 								</button>
+								</VStack>
 								<Tabs.Root
 									lazyMount
 									unmountOnExit
 									defaultValue="Inventory"
 									onClick={(event) => { event.stopPropagation() }}
-									minW={"60%"}
+									w="full"
+									display="flex"
+									flexDirection="column"
+									minH="0"
 								>
 									<Tabs.List
 										mb={2}
 										borderBottom="0px"
 										gap={4}
 										justifyContent={"space-around"}
+										flexShrink={0}
 									>
 										{['Inventory', 'Bets', 'Withdrawals'].map((label) => (
 											<Tabs.Trigger
@@ -249,7 +261,7 @@ export const AccountManager = (
 											</Tabs.Trigger>
 										))}
 									</Tabs.List>
-									<Tabs.Content value="Inventory" p={0}>
+									<Tabs.Content value="Inventory" p={0} minH="0" display="flex" flexDirection="column" overflow="hidden">
 										<Inventory />
 									</Tabs.Content>
 									<Tabs.Content value="Bets" p={0}>
