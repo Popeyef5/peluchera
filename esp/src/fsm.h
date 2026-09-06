@@ -27,6 +27,7 @@ void on_inbound(const proto::Parsed &m);
 void tick();              // call from loop() at ~1 kHz.
 
 State        state();
+const char  *state_name();      // the state as a wire/ops-readable string.
 const char  *latched_fault();   // nullptr unless BLOCKED.
 
 }  // namespace fsm

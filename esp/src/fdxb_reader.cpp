@@ -131,6 +131,11 @@ bool carrier_is_on() { return s_carrier_on; }
 
 uint32_t isr_edge_count() { return s_isr_edges; }
 
+// Whether a decoded tag is sitting in the one-slot latch waiting to be
+// consumed. Diagnostic: a `true` here while the chute is IDLE is exactly the
+// condition that used to make the next arm report the wrong ball_serial.
+bool tag_pending() { return s_tag_pending; }
+
 bool last_tag_hex(char *out) {
     if (s_last_tag_hex[0] == '\0') return false;
     memcpy(out, s_last_tag_hex, sizeof(s_last_tag_hex));

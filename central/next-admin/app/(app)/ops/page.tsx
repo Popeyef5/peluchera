@@ -51,6 +51,12 @@ type EspHealth = {
     fw: string | null;
     latched_fault: string | null;
     ping_ok: boolean;
+    // Live snapshot the pong carries back. `tag_pending` while the state is
+    // "idle" means the RFID latch is holding a tag nobody consumed, which is
+    // what makes the next arm report the wrong ball.
+    state: string | null;
+    tag_pending: boolean | null;
+    last_tag: string | null;
   };
   central_connected: boolean;
 };
@@ -318,7 +324,7 @@ export default function OpsPage() {
           {esp === null ? (
             <p className="text-sm text-muted-foreground">
               Probe the firmware over the serial link (live ping) — link state,
-              version, and any latched fault.
+              version, where the chute FSM is, and any latched fault.
             </p>
           ) : (
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -332,6 +338,23 @@ export default function OpsPage() {
               </Stat>
               <Stat label="Firmware">
                 <span className="font-mono text-xs">{esp.esp.fw ?? "—"}</span>
+              </Stat>
+              <Stat label="Chute state">
+                <span className="font-mono text-xs">
+                  {esp.esp.state ?? "—"}
+                </span>
+              </Stat>
+              <Stat label="Tag latch">
+                {esp.esp.tag_pending ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 font-mono text-xs text-amber-900">
+                    holding {esp.esp.last_tag ?? "a tag"}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    empty
+                    {esp.esp.last_tag ? ` · last ${esp.esp.last_tag}` : ""}
+                  </span>
+                )}
               </Stat>
               <Stat label="Latched fault">
                 {esp.esp.latched_fault ? (
@@ -370,6 +393,16 @@ export default function OpsPage() {
             }}
           >
             {busy === "Clear fault" ? "Clearing…" : "Clear fault"}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={busy !== null || !!status?.current_player}
+            onClick={async () => {
+              await action("/admin/cabinet/reset", "Reset chute");
+              checkEsp();
+            }}
+          >
+            {busy === "Reset chute" ? "Resetting…" : "Reset chute"}
           </Button>
           <Button
             variant="outline"

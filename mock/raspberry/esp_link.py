@@ -57,10 +57,16 @@ class EspLink:
         self.latched_fault: Optional[str] = None
         self._arm_gen = 0
         self._arm_task: Optional[asyncio.Task] = None
-        self.fw = "garra-chute-mock-0.1.0"   # mirrors the real ESP's `ready.fw`
+        self.fw = "garra-chute-mock-0.2.0"   # mirrors the real ESP's `ready.fw`
         from protocol_version import ESP_PI_PROTO
         self.esp_proto = ESP_PI_PROTO        # the mock always speaks our protocol
         self._ready_seen = True
+        # Same surface the real link exposes from its pong (see
+        # raspberry/server/esp_link.py). The mock has no serial round trip, so
+        # these are driven straight off the simulated sequence.
+        self.chute_state = "idle"
+        self.tag_pending = False
+        self.last_tag = None
         self._ready_event = asyncio.Event()
         self._ready_event.set()
         self._verdict_waiter: Optional["asyncio.Future"] = None
@@ -102,20 +108,41 @@ class EspLink:
             if prev is not None and not prev.done():
                 prev.cancel()
             self._arm_gen += 1
+            self.chute_state = "awaiting_fall"
             self._arm_task = asyncio.create_task(self._simulate_arm())
         elif type_ == "fault_clear":
             self.latched_fault = None
+            self.chute_state = "idle"
         elif type_ == "ping":
             seq = (data or {}).get("seq", 0)
             await self._queue_message(EspMessage(type="pong", seq=seq))
         elif type_ == "enroll":
             timeout_ms = (data or {}).get("timeout_ms", 10000)
             asyncio.create_task(self._simulate_enroll(timeout_ms / 1000.0))
+        elif type_ == "reset":
+            # Mirror the firmware's reset: abandon any sequence in flight,
+            # drop the latch, and bump the generation so a verdict from the
+            # abandoned arm is discarded rather than credited to the next one.
+            prev = self._arm_task
+            if prev is not None and not prev.done():
+                prev.cancel()
+            self._arm_gen += 1
+            self.latched_fault = None
+            self.chute_state = "idle"
+            self.tag_pending = False
         return True
 
     async def events(self) -> AsyncIterator[EspMessage]:
         while True:
             yield await self._queue.get()
+
+    def drain(self) -> list:
+        """Shape-compatible with the real EspLink.drain — see the note there on
+        why this must stay synchronous."""
+        dropped = []
+        while not self._queue.empty():
+            dropped.append(self._queue.get_nowait())
+        return dropped
 
     async def ping(self, timeout: float = 2.0) -> bool:
         # The in-process mock is always responsive while "connected".
@@ -219,6 +246,7 @@ class EspLink:
             # AWAITING_FALL times out without an entry edge: an ordinary loss,
             # chute healthy. Reported explicitly — never inferred from silence.
             await asyncio.sleep(T_FALL_SEC)
+            self.chute_state = "idle"
             await emit(EspMessage(
                 type="verdict", data={"outcome": "no_fall", "ball_serial": None},
             ))
@@ -226,11 +254,13 @@ class EspLink:
 
         # Entry edge after a short delay (well inside T_FALL).
         await asyncio.sleep(ENTRY_DELAY_SEC)
+        self.chute_state = "identifying"
 
         # IDENTIFYING phase.
         if outcome == "rfid_failed":
             await asyncio.sleep(T_ID_SEC)
             self.latched_fault = "rfid_failed"
+            self.chute_state = "blocked"
             await emit(EspMessage(
                 type="verdict", data={"outcome": "no_read", "ball_serial": None},
             ))
@@ -238,11 +268,14 @@ class EspLink:
 
         await asyncio.sleep(RFID_DELAY_SEC)
         uid = self.state.next_uid()
+        self.last_tag = uid
+        self.chute_state = "clearing"
 
         # CLEARING phase.
         if outcome == "exit_timeout":
             await asyncio.sleep(T_EXIT_SEC)
             self.latched_fault = "exit_timeout"
+            self.chute_state = "blocked"
             # Jammed on the way out — the chute is blocked and the queue has to
             # stop, but we DID read the tag, so report it: the player still finds
             # out what they won.
@@ -252,6 +285,7 @@ class EspLink:
             return
 
         await asyncio.sleep(EXIT_DELAY_SEC)
+        self.chute_state = "idle"
         await emit(EspMessage(
             type="verdict", data={"outcome": "ok", "ball_serial": uid},
         ))
@@ -261,8 +295,11 @@ class EspLink:
         UID from the mock pool after a short delay; /scenarios/next-tag/<uid>
         overrides flow through state.next_uid() so admin tests can use the
         same scenario hooks as gameplay tests."""
+        self.chute_state = "enroll"
         await asyncio.sleep(min(1.5, timeout_s * 0.5))
         uid = self.state.next_uid()
+        self.last_tag = uid
+        self.chute_state = "idle"
         await self._queue_message(EspMessage(
             type="tag_scanned", data={"ball_serial": uid},
         ))

@@ -4,7 +4,7 @@
 // other than '\n'. Matches the shape the Pi forwards to central, so
 // prize_won / fault payloads pass through untouched.
 //
-// Inbound  (Pi  → ESP):  arm | fault_clear | ping | enroll
+// Inbound  (Pi  → ESP):  arm | fault_clear | ping | enroll | reset
 // Outbound (ESP → Pi ):  ready | verdict | fault | pong |
 //                        tag_scanned | enroll_timeout
 //
@@ -22,6 +22,11 @@
 // `fault` remains for things that are not the outcome of an arm: refusing to
 // arm while latched (still_blocked), internal errors, and the latch reported in
 // `ready` after a reset.
+//
+// `reset` is the operator override. `fault_clear` only lifts the BLOCKED latch;
+// `reset` additionally abandons a sequence in progress, releases the solenoid,
+// and empties the break-beam flags and the RFID reader's tag latch. Neither is
+// acked — the Pi clears its mirror optimistically for both.
 #pragma once
 
 #include <Arduino.h>
@@ -41,7 +46,7 @@ constexpr const char *REASON_STILL_BLOCKED = "still_blocked";
 // UART JSON contract (arm / verdict / ready). Must equal ESP_PI_PROTO in
 // raspberry/server/protocol_version.py — the Pi refuses to run a mismatched
 // chute (and pauses the queue) rather than misread its frames.
-constexpr int ESP_PI_PROTOCOL = 1;
+constexpr int ESP_PI_PROTOCOL = 2;
 
 // Chute verdict outcomes — exactly one per arm. See the table at the top.
 constexpr const char *VERDICT_NO_FALL = "no_fall";
@@ -50,7 +55,7 @@ constexpr const char *VERDICT_NO_EXIT = "no_exit";
 constexpr const char *VERDICT_OK      = "ok";
 
 // Inbound message kinds.
-enum class Inbound { UNKNOWN, ARM, FAULT_CLEAR, PING, ENROLL };
+enum class Inbound { UNKNOWN, ARM, FAULT_CLEAR, PING, ENROLL, RESET };
 
 struct Parsed {
     Inbound  kind;
@@ -69,7 +74,14 @@ void emit_ready(const char *fw_version, const char *latched_fault_or_null);
 // what they won.
 void emit_verdict(const char *outcome, const char *uid_hex_or_null);
 void emit_fault(const char *kind, const char *reason_or_null);
-void emit_pong(long seq);
+// The liveness reply. Carries a snapshot of where the chute actually is, so a
+// /health probe answers "is it alive" and "what is it doing" in one round trip:
+// the FSM state, whether the RFID latch is holding an unconsumed tag, and the
+// last tag decoded. Those last two are what explains a verdict that came back
+// with the wrong ball_serial — a pending tag while the chute sits IDLE is the
+// smoking gun.
+void emit_pong(long seq, const char *state, bool tag_pending,
+               const char *last_tag_or_null);
 // Admin enrollment outbound: tag_scanned carries the UID of the first tag
 // presented during the enroll window; enroll_timeout signals that the
 // window ended with no tag detected.

@@ -32,5 +32,6 @@ bool carrier_is_on();
 // Diagnostics.
 uint32_t isr_edge_count();         // total pin-change edges since boot
 bool     last_tag_hex(char *out);  // most recent decoded tag, peeked (no consume)
+bool     tag_pending();            // true if the latch holds an unconsumed tag
 
 }  // namespace fdxb

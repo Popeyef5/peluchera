@@ -24,6 +24,21 @@ static void solenoid_engage()  { digitalWrite(PIN_SOLENOID, HIGH); }
 // single verdict for this arm, which reports the outcome (and the tag, if we
 // managed to read one) — emitting a fault here as well would put two messages
 // on the wire for one arm.
+// Empty the FDX-B reader's one-slot tag latch.
+//
+// The parser task runs continuously with the carrier always on, so that slot
+// holds whatever tag last passed the antenna whether or not the chute is
+// armed: the previous turn's ball, one resting in the chute after a jam, a tag
+// in the operator's hand. Nothing else clears it — only a successful
+// try_read_once does. Leave it and IDENTIFYING returns that stale UID the
+// instant the entry beam breaks, the solenoid fires, the exit beam clears, and
+// we report a textbook `ok` carrying the WRONG ball_serial. The read then
+// clears the slot, the current ball lands in it, and the lag repeats forever.
+static void drain_tag_latch() {
+    char dummy[17];
+    (void)fdxb::try_read_once(dummy);
+}
+
 static void latch_blocked(const char *kind) {
     s_state = State::BLOCKED;
     s_fault = kind;
@@ -42,9 +57,14 @@ void install() {
 
 void on_inbound(const proto::Parsed &m) {
     switch (m.kind) {
-        case proto::Inbound::PING:
-            proto::emit_pong(m.seq);
+        case proto::Inbound::PING: {
+            // Answer with a state snapshot, not just liveness — see emit_pong.
+            char last[17];
+            const bool have_last = fdxb::last_tag_hex(last);
+            proto::emit_pong(m.seq, state_name(), fdxb::tag_pending(),
+                             have_last ? last : nullptr);
             return;
+        }
 
         case proto::Inbound::FAULT_CLEAR:
             if (s_state == State::BLOCKED) {
@@ -65,9 +85,12 @@ void on_inbound(const proto::Parsed &m) {
             // Clear any sensor edges that landed before arming.
             (void)sensors::take_entry();
             (void)sensors::take_exit();
-            // Drop the previous arm's tag — a verdict must never report a stale
-            // ball_serial from an earlier turn.
+            // Drop the previous arm's tag — a verdict must never report a
+            // stale ball_serial from an earlier turn. Both halves matter: our
+            // own copy AND the reader's latch behind it, which ENROLL has
+            // always drained and ARM used to leave alone.
             s_pending_uid[0] = '\0';
+            drain_tag_latch();
             s_state = State::AWAITING_FALL;
             s_deadline_ms = millis() + T_FALL_MS;
             return;
@@ -78,12 +101,31 @@ void on_inbound(const proto::Parsed &m) {
             // here mid-turn would already be a backend bug.
             if (s_state != State::IDLE) return;
             // Drain any stale tag the reader may have parsed before now.
-            {
-                char dummy[17];
-                (void)fdxb::try_read_once(dummy);
-            }
+            drain_tag_latch();
             s_state = State::ENROLL;
             s_deadline_ms = millis() + (m.timeout_ms ? m.timeout_ms : 10000U);
+            return;
+
+        case proto::Inbound::RESET:
+            // Operator override: put the chute back in a state we know.
+            //
+            // fault_clear only lifts the BLOCKED latch, so it cannot recover a
+            // chute stuck part-way through a sequence, and it never touches the
+            // hidden state — the beam flags and the reader's tag latch — that
+            // lets a healthy-looking chute report the wrong thing. Accepted
+            // from ANY state, that being the point.
+            //
+            // Deliberately silent: an arm in flight is abandoned rather than
+            // answered, because a verdict here would belong to no turn. The Pi
+            // empties its own queues alongside this and mirrors the cleared
+            // latch, so both ends land on IDLE together.
+            solenoid_release();
+            s_state = State::IDLE;
+            s_fault = nullptr;
+            s_pending_uid[0] = '\0';
+            (void)sensors::take_entry();
+            (void)sensors::take_exit();
+            drain_tag_latch();
             return;
 
         case proto::Inbound::UNKNOWN:
@@ -164,5 +206,17 @@ void tick() {
 
 State        state()         { return s_state; }
 const char  *latched_fault() { return s_fault; }
+
+const char *state_name() {
+    switch (s_state) {
+        case State::IDLE:          return "idle";
+        case State::AWAITING_FALL: return "awaiting_fall";
+        case State::IDENTIFYING:   return "identifying";
+        case State::CLEARING:      return "clearing";
+        case State::ENROLL:        return "enroll";
+        case State::BLOCKED:       return "blocked";
+    }
+    return "unknown";
+}
 
 }  // namespace fsm

@@ -14,7 +14,7 @@
 #include "protocol.h"
 #include "sensors.h"
 
-static constexpr const char *FW_VERSION = "garra-chute-0.1.0";
+static constexpr const char *FW_VERSION = "garra-chute-0.2.0";
 
 void setup() {
     Serial.begin(115200);

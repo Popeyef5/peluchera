@@ -29,7 +29,7 @@ from .notifier import alertBot
 
 # Bump on any incompatible Pi<->VPS websocket change. Must equal the value in
 # raspberry/server/protocol_version.py.
-PI_VPS_PROTO = 1
+PI_VPS_PROTO = 2
 
 # Re-nag interval while a mismatch persists.
 VERSION_RENAG_SECONDS = 1800  # 30 min

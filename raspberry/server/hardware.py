@@ -60,9 +60,16 @@ CLAW_OPTO_EDGE = _EDGES.get(CLAW_OPTO_EDGE_NAME, lgpio.RISING_EDGE)
 CLAW_OPTO_PULL = _PULLS.get(CLAW_OPTO_PULL_NAME, lgpio.SET_PULL_UP)
 
 # Glitch/debounce filter: lgpio only reports the edge after the level has been
-# stable this long, so it rejects jitter shorter than this. Env-tunable — bump
-# CLAW_OPTO_DEBOUNCE_US (e.g. 50000 = 50ms) if noise is still triggering it.
-GLITCH_US_CLAW = int(os.getenv("CLAW_OPTO_DEBOUNCE_US", "10000"))
+# stable this long, so it rejects anything shorter.
+#
+# 300ms, not the 10ms we started with. The filter is not just denoising here —
+# it SELECTS which edge we act on. start_turn_pulse drives COIN for 100ms and
+# UP for 100ms, and those pulses couple into this input, so a short filter let
+# a burst of edges through at the top of the turn and the FSM armed the chute
+# on the first of them, ending the turn at grab instead of at release. A filter
+# longer than those pulses swallows them and leaves the genuine end-of-cycle
+# signal, which holds. Env-tunable per cabinet via CLAW_OPTO_DEBOUNCE_US.
+GLITCH_US_CLAW = int(os.getenv("CLAW_OPTO_DEBOUNCE_US", "300000"))
 
 
 def open_gpiochip() -> int:
@@ -111,7 +118,11 @@ class Sensors:
         if self.loop is None:
             log.warning("sensor edge %s before loop bound — dropped", kind)
             return
-        log.info("claw opto RISING edge on GPIO %d -> %s", CLAW_OPTO, kind)
+        # Report the edge we are actually armed for. This line used to say
+        # RISING unconditionally, which made a CLAW_OPTO_EDGE change look like
+        # it had not taken effect.
+        log.info("claw opto %s edge on GPIO %d -> %s",
+                 CLAW_OPTO_EDGE_NAME.upper(), CLAW_OPTO, kind)
         self.loop.call_soon_threadsafe(self.events.put_nowait, kind)
 
 

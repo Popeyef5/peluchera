@@ -21,8 +21,8 @@ Outbound protocol (Pi → central) is unchanged:
   {"type": "verdict",   "data": {"outcome": "...", "ball_serial": "<hex>"|null}}
   {"type": "fault",     "data": {"kind": "...", "reason"?: "..."}}
 
-Inbound protocol (central → Pi) is unchanged:
-  turn_start, fault_clear, move.
+Inbound protocol (central → Pi):
+  turn_start, fault_clear, move, enroll, test_arm, reset.
 """
 
 import asyncio
@@ -134,9 +134,34 @@ class FSM:
         await self.hooks.broadcast({"type": "turn_end"})
 
         self.state = State.AWAITING
+
+        # Anything queued here predates this arm: the `ready` the firmware
+        # emits at boot and again whenever the Pi opens the serial port, a
+        # verdict that arrived after ESP_VERDICT_TIMEOUT gave up, a fault
+        # raised while idle. _await_verdict does exactly one get per arm, so a
+        # single leftover shifts every later read by one and the machine
+        # reports the previous turn's outcome forever after. Since the verdict
+        # carries the ball serial, that hands a player someone else's prize.
+        self.drain_stale()
+
         armed = await self.esp.send("arm")
         log.info("arm sent to chute ESP (delivered=%s); awaiting verdict", armed)
         await self._await_verdict()
+
+    def drain_stale(self) -> None:
+        """Empty both ESP queues so the next arm's verdict is unambiguous.
+
+        Synchronous, and the link queue goes first. `_esp_pump` moves frames
+        from the link's queue to ours with no yield point in between, so a
+        caller that drains source then sink without awaiting cannot be
+        overtaken mid-transfer. Put an await between these two loops and a
+        frame can slip past.
+        """
+        for msg in self.esp.drain():
+            log.info("dropping stale ESP message before arming: %s", msg.type)
+        while not self.esp_events.empty():
+            stale = self.esp_events.get_nowait()
+            log.info("dropping stale ESP message before arming: %s", stale.type)
 
     async def _await_opto(self) -> None:
         while True:

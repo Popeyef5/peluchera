@@ -23,6 +23,7 @@ bool poll(Parsed &out) {
             else if (strcmp(t, "fault_clear") == 0) out.kind = Inbound::FAULT_CLEAR;
             else if (strcmp(t, "ping") == 0)        out.kind = Inbound::PING;
             else if (strcmp(t, "enroll") == 0)      out.kind = Inbound::ENROLL;
+            else if (strcmp(t, "reset") == 0)       out.kind = Inbound::RESET;
             else                                    out.kind = Inbound::UNKNOWN;
             out.seq        = doc["seq"] | 0L;
             out.timeout_ms = (uint32_t)(doc["timeout_ms"] | 10000U);
@@ -68,10 +69,15 @@ void emit_fault(const char *kind, const char *reason_or_null) {
     writeln(d);
 }
 
-void emit_pong(long seq) {
+void emit_pong(long seq, const char *state, bool tag_pending,
+               const char *last_tag_or_null) {
     JsonDocument d;
-    d["type"] = "pong";
-    d["seq"]  = seq;
+    d["type"]        = "pong";
+    d["seq"]         = seq;
+    d["state"]       = state;
+    d["tag_pending"] = tag_pending;
+    if (last_tag_or_null && last_tag_or_null[0]) d["last_tag"] = last_tag_or_null;
+    else                                         d["last_tag"] = nullptr;
     writeln(d);
 }
 

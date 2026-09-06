@@ -1440,6 +1440,27 @@ async def clear_fault(_: AdminIdentity = RequireAdmin):
 	return {"ok": True}
 
 
+@router.post("/cabinet/reset")
+async def reset_chute(_: AdminIdentity = RequireAdmin):
+	"""Force the chute ESP back to a state we know.
+
+	Stronger than clear_fault, which only lifts the BLOCKED latch and so cannot
+	recover a chute stuck part-way through a sequence. This also releases the
+	solenoid and empties the break-beam flags and the RFID reader's tag latch —
+	the hidden state that lets a technically healthy chute report the wrong ball.
+	The Pi drops its own queued ESP frames at the same time.
+
+	Refuses mid-turn: the verdict for that turn would be abandoned along with it.
+	"""
+	if _state.current_player is not None:
+		raise HTTPException(status_code=409, detail="A turn is in progress")
+	ok = await safe_pi_emit("reset")
+	if not ok:
+		raise HTTPException(status_code=503, detail="Cabinet is offline")
+	_state.cabinet_fault = None
+	return {"ok": True}
+
+
 @router.post("/queue/force_turn_end")
 async def force_turn_end(_: AdminIdentity = RequireAdmin):
 	"""Operator override to unstick the queue: run the same transition the Pi's

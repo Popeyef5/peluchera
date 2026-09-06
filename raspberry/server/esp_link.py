@@ -4,8 +4,8 @@ Wire format: newline-delimited JSON, 115200 8N1. Symmetric with the
 central↔Pi websocket so debugging is uniform — a stray `cat /dev/ttyUSB0`
 on the Pi shows the same shape of frames you'd see in the central log.
 
-Pi  → ESP:  arm | fault_clear | ping
-ESP → Pi :  ready | verdict | fault | pong | log
+Pi  → ESP:  arm | fault_clear | ping | enroll | reset
+ESP → Pi :  ready | verdict | fault | pong | log | tag_scanned | enroll_timeout
 
 The chute sub-FSM (T_FALL/T_ID/T_EXIT, CHUTE_BLOCKED latch) lives entirely
 on the ESP32. This module is a transport with reconnect — it does not
@@ -60,6 +60,11 @@ class EspLink:
         self.latched_fault: Optional[str] = None
         self.fw: Optional[str] = None          # firmware version from the last `ready`
         self.esp_proto: Optional[int] = None   # ESP_PI protocol from the last `ready`
+        # Live chute snapshot, refreshed by every pong. Cleared when the link
+        # drops so a dead board can't keep reporting a state it isn't in.
+        self.chute_state: Optional[str] = None  # chute FSM state
+        self.tag_pending: Optional[bool] = None # RFID latch holds an unconsumed tag
+        self.last_tag: Optional[str] = None     # last tag the reader decoded
         self._ready_seen = False
         self._ready_event = asyncio.Event()
         self._ping_seq = 0
@@ -107,6 +112,9 @@ class EspLink:
                 log.warning("ESP serial error: %s — retrying in 2s", e)
             finally:
                 self.connected = False
+                self.chute_state = None
+                self.tag_pending = None
+                self.last_tag = None
                 self._ready_event.clear()
                 self._writer = None
                 self._reader = None
@@ -143,7 +151,12 @@ class EspLink:
                     self.latched_fault = msg.data.get("kind")
             elif msg.type == "pong":
                 # Liveness reply — resolve the matching ping() waiter and don't
-                # surface it to the FSM (it'd be an unexpected verdict).
+                # surface it to the FSM (it'd be an unexpected verdict). It also
+                # carries the chute snapshot, so every /health probe refreshes
+                # where the ESP is for free.
+                self.chute_state = payload.get("state")
+                self.tag_pending = payload.get("tag_pending")
+                self.last_tag = payload.get("last_tag")
                 fut = self._pong_waiters.get(payload.get("seq"))
                 if fut is not None and not fut.done():
                     fut.set_result(True)
@@ -169,8 +182,10 @@ class EspLink:
         try:
             self._writer.write((json.dumps(frame) + "\n").encode("utf-8"))
             await self._writer.drain()
-            if type_ == "fault_clear":
+            if type_ in ("fault_clear", "reset"):
                 # Optimistic local clear — the ESP doesn't currently ack.
+                # `reset` forces the chute back to IDLE, which also drops any
+                # latch, so the mirror has to follow for both.
                 self.latched_fault = None
             return True
         except Exception as e:
@@ -180,6 +195,21 @@ class EspLink:
     async def events(self) -> AsyncIterator[EspMessage]:
         while True:
             yield await self._queue.get()
+
+    def drain(self) -> list:
+        """Discard everything queued here and hand back what was dropped.
+
+        Synchronous ON PURPOSE. Frames reach the turn FSM through two queues in
+        series, this one and the FSM's own, with `_esp_pump` between them. The
+        pump has no yield point between taking from here and putting there, so
+        a caller that drains this queue and the FSM's without awaiting in
+        between cannot be overtaken mid-transfer. Add an await between the two
+        drains and that guarantee is gone.
+        """
+        dropped = []
+        while not self._queue.empty():
+            dropped.append(self._queue.get_nowait())
+        return dropped
 
     async def ping(self, timeout: float = 2.0) -> bool:
         """Liveness probe: send a ping and wait for the matching pong. False if

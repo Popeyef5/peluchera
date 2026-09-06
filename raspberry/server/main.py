@@ -6,6 +6,9 @@ Inbound (central → Pi):
   {"type": "move",        "data": {"bitmask": int}}
   {"type": "turn_start",  "data": ...}
   {"type": "fault_clear", "data": ...}
+  {"type": "enroll",      "data": {"timeout_ms": int}}
+  {"type": "test_arm",    "data": ...}
+  {"type": "reset",       "data": ...}   # operator override, see on_reset
 
 Outbound (Pi → central):
   {"type": "turn_end"}
@@ -137,6 +140,13 @@ async def health():
             "latched_fault": esp.latched_fault,   # physical latch (kept for compat)
             "fault": fault,                        # effective (incl. version mismatch)
             "ping_ok": ping_ok,
+            # Live snapshot from the pong we just exchanged. Where the chute
+            # actually is, and whether its RFID latch is holding a tag nobody
+            # consumed — `tag_pending` true while state is "idle" is the
+            # condition that made an arm report the previous ball's serial.
+            "state": esp.chute_state,
+            "tag_pending": esp.tag_pending,
+            "last_tag": esp.last_tag,
         },
         "pi_proto": PI_VPS_PROTO,
         "central_connected": len(manager.active_connections) > 0,
@@ -212,12 +222,30 @@ async def on_test_arm(_ws, _message):
     await manager.broadcast({"type": "test_result", "data": _interpret_verdict(msg)})
 
 
+async def on_reset(_ws, _message):
+    """Operator override: force the chute back to a state we know.
+
+    `fault_clear` only lifts the BLOCKED latch. It cannot recover a chute that
+    is part-way through a sequence, and it cannot empty the RFID reader's
+    one-slot tag latch — the two ways the chute can be technically healthy and
+    still wrong. This drops the firmware to IDLE, releases the solenoid and
+    clears the beam and tag latches, and empties our own queues in the same
+    breath so nothing from before the reset can be read as the next verdict.
+    """
+    log.info("reset received — forcing the chute back to IDLE")
+    await esp.send("reset")
+    if fsm is not None:
+        fsm.drain_stale()
+    await manager.broadcast(esp_status_frame())
+
+
 MESSAGE_HANDLERS = {
     "move": on_move,
     "turn_start": on_turn_start,
     "fault_clear": on_fault_clear,
     "enroll": on_enroll,
     "test_arm": on_test_arm,
+    "reset": on_reset,
 }
 
 
