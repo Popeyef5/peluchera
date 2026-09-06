@@ -95,6 +95,7 @@ class Sensors:
     events: "asyncio.Queue[str]"
     loop: Optional[asyncio.AbstractEventLoop] = None
     _claw_cb: object = None
+    _last_edge_ns: int = 0
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
@@ -111,18 +112,32 @@ class Sensors:
             CLAW_OPTO, CLAW_OPTO_EDGE_NAME, CLAW_OPTO_PULL_NAME, GLITCH_US_CLAW,
         )
         self._claw_cb = lgpio.callback(
-            self.h, CLAW_OPTO, CLAW_OPTO_EDGE,
-            lambda *_: self._push("opto"))
+            self.h, CLAW_OPTO, CLAW_OPTO_EDGE, self._on_edge)
 
-    def _push(self, kind: str) -> None:
+    def _on_edge(self, *args) -> None:
+        """lgpio calls this with (chip, gpio, level, tick_ns).
+
+        Tolerant of a shorter signature on purpose: this runs on lgpio's own
+        thread, and an exception there stops edge delivery silently rather than
+        surfacing anywhere useful.
+        """
+        level = args[2] if len(args) > 2 else -1
+        tick_ns = args[3] if len(args) > 3 else 0
+        self._push("opto", level, tick_ns)
+
+    def _push(self, kind: str, level: int = -1, tick_ns: int = 0) -> None:
         if self.loop is None:
             log.warning("sensor edge %s before loop bound — dropped", kind)
             return
-        # Report the edge we are actually armed for. This line used to say
-        # RISING unconditionally, which made a CLAW_OPTO_EDGE change look like
-        # it had not taken effect.
-        log.info("claw opto %s edge on GPIO %d -> %s",
-                 CLAW_OPTO_EDGE_NAME.upper(), CLAW_OPTO, kind)
+        # Log the direction of THIS transition and the gap since the last one.
+        # The configured edge name is useless for a trace — under edge=both it
+        # just says "both" — and the inter-edge gap is what separates a burst
+        # at the top of a turn from a genuine end-of-cycle signal.
+        direction = {0: "falling", 1: "rising", 2: "watchdog"}.get(level, "?")
+        gap_ms = (tick_ns - self._last_edge_ns) / 1e6 if self._last_edge_ns else 0.0
+        self._last_edge_ns = tick_ns
+        log.info("claw opto %s (level=%s) +%.0fms on GPIO %d -> %s",
+                 direction, level, gap_ms, CLAW_OPTO, kind)
         self.loop.call_soon_threadsafe(self.events.put_nowait, kind)
 
 

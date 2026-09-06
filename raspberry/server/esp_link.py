@@ -144,6 +144,18 @@ class EspLink:
                 self.esp_proto = payload.get("proto")
                 self._ready_seen = True
                 self._ready_event.set()
+            elif msg.type == "verdict":
+                # The firmware latches internally on no_read / no_exit and
+                # reports it INSIDE the verdict, not as a separate `fault`
+                # frame. Nothing else updated this mirror, so the Pi believed
+                # the chute was healthy while the ESP sat in BLOCKED: /health
+                # answered ok, the turn FSM stopped refusing turn_start, and
+                # every turn ran until the ESP bounced the arm with
+                # still_blocked. Same mapping central applies downstream.
+                kind = {"no_read": "rfid_failed",
+                        "no_exit": "exit_timeout"}.get((msg.data or {}).get("outcome"))
+                if kind:
+                    self.latched_fault = kind
             elif msg.type == "fault":
                 # ESP only emits `fault` for new latches; still_blocked
                 # (a re-emit on arm during latch) does NOT change state.
