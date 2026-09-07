@@ -27,6 +27,7 @@ Inbound protocol (central → Pi):
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Awaitable, Callable, Optional
@@ -44,6 +45,25 @@ class State(Enum):
 
 # Claw-side sensor edges (still on the Pi).
 EV_OPTO = "opto"
+# Direction-tagged variants. The claw line is high at rest and low for the
+# duration of the grab, so a turn ends on the LOW -> HIGH transition. Bare
+# EV_OPTO remains the fallback for a source that cannot report the level.
+EV_OPTO_LOW  = "opto_low"
+EV_OPTO_HIGH = "opto_high"
+
+# Ceiling on one claw cycle. Generous: the player chooses when to grab, and the
+# turn itself is only 30s. Exists so a cycle that never completes cannot wedge
+# the FSM in PLAYING, swallowing every later turn_start.
+OPTO_TIMEOUT = 45.0
+
+# The claw must hold the line low for at least this long before a return to
+# high counts as the release. Chatter around a single transition carries edges
+# in BOTH directions, so without this a burst at the grab could deliver a low
+# and a high milliseconds apart and satisfy the sequence on its own — the very
+# failure the sequence exists to prevent. A measured grab lasts about five
+# seconds, so this is two orders of magnitude of headroom, and it means the
+# logic no longer depends on the debounce filter being tuned correctly.
+MIN_GRAB_SEC = 0.25
 
 # Inbound websocket events.
 EV_TURN_START  = "turn_start"
@@ -164,11 +184,55 @@ class FSM:
             log.info("dropping stale ESP message before arming: %s", stale.type)
 
     async def _await_opto(self) -> None:
+        """Wait for the claw to FINISH, which is the opto line returning high.
+
+        The line is low for the whole grab and high at rest, so one cycle is
+        exactly two transitions: falling when the claw engages, rising when it
+        releases. Taking the first edge of a turn therefore ended the turn at
+        the grab, several seconds early, and armed the chute long before the
+        ball could reach it.
+
+        Requiring a low BEFORE the high is what makes this robust, rather than
+        a blanking window or a filter tuned to one cabinet. Everything that
+        used to trip us early — the COIN and UP pulses, the player's move
+        commands, chatter around a transition — happens before or during the
+        grab, and none of it can satisfy "the line went low and then came back
+        up". No timing assumption, so it survives a different cabinet.
+        """
+        engaged_at: Optional[float] = None
         while True:
-            ev = await self.events.get()
-            if ev == EV_OPTO:
+            try:
+                ev = await asyncio.wait_for(self.events.get(), timeout=OPTO_TIMEOUT)
+            except asyncio.TimeoutError:
+                # The cycle never completed. Ending the turn yields a clean
+                # no_fall downstream, which is a far better failure than
+                # sitting here forever swallowing the next turn_start.
+                log.warning("no claw cycle within %ss — ending the turn anyway",
+                            OPTO_TIMEOUT)
                 return
-            log.debug("drop %s in PLAYING", ev)
+            if ev == EV_OPTO_LOW:
+                if engaged_at is None:
+                    log.info("claw engaged (opto low) — waiting for release")
+                    engaged_at = time.monotonic()
+            elif ev == EV_OPTO_HIGH:
+                if engaged_at is None:
+                    log.debug("opto high before the claw engaged — ignoring")
+                    continue
+                held = time.monotonic() - engaged_at
+                if held >= MIN_GRAB_SEC:
+                    return
+                # Too fast to be a grab. This is chatter around one transition,
+                # so drop back and keep waiting for the real thing.
+                log.debug("opto high after only %.0fms low — chatter, ignoring", held * 1000)
+                engaged_at = None
+            elif ev == EV_OPTO:
+                # Level unknown (an lgpio build whose callback omits it).
+                # Fall back to the old first-edge behaviour rather than
+                # waiting for a pair that will never arrive.
+                log.warning("opto edge carried no level — using first-edge fallback")
+                return
+            else:
+                log.debug("drop %s in PLAYING", ev)
 
     async def _await_verdict(self) -> None:
         """Block until the ESP32 reports its single verdict for this arm, or the

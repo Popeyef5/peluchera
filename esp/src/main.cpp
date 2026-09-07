@@ -14,8 +14,6 @@
 #include "protocol.h"
 #include "sensors.h"
 
-static constexpr const char *FW_VERSION = "garra-chute-0.2.0";
-
 void setup() {
     Serial.begin(115200);
     delay(50);
@@ -36,7 +34,7 @@ void setup() {
     // Announce boot. `fault` is nullptr unless we somehow latched during
     // install() — at the moment we never do, but mirroring the field keeps
     // the Pi-side reconcile logic correct if that changes.
-    proto::emit_ready(FW_VERSION, fsm::latched_fault());
+    proto::emit_ready(proto::FW_VERSION, fsm::latched_fault());
 }
 
 void loop() {

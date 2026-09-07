@@ -54,7 +54,10 @@ _PULLS = {
     "down": lgpio.SET_PULL_DOWN,
     "none": lgpio.SET_PULL_NONE,
 }
-CLAW_OPTO_EDGE_NAME = os.getenv("CLAW_OPTO_EDGE", "rising").lower()
+# BOTH by default: the turn FSM needs the falling edge (claw engages) and the
+# rising edge (claw releases), and identifies the end of a turn as the pair.
+# A single-edge setting silently breaks that and falls back to first-edge.
+CLAW_OPTO_EDGE_NAME = os.getenv("CLAW_OPTO_EDGE", "both").lower()
 CLAW_OPTO_PULL_NAME = os.getenv("CLAW_OPTO_PULL", "up").lower()
 CLAW_OPTO_EDGE = _EDGES.get(CLAW_OPTO_EDGE_NAME, lgpio.RISING_EDGE)
 CLAW_OPTO_PULL = _PULLS.get(CLAW_OPTO_PULL_NAME, lgpio.SET_PULL_UP)
@@ -62,14 +65,14 @@ CLAW_OPTO_PULL = _PULLS.get(CLAW_OPTO_PULL_NAME, lgpio.SET_PULL_UP)
 # Glitch/debounce filter: lgpio only reports the edge after the level has been
 # stable this long, so it rejects anything shorter.
 #
-# 300ms, not the 10ms we started with. The filter is not just denoising here —
-# it SELECTS which edge we act on. start_turn_pulse drives COIN for 100ms and
-# UP for 100ms, and those pulses couple into this input, so a short filter let
-# a burst of edges through at the top of the turn and the FSM armed the chute
-# on the first of them, ending the turn at grab instead of at release. A filter
-# longer than those pulses swallows them and leaves the genuine end-of-cycle
-# signal, which holds. Env-tunable per cabinet via CLAW_OPTO_DEBOUNCE_US.
-GLITCH_US_CLAW = int(os.getenv("CLAW_OPTO_DEBOUNCE_US", "300000"))
+# 50ms. A polled trace of the raw line showed it is clean — exactly two
+# transitions per cycle, low while the claw grabs and high at rest — so the
+# chatter we saw only ever existed on the interrupt path. This filter now has
+# one job, collapsing the few milliseconds of it that accompany a transition.
+# It is deliberately NOT doing selection any more: which edge ends the turn is
+# decided by the low-then-high sequence in the FSM, which needs no tuning per
+# cabinet. Keep it well under the seconds-long gap between grab and release.
+GLITCH_US_CLAW = int(os.getenv("CLAW_OPTO_DEBOUNCE_US", "50000"))
 
 
 def open_gpiochip() -> int:
@@ -106,7 +109,21 @@ class Sensors:
         # (polling) only — which is exactly the trap that made the opto look
         # "dead" to the app while a multimeter and gpio_test (polling) saw it.
         lgpio.gpio_claim_alert(self.h, CLAW_OPTO, CLAW_OPTO_EDGE, CLAW_OPTO_PULL)
-        lgpio.gpio_set_debounce_micros(self.h, CLAW_OPTO, GLITCH_US_CLAW)
+        # CHECK THIS RETURN. lgpio validates the debounce and answers with a
+        # negative error code (BAD_DEBOUNCE_MICS is -98) rather than raising,
+        # so ignoring it meant an out-of-range value silently left the input
+        # completely unfiltered while the startup line still announced the
+        # setting we asked for. That is indistinguishable, from the logs, from
+        # a filter that is working and simply not helping.
+        rc = lgpio.gpio_set_debounce_micros(self.h, CLAW_OPTO, GLITCH_US_CLAW)
+        if rc < 0:
+            log.error(
+                "claw opto: debounce of %dus REJECTED by lgpio (rc=%d) — the "
+                "input is running UNFILTERED. Lower CLAW_OPTO_DEBOUNCE_US.",
+                GLITCH_US_CLAW, rc,
+            )
+        else:
+            log.info("claw opto: debounce of %dus accepted", GLITCH_US_CLAW)
         log.info(
             "claw opto: GPIO %d, edge=%s, pull=%s, debounce=%dus (alert)",
             CLAW_OPTO, CLAW_OPTO_EDGE_NAME, CLAW_OPTO_PULL_NAME, GLITCH_US_CLAW,
@@ -123,7 +140,11 @@ class Sensors:
         """
         level = args[2] if len(args) > 2 else -1
         tick_ns = args[3] if len(args) > 3 else 0
-        self._push("opto", level, tick_ns)
+        # Tag the event with its direction. The turn FSM ends a turn on the
+        # low -> high pair (grab, then release), so a bare "opto" would leave
+        # it unable to tell the two apart.
+        kind = {0: "opto_low", 1: "opto_high"}.get(level, "opto")
+        self._push(kind, level, tick_ns)
 
     def _push(self, kind: str, level: int = -1, tick_ns: int = 0) -> None:
         if self.loop is None:

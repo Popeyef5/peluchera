@@ -12,9 +12,9 @@ services:
       - ESP_PORT=/dev/garra-esp
       # Claw end-of-turn opto. Flip CLAW_OPTO_EDGE to falling/both (e.g. after a
       # PSU polarity change) via raspberry/.env, then `docker compose up -d socket`.
-      - CLAW_OPTO_EDGE=${CLAW_OPTO_EDGE:-rising}
+      - CLAW_OPTO_EDGE=${CLAW_OPTO_EDGE:-both}
       - CLAW_OPTO_PULL=${CLAW_OPTO_PULL:-up}
-      - CLAW_OPTO_DEBOUNCE_US=${CLAW_OPTO_DEBOUNCE_US:-300000}
+      - CLAW_OPTO_DEBOUNCE_US=${CLAW_OPTO_DEBOUNCE_US:-50000}
     expose:
       - '5000'
     network_mode: "host"

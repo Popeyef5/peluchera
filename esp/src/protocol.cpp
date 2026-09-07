@@ -74,6 +74,12 @@ void emit_pong(long seq, const char *state, bool tag_pending,
     JsonDocument d;
     d["type"]        = "pong";
     d["seq"]         = seq;
+    // Version on every pong, not just the boot-time `ready`. A Pi that
+    // reopened the port without rebooting the board would otherwise never
+    // learn what it is talking to, and its protocol check would pass
+    // vacuously against an unknown peer.
+    d["fw"]          = FW_VERSION;
+    d["proto"]       = ESP_PI_PROTOCOL;
     d["state"]       = state;
     d["tag_pending"] = tag_pending;
     if (last_tag_or_null && last_tag_or_null[0]) d["last_tag"] = last_tag_or_null;

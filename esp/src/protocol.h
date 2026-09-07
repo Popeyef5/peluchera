@@ -48,6 +48,13 @@ constexpr const char *REASON_STILL_BLOCKED = "still_blocked";
 // chute (and pauses the queue) rather than misread its frames.
 constexpr int ESP_PI_PROTOCOL = 2;
 
+// Human build id. Lives here rather than in main.cpp because BOTH `ready` and
+// `pong` report it: `ready` fires once at boot and is missed whenever the Pi
+// reopens the serial port without resetting the board, which left the Pi
+// permanently unable to name the firmware it was talking to. `pong` answers
+// every health probe, so the version can no longer go stale or unknown.
+constexpr const char *FW_VERSION = "garra-chute-0.2.0";
+
 // Chute verdict outcomes — exactly one per arm. See the table at the top.
 constexpr const char *VERDICT_NO_FALL = "no_fall";
 constexpr const char *VERDICT_NO_READ = "no_read";
@@ -81,7 +88,7 @@ void emit_fault(const char *kind, const char *reason_or_null);
 // with the wrong ball_serial — a pending tag while the chute sits IDLE is the
 // smoking gun.
 void emit_pong(long seq, const char *state, bool tag_pending,
-               const char *last_tag_or_null);
+               const char *last_tag_or_null);   // also reports fw + proto
 // Admin enrollment outbound: tag_scanned carries the UID of the first tag
 // presented during the enroll window; enroll_timeout signals that the
 // window ended with no tag detected.

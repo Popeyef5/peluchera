@@ -13,7 +13,7 @@ import os
 import random
 from typing import Optional
 
-from fsm import EV_OPTO
+from fsm import EV_OPTO_LOW, EV_OPTO_HIGH
 
 log = logging.getLogger("mock-rpi.hw")
 
@@ -65,6 +65,11 @@ class MockState:
         return next(self._uid_cycle) if self._uid_cycle else None
 
 
+# How long the simulated claw holds low between engaging and releasing. The
+# real cabinet measured about five seconds; kept short here so the suite runs.
+GRAB_HOLD_SEC = 0.5
+
+
 class MockClawOutputs:
     """No physical claw. The COIN/UP pulse returns immediately and schedules
     the simulated opto edge after a random delay."""
@@ -83,4 +88,10 @@ class MockClawOutputs:
         duration = random.uniform(TURN_DURATION_MIN, TURN_DURATION_MAX)
         log.info("simulating turn: duration=%.2fs mode=%s", duration, self.state.mode)
         await asyncio.sleep(duration)
-        self.events.put_nowait(EV_OPTO)
+        # Emit the real pair, not a single edge: the line drops while the claw
+        # grabs and returns high when it releases, and the turn ends on the
+        # second one. Sending only one edge would leave the mock unable to
+        # exercise the sequence the cabinet actually runs.
+        self.events.put_nowait(EV_OPTO_LOW)
+        await asyncio.sleep(GRAB_HOLD_SEC)
+        self.events.put_nowait(EV_OPTO_HIGH)

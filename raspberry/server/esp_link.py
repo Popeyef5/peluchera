@@ -166,6 +166,14 @@ class EspLink:
                 # surface it to the FSM (it'd be an unexpected verdict). It also
                 # carries the chute snapshot, so every /health probe refreshes
                 # where the ESP is for free.
+                # Version rides every pong now. Treat it exactly like a
+                # `ready` for version purposes: without this the Pi stays
+                # blind to a board it is actively talking to, and version_ok()
+                # returns True against an unknown peer rather than checking it.
+                if payload.get("proto") is not None:
+                    self.fw = payload.get("fw")
+                    self.esp_proto = payload.get("proto")
+                    self._ready_seen = True
                 self.chute_state = payload.get("state")
                 self.tag_pending = payload.get("tag_pending")
                 self.last_tag = payload.get("last_tag")
