@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
-    optimizePackageImports: ["@chakra-ui/react"],
+    optimizePackageImports: ["@chakra-ui/react", "@react-three/drei"],
   },
   webpack: (config, { webpack }) => {
     config.externals.push("pino-pretty", "lokijs", "encoding");
