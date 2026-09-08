@@ -6,7 +6,14 @@
 #
 # Toolchains (xtensa-esp32) and the package cache live in the garra_pio_cache
 # volume, so only the first flash pays the download cost.
-FROM python:3.12-slim
+# Pinned by DIGEST, not tag. This image is a tool that changes almost never,
+# but `python:3.12-slim` is a moving tag: when upstream republishes it the FROM
+# layer changes, every layer below is invalidated, and the Pi rebuilds the apt
+# stage from scratch. On a cabinet's WiFi that is ten to twenty minutes before
+# a flash can even start. Pinning means a rebuild happens when WE change this
+# file, never because someone else pushed. Bump deliberately for base updates:
+#   docker buildx imagetools inspect python:3.12-slim   # take the index digest
+FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 
 # build-essential + the -dev headers are needed because on ARM (the real Pi)
 # some of esptool's deps (cffi, bitarray) have no prebuilt wheels and compile

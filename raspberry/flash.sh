@@ -25,6 +25,7 @@
 #   --fw <dir>         --prebuilt bins dir (default: ./prebuilt-fw). Must hold
 #                      bootloader.bin partitions.bin boot_app0.bin firmware.bin
 #   --yes, -y          Skip the "cabinet must be idle" confirmation
+#   --rebuild          Rebuild the flasher image even if one already exists
 #
 # Prereqs:
 #   - ../esp/include/secrets.h present (WiFi + OTA creds; gitignored)
@@ -37,7 +38,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-MODE=""; HOST=""; ENV_OVERRIDE=""; ASSUME_YES=0; FW_DIR="./prebuilt-fw"
+MODE=""; HOST=""; ENV_OVERRIDE=""; ASSUME_YES=0; FW_DIR="./prebuilt-fw"; FORCE_REBUILD=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ota) MODE=ota ;;
@@ -49,12 +50,13 @@ while [ $# -gt 0 ]; do
     --env)  ENV_OVERRIDE="${2:?--env needs a value}"; shift ;;
     --fw)   FW_DIR="${2:?--fw needs a value}"; shift ;;
     --yes|-y) ASSUME_YES=1 ;;
+    --rebuild) FORCE_REBUILD=1 ;;
     -h|--help) sed -n '2,40p' "$0" | sed 's/^#\s\?//'; exit 0 ;;
     *) echo "flash.sh: unknown argument '$1' (try --help)" >&2; exit 2 ;;
   esac
   shift
 done
-[ -n "$MODE" ] || { echo "flash.sh: specify --ota or --usb (try --help)" >&2; exit 2; }
+[ -n "$MODE" ] || { echo "flash.sh: specify --ota, --usb or --prebuilt (try --help)" >&2; exit 2; }
 
 # docker compose v2 ("docker compose") vs legacy v1 ("docker-compose")
 if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"
@@ -152,8 +154,24 @@ flash_prebuilt() {
 }
 
 confirm_idle
-echo ">> Building flasher image (first run installs esptool + toolchain; later runs are cached)..."
-$COMPOSE --profile flash build flasher
+# Build only when the image is genuinely missing. This used to run on every
+# flash, which meant re-resolving the base tag against the registry each time
+# and rebuilding everything whenever upstream moved it. The flasher is a tool,
+# not part of the app: it should change when we change it and not otherwise.
+# Pass --rebuild to force one.
+flasher_image_id() {
+  local proj="${COMPOSE_PROJECT_NAME:-$(basename "$PWD")}"
+  proj="$(printf '%s' "$proj" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')"
+  docker image inspect -f '{{.Id}}' "${proj}-flasher" 2>/dev/null \
+    || docker image inspect -f '{{.Id}}' "${proj}_flasher" 2>/dev/null
+}
+
+if [ "$FORCE_REBUILD" -eq 1 ] || [ -z "$(flasher_image_id)" ]; then
+  echo ">> Building flasher image (first run installs esptool; later flashes reuse it)..."
+  $COMPOSE --profile flash build flasher
+else
+  echo ">> Flasher image present — skipping build (--rebuild to force)."
+fi
 
 case "$MODE" in
   ota) flash_ota ;;
