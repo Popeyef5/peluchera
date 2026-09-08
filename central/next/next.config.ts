@@ -5,6 +5,37 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["@chakra-ui/react", "@react-three/drei"],
   },
+  // Turbopack equivalent of the `webpack` block below, used by `dev:turbo`.
+  // Turbopack has no IgnorePlugin and no `externals`, so both are expressed as
+  // aliases onto an empty module. Unlike the webpack version these must be
+  // enumerated rather than matched by regex, so anything added below needs
+  // adding here too.
+  turbopack: {
+    resolveAlias: Object.fromEntries(
+      [
+        // `externals` above: optional deps that libraries require() lazily.
+        "pino-pretty",
+        "lokijs",
+        "encoding",
+        // Privy's OPTIONAL cross-chain peers. We are Ethereum/Base only and do
+        // not install them, so without this the build fails on Module not found.
+        "@abstract-foundation/agw-client",
+        "@farcaster/mini-app-solana",
+        "@solana/kit",
+        "@solana-program/system",
+        "@solana-program/token",
+        "@solana-program/memo",
+        "permissionless",
+        // DEV ONLY: the wallet stack we did not select. Mirrors the
+        // IgnorePlugin in the webpack block below — see the reasoning there.
+        ...(process.env.NODE_ENV !== "production"
+          ? process.env.WALLET_PROVIDER === "privy"
+            ? ["@reown/appkit", "@reown/appkit-adapter-wagmi"]
+            : ["@privy-io/react-auth", "@privy-io/wagmi"]
+          : []),
+      ].map((m) => [m, "./lib/empty-module.cjs"]),
+    ),
+  },
   webpack: (config, { webpack, dev }) => {
     config.externals.push("pino-pretty", "lokijs", "encoding");
 
