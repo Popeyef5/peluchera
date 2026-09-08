@@ -3,6 +3,14 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
+    // Not viem, despite it being the single biggest contributor to the module
+    // count (11.6k references, 4516 files). Measured: adding it changed the
+    // module count by 2 and made the cold compile 23s SLOWER, because the
+    // barrel analysis costs real time while nothing becomes unreachable —
+    // wagmi, Reown and Privy all import viem internally and Next can only
+    // rewrite imports in modules it compiles, not how those libraries were
+    // authored. lucide-react and react-icons are already in Next's built-in
+    // list, so listing them here would be a no-op too.
     optimizePackageImports: ["@chakra-ui/react", "@react-three/drei"],
   },
   // Turbopack equivalent of the `webpack` block below, used by `dev:turbo`.
