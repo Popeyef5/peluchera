@@ -85,8 +85,13 @@ export default function LoginPage() {
     });
     setSubmitting(false);
     if (error) {
-      // Deliberately neutral: don't confirm which addresses have accounts.
-      setError("Could not send a code to that address.");
+      // Show what Supabase actually said. A neutral message would avoid
+      // confirming which addresses have accounts, but the allow-list is two
+      // operators and the backend refuses everyone else anyway, so the only
+      // thing vagueness buys here is you not being able to tell a disabled
+      // provider from a rate limit from a bad address.
+      console.error("signInWithOtp failed", error);
+      setError(error.message);
       return;
     }
     setStep("code");
