@@ -39,6 +39,23 @@ SUPABASE_URL          = os.environ.get("SUPABASE_URL")
 SUPABASE_JWT_SECRET   = os.environ.get("SUPABASE_JWT_SECRET")
 SUPABASE_JWT_AUDIENCE = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
 
+# Player sign-in (SIWX). A wallet proves it controls an address by signing a
+# server-issued nonce; the server then hands back a session token signed with
+# this secret, and the socket only accepts an address that carries a matching
+# token. Set it in prod: if unset, a random per-process secret is used and every
+# player has to sign in again after each restart or deploy.
+PLAYER_SESSION_SECRET = os.environ.get("PLAYER_SESSION_SECRET")
+
+# Hosts a sign-in message may name as its domain. A signature is only accepted
+# for a message that says it is signing in to one of these, so a lookalike site
+# cannot collect signatures that work here. Include every host the player app
+# is served from (LAN addresses too, if you test from a phone).
+PLAYER_AUTH_DOMAINS = {
+    d.strip().strip('"').lower()
+    for d in os.environ.get("PLAYER_AUTH_DOMAINS", "localhost,cl4ws.com,www.cl4ws.com").split(",")
+    if d.strip()
+}
+
 # Admin access allow-list. Once admin login can be social/OAuth, ANYONE with a
 # Google (etc.) account can obtain a valid Supabase session — so this is the gate
 # that decides who is actually an operator. Two optional knobs:

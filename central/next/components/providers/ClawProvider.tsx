@@ -28,6 +28,7 @@ function getOrCreateGuestAddress(): `0x${string}` {
 }
 import { toaster } from "@/components/ui/toaster"
 import { erc20Abi } from 'viem';
+import { PLAYER_SESSION_EVENT, readPlayerToken } from '@/lib/wallet/playerSession';
 import { USDCAddress, treasuryAddress, ticketUsdcBaseUnits } from '@/lib/crypto/contracts';
 import { writeContract, waitForTransactionReceipt } from 'wagmi/actions';
 import { useConfig } from 'wagmi';
@@ -304,7 +305,14 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		const linkWallet = () => {
 			if (!address) return;
 
-			socket.emit('wallet_connected', { address }, (res: { status: string, data: WalletConnectedData }) => {
+			// The server only binds an address it has seen proven: the token comes
+			// from signing in (lib/wallet/siwx.ts). Until that finishes there is
+			// nothing to send, and the session event below re-runs this once it
+			// does. Demo mode has no wallet to sign with and the server exempts it.
+			const token = BYPASS_PAYMENT ? undefined : readPlayerToken(address);
+			if (!BYPASS_PAYMENT && !token) return;
+
+			socket.emit('wallet_connected', { address, token }, (res: { status: string, data: WalletConnectedData }) => {
 				if (res.status === "ok") {
 					setFreePlay(!!res.data.free_play);
 					setPosition(res.data.position);
@@ -320,6 +328,8 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 		linkWallet();
 		socket.off('connect')
 		socket.on('connect', linkWallet);
+		window.addEventListener(PLAYER_SESSION_EVENT, linkWallet);
+		return () => window.removeEventListener(PLAYER_SESSION_EVENT, linkWallet);
 	}, [address, socket]);
 
 	/* server events */

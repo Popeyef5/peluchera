@@ -12,7 +12,9 @@ const SocketContext = createContext<SocketContextValue | null>(null);
 // final by socket.io-client (no auto-reconnect), leaving consumers wired to a
 // dead socket — every event from the server would land on a closed listener.
 let _socket: Socket | null = null;
-function getSocket(): Socket {
+// Exported for code that runs outside React, such as the SIWX sign-in config
+// handed to createAppKit, so it shares this one connection.
+export function getSocket(): Socket {
 	if (!_socket) _socket = io({ transports: ['websocket'] });
 	return _socket;
 }

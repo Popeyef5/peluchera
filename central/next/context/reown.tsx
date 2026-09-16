@@ -7,6 +7,7 @@ import { baseSepolia } from "@reown/appkit/networks";
 import { cookieToInitialState, WagmiProvider, type Config } from "wagmi";
 import { wagmiAdapter, projectId } from "@/config";
 import { ReownWalletBridge } from "./ReownWalletBridge";
+import { createGarraSiwx } from "@/lib/wallet/siwx";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,9 @@ function ensureAppKit() {
     networks: [baseSepolia],
     defaultNetwork: baseSepolia,
     metadata,
+    // Players prove they own their wallet before the server trusts the address.
+    // One signature per device; see lib/wallet/siwx.ts.
+    siwx: createGarraSiwx(),
     featuredWalletIds: [
       "fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa",
     ],

@@ -341,6 +341,16 @@ Pages/endpoints:
   bridges (Reown / Privy); runtime selector via `WALLET_PROVIDER` env read
   server-side in `app/layout.tsx`, passed as prop. Both providers' public keys
   baked (`NEXT_PUBLIC_PROJECT_ID` Reown, `NEXT_PUBLIC_PRIVY_APP_ID`).
+- **Player sign-in (SIWX)**: identity is proven, not asserted. AppKit's `siwx`
+  (`lib/wallet/siwx.ts`) signs an EIP-4361 message around a server nonce
+  (`auth_nonce`); `auth_verify` (`app/player_auth.py`) checks domain, chain,
+  nonce and timestamps and verifies the signature — ECDSA for plain accounts,
+  the ERC-6492 universal validator via `eth_call` for smart accounts (Reown
+  email/social logins) — then returns a 30-day HS256 session token.
+  `wallet_connected` binds a socket to an address ONLY with a token naming that
+  address; every settle/ship/withdraw/move handler reads identity from that
+  binding. Returning players reuse the stored token (`auth_check`), so it is one
+  signature per device. Exempt in `BYPASS_PAYMENT` (guest addresses can't sign).
 - **PLAY**: `ClawProvider` (`useClaw()`) drives socket state. PLAY →
   pay_free/pay_crypto/openPaymentPicker (or login). Disabled when
   `machineBlocked`.
@@ -383,7 +393,10 @@ Pages/endpoints:
 - `DATABASE_URL`, `PI_SERVER_URL`, `BASE_RPC_HTTP/WS`, `CLAW_CONTRACT_ADDRESS`,
   `CHAIN_ID`, `CLAW_PRIVATE_KEY`.
 - `BYPASS_PAYMENT`, `FREE_PLAY`, `DEV_TOOLS` (+ `NEXT_PUBLIC_*` mirrors).
-- `WALLET_PROVIDER` (reown|privy).
+- `WALLET_PROVIDER` (reown|privy). SIWX is wired for Reown only; Privy logins
+  would be refused by `wallet_connected` until it gets the same treatment.
+- Player sign-in: `PLAYER_SESSION_SECRET` (required in prod, else sessions die
+  on every restart), `PLAYER_AUTH_DOMAINS` (hosts a signed message may name).
 - Admin: `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`,
   `ADMIN_EMAIL_ALLOWLIST`, `ADMIN_EMAIL_DOMAINS`.
 - Stripe: `STRIPE_*`. Treasury: `TREASURY_ADDRESS`, `TREASURY_PRIVATE_KEY`

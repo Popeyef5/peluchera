@@ -20,12 +20,43 @@ from ..helpers import (
 from ..payments import already_in_queue, initiate_payment, confirm_payment
 from ..win_transitions import get_or_create_user
 from .. import machine
+from .. import player_auth
 from ..logging import log
+
+
+async def _unbind(sid):
+    old = sid_to_addr.get(sid)
+    if old:
+        await sio.leave_room(sid, old)
+    sid_to_addr[sid] = None
 
 
 @sio.on("wallet_connected")
 async def wallet_connected(sid, data):
-    addr = data["address"]
+    data = data or {}
+    addr = data.get("address")
+    if not addr:
+        return {"status": "error", "error": "address required"}
+
+    # This is the ONE place a socket acquires an identity, and every handler
+    # that settles, ships, withdraws or drives the claw reads it back from
+    # sid_to_addr. So the address must be proven here: the client sends the
+    # session token it got from signing in (auth_verify), and it must name this
+    # exact address. Without this anyone could claim any player's address.
+    #
+    # Demo mode is exempt: its guest addresses have no wallet behind them to
+    # sign with, and nothing in it is real money.
+    if not BYPASS_PAYMENT:
+        proven = player_auth.session_address(data.get("token"))
+        if proven is None or proven != addr.lower():
+            await _unbind(sid)
+            log.info("wallet_connected refused for %s: no valid sign-in", addr)
+            return {"status": "error", "error": "sign-in required", "code": "unauthenticated"}
+
+    # Re-binding a socket to a different address must leave the old room, or it
+    # would keep receiving the previous player's targeted events.
+    if sid_to_addr.get(sid) and sid_to_addr.get(sid) != addr:
+        await _unbind(sid)
     sid_to_addr[sid] = addr
     await sio.enter_room(sid, addr)
     log.info(f"Player {addr} joined")
