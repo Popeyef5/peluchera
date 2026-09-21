@@ -42,7 +42,7 @@ runs its own database. Work through this once.
 `docker-compose.yml` has **no `db` service**. If `.env.prod` still points at
 `claw_db`, `update.sh` refuses to run.
 
-- [ ] Neon project "Garra", branch `production`, **aws-us-east-2**, Postgres 17,
+- [ ] Neon project "cl4ws" (org "Cl4ws", `fancy-bonus-70768673`), branch `production`, **aws-us-east-2**, Postgres 18,
   autoscaling pinned to **0.25 CU**. The free plan allows 100 CU-hours a month
   and then suspends the database until the 1st; 0.25 CU is the slowest burn.
 - [ ] `DATABASE_URL` = the **pooled** string (host contains `-pooler`), from the
@@ -53,7 +53,7 @@ runs its own database. Work through this once.
   credential with `storage:read` + `storage:write`, and `ASSETS_S3_*` set.
 - [ ] Verify before deploying:
 
-      docker run --rm postgres:17 psql "<DATABASE_URL_DIRECT, scheme postgresql://>" \
+      docker run --rm postgres:18 psql "<DATABASE_URL_DIRECT, scheme postgresql://>" \
         -c "SELECT version_num FROM alembic_version;"
 
   On a fresh project the table doesn't exist yet; the deploy creates the whole

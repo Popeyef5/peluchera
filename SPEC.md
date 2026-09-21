@@ -93,7 +93,7 @@ raspberry/                   # real Pi flasher/deploy tooling
 
 - **VPS** `cl4ws.com` (`root@peluchera`, `~/peluchera/central`): runs the app
   (fastapi, next, next-admin, proxy) via `docker-compose.yml`.
-- **DB**: Neon project "Garra", branch `production`, `aws-us-east-2`, Postgres 17,
+- **DB**: Neon project "cl4ws" (`fancy-bonus-70768673`, org "Cl4ws"), branch `production`, database `neondb`, `aws-us-east-2`, Postgres 18,
   compute pinned to 0.25 CU. The app connects through the pooled endpoint
   (`-pooler`, transaction-mode PgBouncer; driver prepared statements disabled in
   `db.py`); migrations and `update.sh`'s pg_dump use `DATABASE_URL_DIRECT`.

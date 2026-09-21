@@ -134,13 +134,15 @@ backup_db() {
 
   # Prefer the running 'db' container (has pg_dump, and can reach both the
   # compose network and the internet). Fall back to a throwaway postgres image
-  # on the host network (for a remote DB, e.g. Supabase).
+  # on the host network (for a remote DB, e.g. Neon). The image's major
+  # version must be >= the server's: pg_dump refuses to dump a newer server.
+  # Prod runs Postgres 18 on Neon.
   if $DC ps --status=running 2>/dev/null | grep -q '\bdb\b'; then
     $DC exec -T -e PGPASSWORD="$PGPASS_" db \
       pg_dump -h "$PGHOST_" -p "$PGPORT_" -U "$PGUSER_" -d "$PGDB_" --no-owner \
       | gzip > "$dump" || { rm -f "$dump"; return 1; }
   else
-    docker run --rm --network host -e PGPASSWORD="$PGPASS_" postgres:17 \
+    docker run --rm --network host -e PGPASSWORD="$PGPASS_" postgres:18 \
       pg_dump -h "$PGHOST_" -p "$PGPORT_" -U "$PGUSER_" -d "$PGDB_" --no-owner \
       | gzip > "$dump" || { rm -f "$dump"; return 1; }
   fi
