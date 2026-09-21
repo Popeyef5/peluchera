@@ -56,6 +56,22 @@ PLAYER_AUTH_DOMAINS = {
     if d.strip()
 }
 
+# Uploaded assets (pack art, card images, opening videos) live in an
+# S3-compatible bucket: Neon Object Storage in prod, though any S3 API works.
+# The admin panel uploads straight from the browser with a presigned PUT that
+# the backend issues, so large videos never pass through nginx or this process.
+ASSETS_S3_ENDPOINT = os.environ.get("ASSETS_S3_ENDPOINT")
+ASSETS_S3_REGION = os.environ.get("ASSETS_S3_REGION", "us-east-2")
+ASSETS_S3_ACCESS_KEY_ID = os.environ.get("ASSETS_S3_ACCESS_KEY_ID")
+ASSETS_S3_SECRET_ACCESS_KEY = os.environ.get("ASSETS_S3_SECRET_ACCESS_KEY")
+ASSETS_BUCKET = os.environ.get("ASSETS_BUCKET", "assets")
+# Where the public copy of an object is read from. Defaults to the bucket's
+# path-style URL; point it at a CDN later without touching stored rows' shape.
+ASSETS_PUBLIC_BASE = (
+    os.environ.get("ASSETS_PUBLIC_BASE")
+    or (f"{ASSETS_S3_ENDPOINT.rstrip('/')}/{ASSETS_BUCKET}" if ASSETS_S3_ENDPOINT else None)
+)
+
 # Admin access allow-list. Once admin login can be social/OAuth, ANYONE with a
 # Google (etc.) account can obtain a valid Supabase session — so this is the gate
 # that decides who is actually an operator. Two optional knobs:

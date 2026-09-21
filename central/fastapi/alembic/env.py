@@ -24,7 +24,11 @@ import app.models  # noqa: F401
 config = context.config
 
 # Inject the runtime URL. Required — we never hardcode credentials in the ini.
-db_url = os.environ.get("DATABASE_URL")
+# Migrations prefer a DIRECT connection when one is configured. The app talks
+# to Neon through its pooled endpoint, a transaction-mode PgBouncer, and Neon
+# recommends running schema changes on the direct endpoint instead. Falls back
+# to DATABASE_URL, which is all local dev has.
+db_url = os.environ.get("DATABASE_URL_DIRECT") or os.environ.get("DATABASE_URL")
 if not db_url:
     raise RuntimeError("DATABASE_URL is not set — Alembic needs it to run migrations")
 config.set_main_option("sqlalchemy.url", db_url)

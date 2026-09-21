@@ -83,7 +83,7 @@ raspberry/                   # real Pi flasher/deploy tooling
 - `next` (:3000, behind proxy) — player app.
 - `next-admin` (:3001, behind proxy) — admin app.
 - `proxy` (:80) — nginx.
-- `db` (:5432) — Postgres (dev only; prod uses Supabase).
+- `db` (:5432) — Postgres (dev only; prod uses Neon).
 - `mock-pi` (:5001) — the mock cabinet controller.
 - `mediamtx` — WebRTC video.
 
@@ -93,10 +93,24 @@ raspberry/                   # real Pi flasher/deploy tooling
 
 - **VPS** `cl4ws.com` (`root@peluchera`, `~/peluchera/central`): runs the app
   (fastapi, next, next-admin, proxy) via `docker-compose.yml`.
-- **DB**: Supabase project "Claws" `cjuryopztkipqqkivsge` (session pooler :5432,
-  `aws-1-us-east-2`). Alembic owns schema (no `create_all`). Resilience:
-  `pool_pre_ping=True`, `pool_recycle=300`, TCP keepalives; scheduler loops
-  wrapped in try/except so a transient drop logs and retries, never dies.
+- **DB**: Neon project "Garra", branch `production`, `aws-us-east-2`, Postgres 17,
+  compute pinned to 0.25 CU. The app connects through the pooled endpoint
+  (`-pooler`, transaction-mode PgBouncer; driver prepared statements disabled in
+  `db.py`); migrations and `update.sh`'s pg_dump use `DATABASE_URL_DIRECT`.
+  Alembic owns schema (no `create_all`). Resilience: `pool_pre_ping=True`,
+  `pool_recycle=300`, TCP keepalives; scheduler loops wrapped in try/except.
+  (Moved off Supabase "Claws" `cjuryopztkipqqkivsge`, whose free project paused
+  for inactivity and took the DB, Storage and Auth down together.)
+- **Scale to zero**: Neon's free plan gives 100 CU-hours/month, then suspends the
+  DB until the 1st; at 0.25 CU that is 400 awake hours. The backend therefore
+  stays off the DB when idle: `state.queue_known_empty` records that the queue is
+  empty (queue entries are only created by `payments.confirm_payment`, in this
+  single process), so the scheduler tick, `global_sync` and the personal sync
+  skip their queries, and Neon suspends after 5 idle minutes. `queue_generation`
+  stops a query that raced a payment from marking the queue empty. Admin writes
+  refresh the cached fitness flag, since the scheduler no longer does it each
+  second while idle. **One backend process only**: a second worker would enqueue
+  without the first one knowing.
 - **Pi ↔ VPS over Tailscale**: hosts `claw-pi` (100.74.32.74), `claw-vps`
   (100.115.57.38). `PI_SERVER_URL=http://100.74.32.74:5000` — **use the
   Tailscale IP, not MagicDNS** (container DNS can't resolve MagicDNS). Transport
@@ -281,7 +295,7 @@ Enforced at BOTH:
   - Else: close the old active entry (`played`), claim the next `queued` entry
     (oldest), emit `turn_end`/`turn_start`, `safe_pi_emit('turn_start')`, set
     `current_player`. If none queued → idle. **The DB session is never held
-    across the inter-turn sleep or socket emits** (Supabase pooler kills idle
+    across the inter-turn sleep or socket emits** (poolers kill idle
     checked-out connections).
 - **Turn end**: the Pi/mock reports a single verdict `{outcome, ball_serial}`.
   `outcome=ok` → win path (`reserve_win`). `no_fall` → clean loss. `no_read` →
@@ -330,8 +344,12 @@ Pages/endpoints:
 - **Cabinet** (`ops` route): live status + `can_play` banner + protocol chain +
   test-arm, clear_fault, ESP health, force_turn_end.
 - **Plays**: turn/win history.
-- Uploads: Supabase Storage `assets` bucket (public, admin-allowlist RLS) via
-  `next-admin/lib/upload.ts`.
+- Uploads: S3-compatible bucket `assets` (Neon Object Storage, `public_read`)
+  via `next-admin/lib/upload.ts`. `POST /admin/uploads` (admin-only) signs a
+  one-shot PUT (`app/storage.py`) and the browser uploads directly, so videos
+  never pass through nginx/FastAPI. Bucket CORS: GET from anywhere (WebGL
+  textures), PUT from admin origins only. `python -m app.move_assets` copied the
+  old Supabase Storage files and repointed stored URLs.
 
 ---
 
@@ -390,7 +408,9 @@ Pages/endpoints:
 
 ## 12. Config / env flags (`config.py`)
 
-- `DATABASE_URL`, `PI_SERVER_URL`, `BASE_RPC_HTTP/WS`, `CLAW_CONTRACT_ADDRESS`,
+- `DATABASE_URL` (pooled), `DATABASE_URL_DIRECT` (migrations + backups),
+  `ASSETS_S3_ENDPOINT` / `_REGION` / `_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY`,
+  `ASSETS_BUCKET`, `ASSETS_PUBLIC_BASE`, `PI_SERVER_URL`, `BASE_RPC_HTTP/WS`, `CLAW_CONTRACT_ADDRESS`,
   `CHAIN_ID`, `CLAW_PRIVATE_KEY`.
 - `BYPASS_PAYMENT`, `FREE_PLAY`, `DEV_TOOLS` (+ `NEXT_PUBLIC_*` mirrors).
 - `WALLET_PROVIDER` (reown|privy). SIWX is wired for Reown only; Privy logins
@@ -430,7 +450,7 @@ Pages/endpoints:
   `merkle_proof`, `secret`, `CommitmentBatch` are well-formed but not
   cryptographically meaningful yet. DO NOT treat as real trust guarantees.
 - **On-chain payout (notifyWin) skipped in bypass**; escrow contract retired.
-- **Booster face textures need CORS** (Supabase public URLs OK; arbitrary pasted
+- **Booster face textures need CORS** (the asset bucket's CORS allows GET; arbitrary pasted
   URLs may fail the WebGL upload → procedural fallback). Seeded pkmn-151 uses
   example.com placeholders (won't render — upload real images per ClosedBooster).
 - **Reveal uses the won cards** now, but MOCK_DECK is the fallback for wins with

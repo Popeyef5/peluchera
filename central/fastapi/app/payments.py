@@ -16,6 +16,7 @@ from sqlalchemy import select, func
 
 from .models import QueueEntry, Round, Payment, PaymentStatus
 from .socket.sio_instance import sio
+from . import state
 
 
 async def current_round(db):
@@ -67,6 +68,8 @@ async def confirm_payment(db, payment, key) -> int:
     payment.queue_entry_id = entry.id
 
     await db.commit()
+    # Wake the scheduler: it stops querying once it knows the queue is empty.
+    state.note_queue_grew()
 
     qcount = await db.scalar(
         select(func.count()).select_from(QueueEntry).where(QueueEntry.status == "queued")

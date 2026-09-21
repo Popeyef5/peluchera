@@ -19,6 +19,16 @@ from datetime import datetime
 from sqlalchemy import select, delete, update
 
 from .db import async_session, engine, Base
+from .config import ASSETS_PUBLIC_BASE
+
+
+def _asset(key: str) -> str:
+    """Public URL of an uploaded asset. Uses the configured bucket, falling back
+    to the original Supabase Storage copy until ASSETS_* is set, so seeding keeps
+    working on a checkout that hasn't been pointed at the new bucket yet."""
+    if ASSETS_PUBLIC_BASE:
+        return f"{ASSETS_PUBLIC_BASE.rstrip('/')}/{key}"
+    return f"https://cjuryopztkipqqkivsge.supabase.co/storage/v1/object/public/assets/{key}"
 from .models import (
     CommitmentBatch, Ball, OpenedBooster, ClosedBooster, Card, CardType,
     Win, LedgerEntry, Payment, QueueEntry,
@@ -45,10 +55,11 @@ BOOSTERS = [
     },
     {
         "sku": "thunder", "name": "Raging Pokemons",
-        # Supabase-hosted pack art. card_count is 5 but the reveal fans only 2 —
-        # a live example of reveal_card_count being independent of pack size.
-        "front": "https://cjuryopztkipqqkivsge.supabase.co/storage/v1/object/public/assets/boosters/aecrkn95.jpeg",
-        "back": "https://cjuryopztkipqqkivsge.supabase.co/storage/v1/object/public/assets/boosters/ke34synt.jpeg",
+        # Bucket-hosted pack art (see _asset). card_count is 5 but the reveal
+        # fans only 2 — a live example of reveal_card_count being independent
+        # of pack size.
+        "front": _asset("boosters/aecrkn95.jpeg"),
+        "back": _asset("boosters/ke34synt.jpeg"),
         "card_count": 5, "reveal": 2, "openings": 3, "ball_prefix": "T",
     },
 ]

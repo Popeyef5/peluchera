@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select, exists, and_, func
 
@@ -37,7 +37,31 @@ from ..models import (
 # Hard ceiling on the admin enrollment window — matches the ESP-side default.
 ENROLL_WINDOW_SECONDS = 10
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+async def _refresh_fitness_after_write(request: Request):
+	"""After any admin write, recompute whether the machine can take a turn.
+
+	The "machine blocked" flag every viewer sees is a cache. It used to be
+	refreshed every second by the turn scheduler, but the scheduler now leaves
+	the database alone while the machine is idle, so the database can sleep. That
+	left one way to get stuck: an operator fixes an unclaimable ball, the cache
+	still says blocked, PLAY stays greyed out, and nothing ever refreshes it.
+	Binding, voiding, restocking and editing inventory all come through here, so
+	refreshing after each write keeps the flag honest.
+	"""
+	yield
+	if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+		try:
+			await machine.refresh_inventory_fault()
+		except Exception:
+			from ..logging import log
+			log.exception("could not refresh machine fitness after an admin write")
+
+
+router = APIRouter(
+	prefix="/admin",
+	tags=["admin"],
+	dependencies=[Depends(_refresh_fitness_after_write)],
+)
 
 
 def _placeholder_hash(*parts: str) -> str:
@@ -1469,3 +1493,29 @@ async def force_turn_end(_: AdminIdentity = RequireAdmin):
 		raise HTTPException(status_code=409, detail="No turn is in progress")
 	await turn_end()
 	return {"ok": True}
+
+
+# ─── Asset uploads ───────────────────────────────────────────────────────
+
+class UploadRequest(BaseModel):
+	folder: str
+	content_type: str
+
+
+@router.post("/uploads")
+async def sign_upload(body: UploadRequest, _: AdminIdentity = RequireAdmin):
+	"""Sign a one-shot PUT so the browser uploads straight to the asset bucket.
+
+	Replaces uploading through Supabase Storage with the admin's own session.
+	The file never passes through this server, so opening videos are not held
+	up by nginx's body limit or this process's memory. Returns the URL to PUT to,
+	the exact headers to send (they are part of the signature), and the public
+	URL to save on the inventory row once the PUT succeeds.
+	"""
+	from .. import storage
+	try:
+		return storage.presign_upload(body.folder, body.content_type)
+	except storage.StorageNotConfigured as e:
+		raise HTTPException(status_code=503, detail=str(e))
+	except ValueError as e:
+		raise HTTPException(status_code=400, detail=str(e))

@@ -56,8 +56,15 @@ DATABASE_URL="$(env_get DATABASE_URL)"
 
 case "$DATABASE_URL" in
   *claw_db*) die "$ENV_FILE points DATABASE_URL at claw_db — that is the DEV
-   database. Prod runs against Supabase and has no db service." ;;
+   database. Prod runs against Neon and has no db service." ;;
 esac
+
+# Backups (pg_dump) and migrations need a DIRECT connection. The app talks to
+# Neon through its pooled endpoint, a transaction-mode PgBouncer, which pg_dump
+# cannot use and Neon advises against for schema changes. alembic/env.py picks
+# DATABASE_URL_DIRECT up on its own; this is the same choice for the dump.
+DUMP_URL="$(env_get DATABASE_URL_DIRECT)"
+[[ -n "$DUMP_URL" ]] || DUMP_URL="$DATABASE_URL"
 
 # --env-file drives ${VAR} interpolation inside the compose file — which is how
 # the Next builds get their NEXT_PUBLIC_* build args (including the admin app's
@@ -72,7 +79,7 @@ DC="$DC --env-file $ENV_FILE"
 # username as the hostname). SQLAlchemy's lenient parser tolerates it, so the app
 # works while pg_dump doesn't. Passing PGPASSWORD + -h/-p/-U/-d sidesteps URL
 # parsing entirely. (Assumes the password itself contains no '@'.)
-_rest="${DATABASE_URL#*://}"        # user:pass@host:port/db?params
+_rest="${DUMP_URL#*://}"            # user:pass@host:port/db?params
 _creds="${_rest%@*}"               # user:pass   (everything before the LAST @)
 _hostpart="${_rest##*@}"           # host:port/db?params
 PGUSER_="${_creds%%:*}"

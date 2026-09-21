@@ -30,6 +30,15 @@ from .state import global_sync
 
 async def _turn_scheduler_loop():
 
+    # Nothing running and nobody queued: nothing to decide, so stay off the
+    # database entirely (see state.queue_known_empty). This is the tick that
+    # otherwise kept serverless Postgres awake around the clock. The fitness
+    # check below only matters when there is a turn to start, and payment
+    # re-checks it at pay time anyway.
+    if state.queue_known_empty and state.current_player is None:
+        await asyncio.sleep(1)
+        return
+
     # Rest while a turn is in flight, a round is changing, or the machine isn't
     # fit to play. "Not fit" covers a jammed chute AND a loaded ball whose prize
     # can't be handed over — both pause the queue until an operator resolves it,
@@ -53,6 +62,7 @@ async def _turn_scheduler_loop():
     # what Supabase's pooler kills, and the next use then fails with
     # "SSL SYSCALL error: EOF detected". So we pull out the plain values we need,
     # commit, close the session, and only then wait / emit.
+    gen = state.queue_generation
     async with async_session() as db:
         old_entry = await db.scalar(
             select(QueueEntry)
@@ -78,6 +88,7 @@ async def _turn_scheduler_loop():
 
     # --- nothing queued: go idle (no DB connection held across the sleep) ---
     if next_id is None:
+        state.note_queue_empty(gen)
         if had_old:
             await sio.emit("turn_end")
         state.current_player = None
@@ -159,13 +170,20 @@ async def sync_scheduler():
             await sio.emit("global_sync", await global_sync())
 
             # --- Personal sync to every address in queue ---
-            async with async_session() as db:
-                result = await db.execute(
-                    select(QueueEntry)
-                    .where(QueueEntry.status == "queued")
-                    .order_by(QueueEntry.created_at.asc())
-                )
-                queue = result.scalars().all()
+            # Skipped outright when nobody is queued, so an idle machine sends
+            # the database nothing and it can scale to zero.
+            queue = []
+            if not state.queue_known_empty:
+                gen = state.queue_generation
+                async with async_session() as db:
+                    result = await db.execute(
+                        select(QueueEntry)
+                        .where(QueueEntry.status == "queued")
+                        .order_by(QueueEntry.created_at.asc())
+                    )
+                    queue = result.scalars().all()
+                if not queue:
+                    state.note_queue_empty(gen)
 
             for i, entry in enumerate(queue):
                 await sio.emit("personal_sync", {"position": i + 1}, room=entry.address)

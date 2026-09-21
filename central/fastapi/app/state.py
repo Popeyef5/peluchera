@@ -61,6 +61,40 @@ esp_pi_ok: bool = True   # ESP<->Pi contract, per the Pi's own latch
 # Shape: {"kind": str, "reason": Optional[str]}
 cabinet_fault: Optional[dict] = None
 
+# ── Letting the database sleep ────────────────────────────────────────────
+# Serverless Postgres (Neon) bills compute by the hour and scales to zero only
+# after minutes without queries. The scheduler used to query every second and
+# the sync loop every 15, forever, so the database never slept: at the smallest
+# size that is 180 CU-hours a month against a 100 CU-hour free allowance.
+#
+# Most of those queries asked "is anyone queued?" on an empty machine. A queue
+# entry is only ever CREATED by payments.confirm_payment, in this process, so we
+# can know the answer without asking: once a query has seen the queue empty,
+# nothing can change that except a confirm_payment, which says so here.
+#
+# queue_generation guards the race: a reader records it before querying and
+# only marks the queue empty if no payment landed while its query was in
+# flight. Assumes ONE backend process (true in dev and prod); a second worker
+# would enqueue without the first one hearing about it.
+queue_known_empty = False   # unknown at boot, so the first tick asks once
+queue_generation = 0
+
+
+def note_queue_grew() -> None:
+    """Called by confirm_payment after committing a new queued entry."""
+    global queue_known_empty, queue_generation
+    queue_generation += 1
+    queue_known_empty = False
+
+
+def note_queue_empty(seen_generation: int) -> None:
+    """A query saw no queued entries. Believe it only if no payment committed
+    while that query was in flight."""
+    global queue_known_empty
+    if seen_generation == queue_generation:
+        queue_known_empty = True
+
+
 def set_pi_status(connected: bool) -> None:
     """Update global flags that reflect the Pi‑side socket health."""
     global pi_connected, pi_proto, esp_proto, esp_fw, pi_fw, esp_pi_ok
@@ -76,17 +110,25 @@ def set_pi_status(connected: bool) -> None:
 
 
 async def global_sync():
-    async with async_session() as db:
-        qcount = await db.scalar(
-            select(func.count())
-            .select_from(QueueEntry)
-            .where(QueueEntry.status == "queued")
-        )
-        now = datetime.now(timezone.utc)
-        next_midnight = (now + timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        seconds_left = int((next_midnight - now).total_seconds())
+    # Sent to every viewer on connect and every 15s. With nobody queued it needs
+    # no database at all, which is what lets an idle machine's database sleep.
+    if queue_known_empty:
+        qcount = 0
+    else:
+        gen = queue_generation
+        async with async_session() as db:
+            qcount = await db.scalar(
+                select(func.count())
+                .select_from(QueueEntry)
+                .where(QueueEntry.status == "queued")
+            )
+        if not qcount:
+            note_queue_empty(gen)
+    now = datetime.now(timezone.utc)
+    next_midnight = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    seconds_left = int((next_midnight - now).total_seconds())
 
     return {
         "state": game_state,

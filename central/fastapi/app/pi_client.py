@@ -266,6 +266,7 @@ async def _start_next_turn():
         log.warning("Machine not fit to play (%s) — not starting a turn", why.get("kind"))
         return
 
+    gen = state.queue_generation
     async with async_session() as db:
         new_entry = await db.scalar(
             select(QueueEntry)
@@ -273,6 +274,7 @@ async def _start_next_turn():
             .order_by(QueueEntry.created_at.asc())
         )
         if not new_entry:
+            state.note_queue_empty(gen)
             log.info("No pending turn")
             return
 

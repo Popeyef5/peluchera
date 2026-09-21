@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base
 from .config import DATABASE_URL
 
 
-# Resilience against Supabase/network dropping connections ("server closed the
+# Resilience against the database or network dropping connections ("server closed the
 # connection unexpectedly" / "SSL SYSCALL error: EOF"):
 #   - pool_pre_ping: liveness-check a pooled connection on checkout and reconnect
 #     if it's dead, instead of failing the query.
@@ -21,6 +21,13 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_recycle=300,   # 5 min
     connect_args={
+        # No server-side prepared statements. Production connects through a
+        # transaction-mode PgBouncer (Neon's pooled endpoint), which hands each
+        # transaction whichever server connection is free, so a statement
+        # psycopg prepared on one connection is missing on the next. Neon's
+        # PgBouncer does track protocol-level prepares, but queries this small
+        # gain nothing from them and this removes the failure class outright.
+        "prepare_threshold": None,
         "keepalives": 1,
         "keepalives_idle": 30,
         "keepalives_interval": 10,

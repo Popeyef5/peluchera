@@ -11,7 +11,7 @@ cd ~/peluchera/central && ./update.sh
 |            | file        | database              | mode              | read by |
 |------------|-------------|-----------------------|-------------------|---------|
 | **dev**    | `.env`      | local Postgres (`claw_db`) | `BYPASS_PAYMENT=true` | `docker-compose.dev.yml`, the sim |
-| **prod**   | `.env.prod` | Supabase              | `FREE_PLAY=true`  | `docker-compose.yml`, `update.sh` |
+| **prod**   | `.env.prod` | Neon                  | `FREE_PLAY=true`  | `docker-compose.yml`, `update.sh` |
 
 They are kept apart so a dev stack can never be pointed at the production
 database by accident — `docker-compose.yml` reads `.env.prod` and nothing else,
@@ -37,30 +37,31 @@ provisioning only (docker, swap, TLS); you shouldn't need it again.
 The first deploy after the payments rework needs new env vars, and prod no longer
 runs its own database. Work through this once.
 
-### 1. Database — prod is Supabase now
+### 1. Database and assets — prod is Neon
 
-`docker-compose.yml` **no longer has a `db` service**. If `.env` still points at
-`claw_db`, the app will not start.
+`docker-compose.yml` has **no `db` service**. If `.env.prod` still points at
+`claw_db`, `update.sh` refuses to run.
 
-- [ ] `DATABASE_URL` points at Supabase, using the **session pooler**:
-
-      postgresql+psycopg://postgres.<REF>:<PASSWORD>@aws-<N>-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require
-
-  - **Session pooler (port 5432)**, not the transaction pooler (6543) — that one
-    is PgBouncer, which breaks the prepared statements SQLAlchemy/psycopg use.
-  - **Not** the direct host (`db.<REF>.supabase.co`) — it is **IPv6-only**, and an
-    IPv4 VPS cannot reach it at all.
-  - The pooler host is region+cluster specific (e.g. `aws-1-us-east-2`, NOT
-    necessarily `aws-0`). Copy it verbatim from the dashboard's **Session pooler**
-    tab — a wrong cluster fails with `tenant/user ... not found`.
-  - Password: Supabase dashboard → Project Settings → Database.
-
+- [ ] Neon project "Garra", branch `production`, **aws-us-east-2**, Postgres 17,
+  autoscaling pinned to **0.25 CU**. The free plan allows 100 CU-hours a month
+  and then suspends the database until the 1st; 0.25 CU is the slowest burn.
+- [ ] `DATABASE_URL` = the **pooled** string (host contains `-pooler`), from the
+  Neon console → Connect, with the scheme changed to `postgresql+psycopg://`.
+- [ ] `DATABASE_URL_DIRECT` = the same string **without** `-pooler`. Migrations
+  and the pre-migration `pg_dump` use it; neither works through the pooler.
+- [ ] Bucket `assets` (public read) on the `production` branch, a service
+  credential with `storage:read` + `storage:write`, and `ASSETS_S3_*` set.
 - [ ] Verify before deploying:
 
-      psql "postgresql://postgres.<REF>:<PASSWORD>@aws-<N>-<REGION>.pooler.supabase.com:5432/postgres?sslmode=require" \
+      docker run --rm postgres:17 psql "<DATABASE_URL_DIRECT, scheme postgresql://>" \
         -c "SELECT version_num FROM alembic_version;"
 
-  It should already be at head, so the deploy's migration step is a no-op.
+  On a fresh project the table doesn't exist yet; the deploy creates the whole
+  schema with `alembic upgrade head`.
+
+**Keep the backend single-process.** It knows the queue is empty without
+asking the database, which is what lets Neon scale to zero between players. A
+second uvicorn worker would enqueue players the first one never hears about.
 
 ### 2. Mode — free play
 

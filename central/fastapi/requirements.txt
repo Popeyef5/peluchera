@@ -13,3 +13,4 @@ web3
 eth-abi
 eth-utils
 PyJWT[crypto]
+boto3
