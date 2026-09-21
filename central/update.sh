@@ -67,14 +67,14 @@ DUMP_URL="$(env_get DATABASE_URL_DIRECT)"
 [[ -n "$DUMP_URL" ]] || DUMP_URL="$DATABASE_URL"
 
 # --env-file drives ${VAR} interpolation inside the compose file — which is how
-# the Next builds get their NEXT_PUBLIC_* build args (including the admin app's
-# NEXT_PUBLIC_SUPABASE_*). All prod config is in $ENV_FILE (.env.prod) — the
-# single source of truth; there is no separate admin env file in prod. (Keeping
-# a second env_file here is what let a stale .env.admin silently shadow prod.)
+# the Next builds get their NEXT_PUBLIC_* build args. All prod config is in
+# $ENV_FILE (.env.prod) — the single source of truth; there is no separate
+# admin env file in prod. (Keeping a second env_file here is what let a stale
+# .env.admin silently shadow prod.)
 DC="$DC --env-file $ENV_FILE"
 
 # Split DATABASE_URL into components for pg_dump/psql — do NOT hand libpq a URL.
-# The Supabase password can contain URL-special chars (#, /), which libpq's
+# The DB password can contain URL-special chars (#, /), which libpq's
 # strict RFC parser mangles (it truncates at '#', loses the @host, and reads the
 # username as the hostname). SQLAlchemy's lenient parser tolerates it, so the app
 # works while pg_dump doesn't. Passing PGPASSWORD + -h/-p/-U/-d sidesteps URL

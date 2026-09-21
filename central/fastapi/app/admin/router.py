@@ -1,7 +1,7 @@
 """Admin router.
 
-All admin endpoints live under `/admin/*` and require a valid Supabase JWT
-(see `auth.py`). Trust-field placeholders are used for crypto until the
+All admin endpoints live under `/admin/*` and require a valid Neon Auth JWT
+from an allowlisted operator (see `auth.py`). Trust-field placeholders are used for crypto until the
 revised stack lands — they're well-formed but not cryptographically
 meaningful.
 """

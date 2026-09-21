@@ -2,7 +2,7 @@
 
 Schema source of truth is the SQLAlchemy models (`app.models`). The DB URL
 comes from $DATABASE_URL so the same migrations run against local dev (the
-claw_db container) and the Supabase prod project — only the env var changes.
+claw_db container) and the Neon prod branch — only the env var changes.
 
 psycopg3 is sync-capable, so we use a plain sync engine here even though the
 app runs async with the same `postgresql+psycopg://` URL.

@@ -4,7 +4,9 @@ FROM node:20-slim AS base
 FROM base AS deps
 WORKDIR /code
 COPY package.json ./
-RUN npm install -g pnpm
+# pnpm is pinned: an unpinned `npm install -g pnpm` picked up pnpm 12, which
+# fails the install on skipped dependency build scripts (sharp, core-js).
+RUN npm install -g pnpm@10.34.5
 RUN pnpm install --no-frozen-lockfile
 
 # Stage 2: build
@@ -12,13 +14,9 @@ RUN pnpm install --no-frozen-lockfile
 # runtime env vars cannot fix a build that ran without them. Pass via
 # docker-compose build args (see docker-compose.yml: next-admin.build.args).
 FROM base AS builder
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_ADMIN_API_BASE
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_ADMIN_API_BASE=$NEXT_PUBLIC_ADMIN_API_BASE
-RUN npm install -g pnpm
+RUN npm install -g pnpm@10.34.5
 WORKDIR /code
 COPY . .
 COPY --from=deps /code/node_modules ./node_modules
@@ -29,7 +27,7 @@ RUN pnpm build
 # Dev: hot-reload on port 3001 (different from central/next's 3000 to avoid
 # collisions if both run on the same Docker host network).
 FROM base AS dev
-RUN npm install -g pnpm
+RUN npm install -g pnpm@10.34.5
 WORKDIR /code
 COPY --from=deps /code/node_modules ./node_modules
 EXPOSE 3001

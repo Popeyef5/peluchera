@@ -473,7 +473,7 @@ function Thumb({ url, label }: { url: string | null; label: string }) {
   );
 }
 
-// URL input + upload button; upload writes to Supabase Storage and fills the URL.
+// URL input + upload button; upload writes to the asset bucket and fills the URL.
 function ImageField({
   label,
   value,

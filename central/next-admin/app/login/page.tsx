@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabase } from "@/lib/supabase";
-import { apiFetch, ApiError } from "@/lib/api";
+import { authClient } from "@/lib/auth";
+import { apiFetch, ApiError, forgetAdminToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,9 +14,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-// Seconds before "Resend code" re-enables. Supabase rate-limits auth emails
-// hard (and answers 429), so this is about not burning the allowance on
-// impatient clicking rather than about security.
+// Seconds before "Resend code" re-enables. Neon Auth rate-limits auth emails
+// (and answers 429), so this is about not burning the allowance on impatient
+// clicking rather than about security.
 const RESEND_COOLDOWN_SEC = 60;
 
 export default function LoginPage() {
@@ -39,27 +39,32 @@ export default function LoginPage() {
       router.replace("/balls");
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
-        await getSupabase().auth.signOut();
-        setError("This account isn't authorized for admin access.");
+        await authClient.signOut();
+        forgetAdminToken();
+        setError(e.message);
       } else if (!(e instanceof ApiError && e.status === 401)) {
         setError(e instanceof ApiError ? e.message : String(e));
       }
     }
   }, [router]);
 
-  // Fires INITIAL_SESSION on mount (covers an existing session and the OAuth
-  // return) and SIGNED_IN after a code is verified.
+  // Already signed in, or just back from Google: the return URL carries a
+  // neon_auth_session_verifier that this getSession() call exchanges for the
+  // session cookie.
   useEffect(() => {
-    const { data: sub } = getSupabase().auth.onAuthStateChange((_event, session) => {
-      if (session) verifyAndForward();
+    authClient.getSession().then(({ data }) => {
+      if (data?.session) verifyAndForward();
     });
-    return () => sub.subscription.unsubscribe();
   }, [verifyAndForward]);
 
-  // Surface the "bounced by RequireAuth" case (?denied=1).
+  // Surface the "bounced by RequireAuth" case (?denied=1) and a failed Google
+  // sign-in (Neon Auth sends it back with ?error=<code>).
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).has("denied")) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("denied")) {
       setError("This account isn't authorized for admin access.");
+    } else if (params.get("error")) {
+      setError(`Google sign-in failed: ${params.get("error")}`);
     }
   }, []);
 
@@ -73,25 +78,22 @@ export default function LoginPage() {
     setSubmitting(true);
     setError(null);
     setNotice(null);
-    const { error } = await getSupabase().auth.signInWithOtp({
+    // Neon Auth sign-up is open, so a code goes to any address and signing in
+    // with it creates an account. That grants nothing: the backend allow-list
+    // 403s everyone but the operators, whose accounts already exist.
+    const { error } = await authClient.emailOtp.sendVerificationOtp({
       email,
-      options: {
-        // Do NOT provision an account for whoever asks. Without this, anyone
-        // could mint a Supabase user in the project just by requesting a code
-        // for an address. The backend allow-list would still refuse them, but
-        // the user table and the email allowance are not theirs to spend.
-        shouldCreateUser: false,
-      },
+      type: "sign-in",
     });
     setSubmitting(false);
     if (error) {
-      // Show what Supabase actually said. A neutral message would avoid
+      // Show what Neon Auth actually said. A neutral message would avoid
       // confirming which addresses have accounts, but the allow-list is two
       // operators and the backend refuses everyone else anyway, so the only
       // thing vagueness buys here is you not being able to tell a disabled
       // provider from a rate limit from a bad address.
-      console.error("signInWithOtp failed", error);
-      setError(error.message);
+      console.error("sendVerificationOtp failed", error);
+      setError(error.message ?? "Couldn't send the code.");
       return;
     }
     setStep("code");
@@ -109,26 +111,29 @@ export default function LoginPage() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-    const { error } = await getSupabase().auth.verifyOtp({
+    const { error } = await authClient.signIn.emailOtp({
       email,
-      token: code.trim(),
-      type: "email",
+      otp: code.trim(),
     });
     setSubmitting(false);
     if (error) {
-      setError(error.message);
+      setError(error.message ?? "That code didn't work.");
       return;
     }
+    forgetAdminToken();
     await verifyAndForward();
   };
 
   const onGoogle = async () => {
     setError(null);
-    const { error } = await getSupabase().auth.signInWithOAuth({
+    // Redirects to Google, then back here via Neon Auth's callback.
+    const back = `${window.location.origin}/login`;
+    const { error } = await authClient.signIn.social({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/login` },
+      callbackURL: back,
+      errorCallbackURL: back,
     });
-    if (error) setError(error.message);
+    if (error) setError(error.message ?? "Couldn't start Google sign-in.");
   };
 
   return (

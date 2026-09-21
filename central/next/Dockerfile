@@ -4,12 +4,14 @@ FROM node:20-slim AS base
 FROM base AS deps
 WORKDIR /code
 COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm
+# pnpm is pinned: an unpinned `npm install -g pnpm` picked up pnpm 12, which
+# fails the install on skipped dependency build scripts (sharp, core-js).
+RUN npm install -g pnpm@10.34.5
 RUN pnpm install --frozen-lockfile
 
 # Stage 2: Build the application
 FROM base AS builder
-RUN npm install -g pnpm
+RUN npm install -g pnpm@10.34.5
 WORKDIR /code
 COPY . .
 COPY --from=deps /code/node_modules ./node_modules
@@ -21,7 +23,7 @@ RUN pnpm build
 
 # Dev stage: hot-reload server. Used by docker-compose.dev.yml via `target: dev`.
 FROM base AS dev
-RUN npm install -g pnpm
+RUN npm install -g pnpm@10.34.5
 WORKDIR /code
 COPY --from=deps /code/node_modules ./node_modules
 EXPOSE 3000
@@ -29,7 +31,7 @@ CMD ["pnpm", "dev"]
 
 # Stage 3: Production server
 FROM base AS runner
-# RUN npm install -g pnpm
+# RUN npm install -g pnpm@10.34.5
 WORKDIR /code
 ENV NODE_ENV=production
 

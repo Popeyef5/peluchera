@@ -256,7 +256,7 @@ class ClosedBooster(Base):
     sku             = Column(String, unique=True, index=True, nullable=False)
     name            = Column(String)
     # The two faces of the sealed pack, handed to the win-reveal 3D mesh as the
-    # UV map. Stored as URLs (Supabase Storage upload, or pasted).
+    # UV map. Stored as URLs (asset bucket upload, or pasted).
     image_front_url = Column(String)
     image_back_url  = Column(String)
     # How many cards a pack of this SKU yields — used to validate that an

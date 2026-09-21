@@ -59,6 +59,15 @@ runs its own database. Work through this once.
   On a fresh project the table doesn't exist yet; the deploy creates the whole
   schema with `alembic upgrade head`.
 
+- [ ] Admin sign-in (Neon Auth, same branch): `NEON_AUTH_BASE_URL` (Console →
+  Auth → Configuration), `NEON_AUTH_COOKIE_SECRET` (`openssl rand -base64 32`),
+  and `ADMIN_EMAIL_ALLOWLIST`. With the allowlist empty, nobody gets in. Delete
+  every `SUPABASE_*` and `NEXT_PUBLIC_SUPABASE_*` line; nothing reads them.
+  Trusted domain `https://admin.cl4ws.com` is already registered, and the
+  operators' accounts exist. Before real use, add your own Google OAuth client
+  (redirect URI `<NEON_AUTH_BASE_URL>/callback/google`) and custom SMTP in
+  Console → Auth. The shared ones are for development.
+
 **Keep the backend single-process.** It knows the queue is empty without
 asking the database, which is what lets Neon scale to zero between players. A
 second uvicorn worker would enqueue players the first one never hears about.

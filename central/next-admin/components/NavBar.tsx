@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { getSupabase } from "@/lib/supabase";
+import { authClient } from "@/lib/auth";
+import { forgetAdminToken } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 
@@ -18,7 +19,8 @@ export default function NavBar() {
   const router = useRouter();
 
   const signOut = async () => {
-    await getSupabase().auth.signOut();
+    await authClient.signOut();
+    forgetAdminToken();
     router.replace("/login");
   };
 

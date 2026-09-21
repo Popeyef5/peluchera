@@ -43,11 +43,9 @@ services:
       context: ./next-admin
       # NEXT_PUBLIC_* must be inlined at build time. Compose interpolates these
       # from the file passed via --env-file (update.sh passes .env.prod, the
-      # single prod config). Put NEXT_PUBLIC_SUPABASE_* in .env.prod for the
-      # admin login to build with real creds.
+      # single prod config). Sign-in config (NEON_AUTH_*) is runtime, from
+      # env_file below.
       args:
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
         NEXT_PUBLIC_ADMIN_API_BASE: ${NEXT_PUBLIC_ADMIN_API_BASE:-}
     expose:
       - '3001'
@@ -58,13 +56,13 @@ services:
     networks:
       - claw_network
 
-  # NOTE: no `db` service in prod — prod runs against the Supabase "Claws"
-  # project via $DATABASE_URL (see .env). Local dev still uses a compose
-  # Postgres; that lives in docker-compose.dev.yml.
+  # NOTE: no `db` service in prod — prod runs against the Neon "cl4ws"
+  # production branch via $DATABASE_URL (see .env.prod). Local dev still uses
+  # a compose Postgres; that lives in docker-compose.dev.yml.
   #
   # Alembic owns the schema in both, so the same migrations apply to either.
   # update.sh runs `alembic upgrade head` against $DATABASE_URL before the app
-  # restarts, so a deploy brings Supabase to head automatically.
+  # restarts, so a deploy brings Neon to head automatically.
 
   fastapi:
     container_name: claw_fastapi

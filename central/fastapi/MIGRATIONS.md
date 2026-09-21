@@ -9,26 +9,20 @@ migration files run against every environment; only `DATABASE_URL` changes.
 | Env  | Database | `DATABASE_URL` |
 |------|----------|----------------|
 | dev  | local Docker Postgres (`claw_db`, pinned `postgres:17`) | `postgresql+psycopg://garra:…@claw_db:5432/claw` |
-| prod | Supabase project **Claws** (`cjuryopztkipqqkivsge`, us-east-2) | see below |
+| prod | Neon project **cl4ws** (`fancy-bonus-70768673`), branch `production`, db `neondb`, aws-us-east-2, Postgres 18 | see below |
 
-Both are currently at revision `a8936058c0d8` (the baseline). Dev was `alembic
-stamp head`'d (already had the schema); prod had the baseline applied.
+### Prod connection strings
 
-### Prod `DATABASE_URL`
+Neon Console → Connect, branch `production`. Prod `.env.prod` carries two:
 
-Get the password from Supabase → Project Settings → Database. Use the **direct
-connection (port 5432)** for migrations (and to start, for the app too):
+- `DATABASE_URL`: the **pooled** host (`…-pooler…`, transaction-mode
+  PgBouncer), for the app. `db.py` sets psycopg3's `prepare_threshold=None`,
+  since server-side prepared statements don't survive transaction pooling.
+- `DATABASE_URL_DIRECT`: the direct host, for `alembic` (`alembic/env.py`
+  prefers it) and `update.sh`'s pg_dump. DDL and dumps shouldn't go through a
+  transaction pooler.
 
-```
-postgresql+psycopg://postgres:<PASSWORD>@db.cjuryopztkipqqkivsge.supabase.co:5432/postgres?sslmode=require
-```
-
-Notes:
-- `sslmode=require` is mandatory on Supabase.
-- The transaction **pooler** (port 6543) is for the app's many short
-  connections, but breaks server-side prepared statements — if you switch the
-  app to it, set psycopg3's `prepare_threshold=None`. Migrations should always
-  use the direct 5432 connection.
+Both need `sslmode=require` and the `postgresql+psycopg://` scheme.
 
 ## Daily workflow
 
@@ -59,8 +53,8 @@ Useful: `alembic current`, `alembic history`, `alembic downgrade -1`,
   `ALTER TABLE ADD CONSTRAINT`). If a future change adds another cross-table FK
   cycle, review the generated migration and move the offending FK(s) into
   `op.create_foreign_key()` after the tables.
-- **New tables → enable RLS.** On Supabase the `public` schema is auto-exposed
-  via the REST API to the public anon key. Every new table should
-  `ALTER TABLE … ENABLE ROW LEVEL SECURITY` (no policies needed — FastAPI
-  connects with the owner/`postgres` role, which bypasses RLS). See the
-  security note in the repo / `get_advisors`.
+- **RLS migrations are Supabase-era.** On Supabase the `public` schema was
+  auto-exposed via its REST API, so tables had RLS enabled (no policies;
+  FastAPI connects as the owner, which bypasses RLS). Neon exposes nothing
+  unless the Data API is turned on (it isn't), so new tables don't need it.
+  The existing RLS migrations are harmless and stay.

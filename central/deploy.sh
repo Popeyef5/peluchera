@@ -108,8 +108,8 @@ sudo docker-compose build
 
 # Apply DB migrations before starting the app. Alembic owns the schema (no
 # more create_all at startup), so this is the single point where the DB is
-# brought to head. Runs against whatever $DATABASE_URL points at (the Supabase
-# prod project in prod). A failed migration aborts the deploy before the app
+# brought to head. Runs against whatever $DATABASE_URL points at (the Neon
+# production branch in prod). A failed migration aborts the deploy before the app
 # serves a half-migrated schema.
 echo "Running database migrations (alembic upgrade head)..."
 if ! sudo docker-compose run --rm fastapi alembic upgrade head; then

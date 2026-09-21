@@ -168,7 +168,7 @@ re-triggerable remotely.
   link also carries the video push and the tunnel the backend rides. An
   antenna or an ethernet run is worth more than any automation here.
 - **Secrets.** VPS deploy key, and a service credential for the idle check,
-  since admin auth is Supabase JWT and a runner has no interactive session.
+  since admin auth is a Neon Auth sign-in and a runner has no interactive session.
 - **Migrations still run from `update.sh`.** Alembic owns the schema and prod
   is nine revisions behind as of writing. Automating deploys does not change
   that a migration is the one step with no rollback.

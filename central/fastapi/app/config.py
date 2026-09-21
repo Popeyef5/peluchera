@@ -30,14 +30,11 @@ BYPASS_PAYMENT   = os.environ.get("BYPASS_PAYMENT", "false").lower() == "true"
 # MUST stay false in production — there is no /test-win in prod.
 DEV_TOOLS        = os.environ.get("DEV_TOOLS", "false").lower() == "true"
 
-# Admin app — Supabase auth integration. JWTs minted by Supabase are HS256-
-# signed with the project's JWT secret. Backend verifies incoming admin
-# requests against this secret; if unset, the admin router refuses to mount
-# and any admin request 401s. SUPABASE_URL is informational (used in error
-# messages); SUPABASE_JWT_AUDIENCE defaults to Supabase's standard "authenticated".
-SUPABASE_URL          = os.environ.get("SUPABASE_URL")
-SUPABASE_JWT_SECRET   = os.environ.get("SUPABASE_JWT_SECRET")
-SUPABASE_JWT_AUDIENCE = os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated")
+# Admin app — Neon Auth (Managed Better Auth on the production branch). The
+# admin panel sends a short-lived EdDSA JWT; we verify it against the JWKS under
+# this URL, and its origin is the expected issuer/audience. Copy it from the
+# Neon Console (Auth → Configuration). Unset → every admin request 503s.
+NEON_AUTH_BASE_URL = os.environ.get("NEON_AUTH_BASE_URL")
 
 # Player sign-in (SIWX). A wallet proves it controls an address by signing a
 # server-issued nonce; the server then hands back a session token signed with
@@ -72,14 +69,13 @@ ASSETS_PUBLIC_BASE = (
     or (f"{ASSETS_S3_ENDPOINT.rstrip('/')}/{ASSETS_BUCKET}" if ASSETS_S3_ENDPOINT else None)
 )
 
-# Admin access allow-list. Once admin login can be social/OAuth, ANYONE with a
-# Google (etc.) account can obtain a valid Supabase session — so this is the gate
-# that decides who is actually an operator. Two optional knobs:
+# Admin access allow-list. Neon Auth sign-up is open (anyone can create an
+# account with an emailed code or Google), so this is the gate that decides who
+# is actually an operator. Two knobs:
 #   ADMIN_EMAIL_ALLOWLIST — comma-separated exact emails
 #   ADMIN_EMAIL_DOMAINS   — comma-separated domains, e.g. "cl4ws.com"
-# If BOTH are empty the gate is OPEN — any valid Supabase JWT is an admin (the
-# legacy behaviour, safe ONLY while dashboard sign-ups are disabled / invite-only).
-# Set at least one before enabling OAuth login.
+# If BOTH are empty NOBODY is an admin: a valid sign-in alone must never be
+# enough.
 ADMIN_EMAIL_ALLOWLIST = {
     e.strip().lower()
     for e in os.environ.get("ADMIN_EMAIL_ALLOWLIST", "").split(",")
@@ -93,9 +89,7 @@ ADMIN_EMAIL_DOMAINS = {
 
 
 def admin_email_allowed(email: Optional[str]) -> bool:
-    """Whether this identity may act as an admin. Open when no allow-list is set."""
-    if not ADMIN_EMAIL_ALLOWLIST and not ADMIN_EMAIL_DOMAINS:
-        return True
+    """Whether this identity may act as an admin. Closed when no allow-list is set."""
     if not email:
         return False
     email = email.lower()

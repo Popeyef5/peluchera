@@ -52,7 +52,7 @@ central/                     # the whole app (docker-compose orchestrated)
       notifier.py            # Telegram alerts (alertBot)
       admin/
         router.py            # ALL /admin/* endpoints
-        auth.py              # Supabase JWT verify + allowlist (current_admin)
+        auth.py              # Neon Auth JWT verify + allowlist (current_admin)
       socket/
         __init__.py          # imports all event modules (registration)
         sio_instance.py      # the Socket.IO server instance
@@ -100,7 +100,9 @@ raspberry/                   # real Pi flasher/deploy tooling
   Alembic owns schema (no `create_all`). Resilience: `pool_pre_ping=True`,
   `pool_recycle=300`, TCP keepalives; scheduler loops wrapped in try/except.
   (Moved off Supabase "Claws" `cjuryopztkipqqkivsge`, whose free project paused
-  for inactivity and took the DB, Storage and Auth down together.)
+  for inactivity and took the DB, Storage and Auth down together. Nothing runs
+  on Supabase any more: the DB, the asset bucket and admin sign-in are all on
+  Neon project `cl4ws`.)
 - **Scale to zero**: Neon's free plan gives 100 CU-hours/month, then suspends the
   DB until the 1st; at 0.25 CU that is 400 awake hours. The backend therefore
   stays off the DB when idle: `state.queue_known_empty` records that the queue is
@@ -123,9 +125,10 @@ raspberry/                   # real Pi flasher/deploy tooling
   nginx after deploy.
 - **Env files**: prod = **one** `.env.prod` (a second env_file silently shadows
   it — cost hours twice). Player app `NEXT_PUBLIC_*` are baked from
-  `next/.env.production` (gitignored, per-machine) at build; admin app
-  `NEXT_PUBLIC_SUPABASE_*` come from compose build ARGS interpolated from
-  `--env-file .env.prod`.
+  `next/.env.production` (gitignored, per-machine) at build; the admin app's
+  only build-time var, `NEXT_PUBLIC_ADMIN_API_BASE`, comes from compose build
+  ARGS interpolated from `--env-file .env.prod`. Its sign-in config
+  (`NEON_AUTH_*`) is runtime.
 - **Deploy**: `./update.sh` on the VPS — runs migrations, rebuilds the Next apps
   (NEXT_PUBLIC_* baked at build), reloads nginx.
 
@@ -323,10 +326,20 @@ Enforced at BOTH:
 
 ---
 
-## 9. Admin panel (`/admin/*`, Supabase-JWT auth + allowlist)
+## 9. Admin panel (`/admin/*`, Neon Auth JWT + allowlist)
 
-Auth: Supabase JWT (JWKS/HS256) verified in `admin/auth.py`; allowlist
-`ADMIN_EMAIL_ALLOWLIST` / `ADMIN_EMAIL_DOMAINS` via `admin_email_allowed()`.
+Auth: operators sign in with **Neon Auth** (Managed Better Auth on the
+`production` branch) by emailed code or Google. The browser talks only to
+next-admin's `/api/auth/*` proxy (`app/api/auth/[...path]/route.ts`), so the
+session cookie is first-party. `lib/api.ts` fetches a 15-minute EdDSA JWT from
+`/api/auth/token` and sends it as a Bearer token. `admin/auth.py` verifies it
+against `<NEON_AUTH_BASE_URL>/.well-known/jwks.json` (EdDSA only;
+issuer = audience = the base URL's origin), then requires `emailVerified` and
+an address on `ADMIN_EMAIL_ALLOWLIST` / `ADMIN_EMAIL_DOMAINS`
+(`admin_email_allowed()`). Neon Auth sign-up is open, so the allowlist is the
+gate: **empty = nobody**. Password sign-up doesn't verify the inbox, so the
+`emailVerified` check keeps someone from registering an operator's address.
+The operators' accounts are pre-created in Neon Auth for the same reason.
 
 Pages/endpoints:
 - **Balls** (`/admin/balls`): list (serial, status, prize_kind, bound SKU for
@@ -417,8 +430,8 @@ Pages/endpoints:
   would be refused by `wallet_connected` until it gets the same treatment.
 - Player sign-in: `PLAYER_SESSION_SECRET` (required in prod, else sessions die
   on every restart), `PLAYER_AUTH_DOMAINS` (hosts a signed message may name).
-- Admin: `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`,
-  `ADMIN_EMAIL_ALLOWLIST`, `ADMIN_EMAIL_DOMAINS`.
+- Admin: `NEON_AUTH_BASE_URL` (FastAPI + next-admin), `NEON_AUTH_COOKIE_SECRET`
+  (next-admin), `ADMIN_EMAIL_ALLOWLIST`, `ADMIN_EMAIL_DOMAINS`.
 - Stripe: `STRIPE_*`. Treasury: `TREASURY_ADDRESS`, `TREASURY_PRIVATE_KEY`
   (falls back to CLAW_PRIVATE_KEY). Telegram: `TELEGRAM_BOT_TOKEN/CHAT`.
 - Constants: `TURN_DURATION=30`, `INTER_TURN_DELAY=3`, `SYNC_PERIOD=15`,
