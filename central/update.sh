@@ -14,6 +14,9 @@
 # Flags (env vars):
 #     SKIP_PULL=1     deploy whatever is already checked out
 #     SKIP_BACKUP=1   skip the pre-migration pg_dump
+#     SKIP_BUILD="next next-admin"
+#                     don't build these; deploy the images already loaded with
+#                     `docker load` (built elsewhere — see the build step)
 #
 set -euo pipefail
 cd "$(dirname "$0")"   # -> central/
@@ -114,13 +117,35 @@ log "Deploying $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
 # want a multi-GB heap — on a small box (≤2 GB RAM) that thrashes swap or gets
 # OOM-killed. Serial is slower on a big box but reliable everywhere; set
 # PARALLEL_BUILD=1 to opt back into the concurrent build.
-if [[ "${PARALLEL_BUILD:-0}" == "1" ]]; then
+#
+# SKIP_BUILD="next next-admin" deploys images that were built on a bigger
+# machine and brought in with `docker load`. This VPS has 2 GB of RAM and the
+# player app's `next build` wants a 4 GB heap, so building it here thrashes
+# swap for hours. A skipped service's image must already exist: `up -d` would
+# otherwise quietly start the very build we're avoiding.
+PROJECT="$(basename "$PWD" | tr '[:upper:]' '[:lower:]')"
+SKIP_LIST="${SKIP_BUILD:-}"
+SKIP=" ${SKIP_LIST//,/ } "
+TO_BUILD=()
+for svc in $($DC config --services); do
+  if [[ "$SKIP" == *" $svc "* ]]; then
+    docker image inspect "$PROJECT-$svc" >/dev/null 2>&1 \
+      || die "SKIP_BUILD names $svc, but image $PROJECT-$svc isn't here. docker load it first."
+    log "  skip build $svc (using loaded image $PROJECT-$svc, created $(docker image inspect -f '{{.Created}}' "$PROJECT-$svc" | cut -c1-19))"
+  else
+    TO_BUILD+=("$svc")
+  fi
+done
+
+if [[ ${#TO_BUILD[@]} -eq 0 ]]; then
+  log "Nothing to build"
+elif [[ "${PARALLEL_BUILD:-0}" == "1" ]]; then
   log "Building images (parallel)"
-  $DC build
+  $DC build "${TO_BUILD[@]}"
 else
   log "Building images (one service at a time)"
   # Every service; compose skips the ones that use a prebuilt image.
-  for svc in $($DC config --services); do
+  for svc in "${TO_BUILD[@]}"; do
     log "  build $svc"
     $DC build "$svc"
   done
