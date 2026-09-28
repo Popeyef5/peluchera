@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from .db import async_session
 from .logging import log
 from .models import QueueEntry
-from .config import DEFAULT_FEE_GROWTH, DEFAULT_MAX_FEE
+from .config import DEFAULT_FEE_GROWTH, DEFAULT_MAX_FEE, free_play
 
 sid_to_addr = {}
 current_player = None
@@ -136,6 +136,12 @@ async def global_sync():
         "queue_length": qcount,
         "con": pi_connected,
         "seconds_left": seconds_left,
+        # Plays are comped (FREE_PLAY). Sent here, not just in the
+        # wallet_connected ack, so the client knows before anyone signs in —
+        # otherwise PLAY falls back to the payment picker in the window before
+        # login, and the crypto rail moves the player's USDC before the server
+        # gets to refuse it. Still authorised server-side in pay_free.
+        "free_play": free_play(),
         # True when the machine can't start a turn (protocol / chute / inventory
         # fault). Mirrors machine.blocked(); read from the cached fault fields,
         # which the scheduler refreshes every tick, so this adds no DB query and

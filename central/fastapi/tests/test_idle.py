@@ -82,6 +82,22 @@ async def test_scheduler_tick_skips_everything_when_idle(no_db, monkeypatch):
     await schedulers._turn_scheduler_loop()   # must return without touching either
 
 
+# ─── free play reaches the client before anyone signs in ─────────────────
+
+async def test_global_sync_carries_free_play(no_db, monkeypatch):
+    """PLAY must never offer to charge for a play the server comps.
+
+    The client used to learn this only from the wallet_connected ack, so in the
+    window before sign-in it fell back to the payment picker — and the crypto
+    rail transfers the player's USDC before the server can refuse it.
+    """
+    state.queue_known_empty = True
+    monkeypatch.setattr(state, "free_play", lambda: True)
+    assert (await state.global_sync())["free_play"] is True
+    monkeypatch.setattr(state, "free_play", lambda: False)
+    assert (await state.global_sync())["free_play"] is False
+
+
 # ─── and learns it is idle from a real query ─────────────────────────────
 
 async def test_global_sync_learns_the_queue_is_empty(db):

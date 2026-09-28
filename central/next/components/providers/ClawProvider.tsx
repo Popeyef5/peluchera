@@ -69,6 +69,7 @@ interface GlobalSyncData {
 	con: boolean;
 	seconds_left: number;
 	blocked?: boolean; // machine can't start a turn (fault) — PLAY is disabled
+	free_play?: boolean; // plays are comped — PLAY skips payment entirely
 }
 
 interface PersonalSyncData {
@@ -393,6 +394,10 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			setQueueCount(data.queue_length);
 			setClawSocketOn(data.con);
 			setMachineBlocked(!!data.blocked);
+			// Known from the first sync on connect, so PLAY never offers to
+			// charge for a play the server comps. The wallet_connected ack
+			// carries it too (older servers only sent it there).
+			if (typeof data.free_play === "boolean") setFreePlay(data.free_play);
 			updateSeconds(data.seconds_left);
 		}
 		const onPersonalSync = (data: PersonalSyncData) => {
@@ -604,7 +609,13 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 	}, [socket, onPayAck]);
 
 	/* pay-to-play (card rail) */
-	const openPaymentPicker = useCallback(() => setPaymentPickerOpen(true), []);
+	// Never offer to charge while plays are comped: both rails refuse a payment
+	// in FREE_PLAY, and the crypto rail transfers the player's USDC *before*
+	// asking the server, so an opened picker is real money for nothing.
+	const openPaymentPicker = useCallback(() => {
+		if (freePlay) return payFree();
+		setPaymentPickerOpen(true);
+	}, [freePlay, payFree]);
 	const closePaymentPicker = useCallback(() => setPaymentPickerOpen(false), []);
 
 	// Ask the backend for a SetupIntent client_secret (to add a card) and the
