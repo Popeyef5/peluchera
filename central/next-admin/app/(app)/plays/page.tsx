@@ -151,6 +151,7 @@ function PrizeCell({ prize }: { prize: Prize }) {
         <img
           src={prize.card.image_url}
           alt=""
+          crossOrigin="anonymous"
           className="h-8 w-8 rounded object-cover"
         />
       ) : null}

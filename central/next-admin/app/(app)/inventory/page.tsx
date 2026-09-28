@@ -468,8 +468,11 @@ function Thumb({ url, label }: { url: string | null; label: string }) {
       </span>
     );
   return (
+    // crossOrigin: the player app skins the 3D reveal with these same bucket
+    // URLs, and a cached non-CORS copy from this thumbnail blocks that WebGL
+    // texture load. Fetch in CORS mode so both share one usable cache entry.
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt={label} title={label} className="h-9 w-9 rounded border object-cover" />
+    <img src={url} alt={label} title={label} crossOrigin="anonymous" className="h-9 w-9 rounded border object-cover" />
   );
 }
 
