@@ -366,7 +366,16 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			// reveal they will never see. By the time their turn ends the faces
 			// are in cache, so the mesh rises already skinned.
 			if (positionRef.current >= 0) {
-				if (data?.pack_faces?.length) preloadPackFaces(data.pack_faces);
+				if (data?.pack_faces?.length) {
+					const faces = data.pack_faces;
+					preloadPackFaces(faces);
+					// And decode them into textures, so the reveal's only remaining
+					// work is the GPU upload. The 3D chunk is already parsed by now
+					// (the modal mounts with the page); the import just reaches it.
+					import("@/components/Booster")
+						.then((m) => m.preloadBoosterTextures(faces))
+						.catch(() => {});
+				}
 				if (data?.card_faces?.length) preloadCardFaces(data.card_faces);
 			}
 		}

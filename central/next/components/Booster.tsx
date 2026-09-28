@@ -20,6 +20,19 @@ if (typeof window !== "undefined") {
 	useGLTF.preload(GLB_URL);
 }
 
+// Decode the won pack's faces into drei's texture cache before the win lands.
+// The HTTP warm in lib/cards only fills the browser cache; this turns the bytes
+// into a THREE.Texture, which is what the reveal actually needs — by win time
+// the mesh has nothing left to do but upload to the GPU. Called through a
+// dynamic import so the 3D bundle stays out of the providers' chunk.
+export function preloadBoosterTextures(urls: readonly string[]) {
+	if (typeof window === "undefined") return;
+	useGLTF.preload(GLB_URL);
+	for (const url of urls) {
+		if (url) useTexture.preload(textureUrl(url));
+	}
+}
+
 // Tweak if the model imports with a different "up" axis. The defaults below
 // stand a horizontally-modeled pack upright facing the camera.
 const GLB_ROTATION: [number, number, number] = [-Math.PI / 2, Math.PI / 2, Math.PI];
