@@ -109,7 +109,8 @@ async def _turn_scheduler_loop():
         # wt.loaded_pack_faces. The scheduler just read the queue, so the
         # database is already awake for this turn.
         pack_faces = await wt.loaded_pack_faces(db)
-    await sio.emit("turn_start", {"pack_faces": pack_faces})
+        card_faces = await wt.loaded_card_faces(db)
+    await sio.emit("turn_start", {"pack_faces": pack_faces, "card_faces": card_faces})
     await safe_pi_emit("turn_start")
 
     async with async_session() as db:

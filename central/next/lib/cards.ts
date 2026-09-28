@@ -251,6 +251,22 @@ export function preloadPackFaces(urls: readonly string[]) {
 	}
 }
 
+// The card fronts the reveal flips after the pack tears open. Unlike the pack
+// faces these are painted as CSS backgrounds, never as WebGL textures, so they
+// are warmed exactly as they will be consumed — plain, no CORS mode and no
+// marker query — or the browser would keep two copies and warm the wrong one.
+const MAX_PREFETCHED_CARDS = 40;
+
+export function preloadCardFaces(urls: readonly string[]) {
+	if (typeof window === "undefined") return;
+	for (const url of urls.slice(0, MAX_PREFETCHED_CARDS)) {
+		if (!url) continue;
+		const img = new window.Image();
+		img.decoding = "async";
+		img.src = url;
+	}
+}
+
 // Warm the browser cache for everything the win reveal paints, so nothing
 // fetches mid-animation on a slow machine. Images only (the GLB + booster
 // textures are warmed by Booster.tsx via drei's loaders). Safe to call more

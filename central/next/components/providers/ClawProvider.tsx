@@ -5,7 +5,7 @@ import React, {
 } from 'react';
 import { useSocket } from '@/components/providers/SocketProvider';
 import { useWallet } from '@/lib/wallet/context';
-import { preloadWinAssets, preloadPackFaces, type WinRevealCard } from '@/lib/cards';
+import { preloadWinAssets, preloadPackFaces, preloadCardFaces, type WinRevealCard } from '@/lib/cards';
 
 // Demo / public-session toggle — see central/fastapi/app/config.py for the
 // matching server flag. When on, the play flow skips wallet connect, permit
@@ -358,15 +358,16 @@ export const ClawProvider: React.FC<{ children: React.ReactNode }> = ({ children
 			toastId.current = null;
 		};
 
-		const onTurnStart = (data?: { pack_faces?: string[] }) => {
+		const onTurnStart = (data?: { pack_faces?: string[]; card_faces?: string[] }) => {
 			console.log('[claw] turn_start', { position: positionRef.current });
 			setIsPlaying(positionRef.current === 0);
 			// Warm the packs a loaded ball could win, but only for someone who is
 			// actually in the queue — a viewer would be downloading ~1 MB for a
 			// reveal they will never see. By the time their turn ends the faces
 			// are in cache, so the mesh rises already skinned.
-			if (positionRef.current >= 0 && data?.pack_faces?.length) {
-				preloadPackFaces(data.pack_faces);
+			if (positionRef.current >= 0) {
+				if (data?.pack_faces?.length) preloadPackFaces(data.pack_faces);
+				if (data?.card_faces?.length) preloadCardFaces(data.card_faces);
 			}
 		}
 		const onTurnEnd = () => {

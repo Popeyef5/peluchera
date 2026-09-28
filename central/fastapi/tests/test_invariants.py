@@ -82,6 +82,34 @@ async def test_loaded_pack_faces_covers_both_prize_routes(db):
     assert len(faces) == len(set(faces))
 
 
+async def test_loaded_card_faces_warms_what_is_bound_and_skips_what_is_not(db):
+    """The reveal flips these right after the pack tears, so they are warmed
+    with the pack art. A ball's opening and a SINGLE_CARD ball's own card are
+    bound in advance; a sealed pack's cards are drawn from stock only if the
+    player opens it, so they cannot be known now and must not appear.
+    """
+    opened = await mk_opened(db)                       # cards bound to the ball
+    await mk_ball(db, "c-opened", M.PrizeKind.OPENED_BOOSTER, opened=opened)
+    single = await mk_pool_card(db)                    # the ball's own card
+    await mk_ball(db, "c-single", M.PrizeKind.SINGLE_CARD, card=single)
+    sealed = await mk_closed(db)                       # nothing knowable yet
+    await mk_ball(db, "c-sealed", M.PrizeKind.CLOSED_BOOSTER, closed=sealed)
+    await db.flush()
+
+    bound = (await db.execute(
+        select(M.CardType.image_url)
+        .join(M.Card, M.Card.card_type_id == M.CardType.id)
+        .where(M.Card.opened_booster_id == opened.id)
+    )).scalars().all()
+    single_url = await db.scalar(
+        select(M.CardType.image_url).where(M.CardType.id == single.card_type_id)
+    )
+
+    faces = await wt.loaded_card_faces(db)
+    assert set(faces) == set(bound) | {single_url}
+    assert len(faces) == len(set(faces))
+
+
 async def test_two_loaded_balls_same_opening_rejected(db):
     ob = await mk_opened(db)
     await mk_ball(db, "L1", M.PrizeKind.OPENED_BOOSTER, opened=ob)

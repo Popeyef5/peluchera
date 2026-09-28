@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .config import RESELL_PRICE_BY_BOOSTER_SKU_CENTS
 from .models import (
     Rarity,
-    User, Win, Ball, ClosedBooster, OpenedBooster, Card, Shipment, LedgerEntry,
+    User, Win, Ball, ClosedBooster, OpenedBooster, Card, CardType, Shipment, LedgerEntry,
     QueueEntry,
     WinStatus, BallStatus, InventoryStatus, CardStatus, PrizeKind,
     SettlementKind, ShipmentStatus, LedgerKind,
@@ -106,6 +106,35 @@ async def loaded_pack_faces(session: AsyncSession) -> list[str]:
             if url and url not in faces:
                 faces.append(url)
     return faces
+
+
+async def loaded_card_faces(session: AsyncSession) -> list[str]:
+    """Card art every LOADED ball could reveal, de-duplicated.
+
+    Companion to loaded_pack_faces for the step after the tear: the cards a
+    ball's opening holds, and a SINGLE_CARD ball's own card. Both are bound to
+    the ball in advance, so the reveal never has to fetch them.
+
+    A CLOSED_BOOSTER ball is the exception and stays unwarmed: if the player
+    chooses to open it, the opening is drawn from stock at that moment, so
+    which cards it holds is not knowable now.
+    """
+    in_opening = (
+        select(CardType.image_url)
+        .select_from(Ball)
+        .join(Card, Card.opened_booster_id == Ball.opened_booster_id)
+        .join(CardType, CardType.id == Card.card_type_id)
+        .where(Ball.status == BallStatus.LOADED, CardType.image_url.isnot(None))
+    )
+    bound_card = (
+        select(CardType.image_url)
+        .select_from(Ball)
+        .join(Card, Card.id == Ball.prize_card_id)
+        .join(CardType, CardType.id == Card.card_type_id)
+        .where(Ball.status == BallStatus.LOADED, CardType.image_url.isnot(None))
+    )
+    rows = (await session.execute(in_opening.union(bound_card))).all()
+    return [r[0] for r in rows]
 
 
 # ─── Machine fitness ────────────────────────────────────────────────────
