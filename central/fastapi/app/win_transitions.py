@@ -74,6 +74,40 @@ async def get_or_create_user(session: AsyncSession, wallet_address: str) -> User
     return user
 
 
+# ─── Reveal assets ──────────────────────────────────────────────────────
+
+async def loaded_pack_faces(session: AsyncSession) -> list[str]:
+    """Sealed-pack face images every LOADED ball could win, de-duplicated.
+
+    The reveal skins its 3D mesh with these, and the win payload is the first
+    time the client hears which pack it got — ~1 MB fetched mid-animation, so
+    the pack rises blank. The set of packs in the machine is known in advance
+    and small, so turn_start ships it and queued clients warm their cache.
+
+    Covers both routes to a pack: a CLOSED_BOOSTER ball points at one directly,
+    an OPENED_BOOSTER ball inherits its sealed art from the SKU it came from.
+    """
+    cb_direct = aliased(ClosedBooster)  # the pack a CLOSED_BOOSTER ball points at
+    rows = (await session.execute(
+        select(
+            cb_direct.image_front_url, cb_direct.image_back_url,
+            ClosedBooster.image_front_url, ClosedBooster.image_back_url,
+        )
+        .select_from(Ball)
+        .outerjoin(OpenedBooster, OpenedBooster.id == Ball.opened_booster_id)
+        .outerjoin(ClosedBooster, ClosedBooster.sku == OpenedBooster.sku)
+        .outerjoin(cb_direct, cb_direct.id == Ball.closed_booster_id)
+        .where(Ball.status == BallStatus.LOADED)
+    )).all()
+
+    faces: list[str] = []
+    for row in rows:
+        for url in row:
+            if url and url not in faces:
+                faces.append(url)
+    return faces
+
+
 # ─── Machine fitness ────────────────────────────────────────────────────
 
 async def unclaimable_loaded_balls(session: AsyncSession) -> list[dict]:

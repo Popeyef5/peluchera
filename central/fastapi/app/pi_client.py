@@ -285,7 +285,10 @@ async def _start_next_turn():
         state.current_key = new_entry.key
         state.last_start = datetime.utcnow()
 
-        await sio.emit("turn_start")
+        # Candidate pack art for the queued clients to warm — see
+        # wt.loaded_pack_faces. The turn is already on the database's clock, so
+        # this adds one small query, not a wake-up.
+        await sio.emit("turn_start", {"pack_faces": await wt.loaded_pack_faces(db)})
         await safe_pi_emit("turn_start")
 
         new_entry.played_at = datetime.utcnow()

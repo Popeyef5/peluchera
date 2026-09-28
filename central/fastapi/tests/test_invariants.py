@@ -52,6 +52,36 @@ async def test_all_good_is_claimable(db):
 
 # ── one LOADED ball per prize (partial unique index) ────────────────────
 
+async def test_loaded_pack_faces_covers_both_prize_routes(db):
+    """The reveal's textures are ~1 MB and only named in the win payload, so the
+    client warms them at turn start from this list. Both routes to a pack must
+    appear, once each: a CLOSED_BOOSTER ball points at one directly, an
+    OPENED_BOOSTER ball inherits the sealed art of the SKU it came from.
+    """
+    sealed = await mk_closed(db)
+    sealed.image_front_url, sealed.image_back_url = "http://x/sealed-f.png", "http://x/sealed-b.png"
+    opened = await mk_opened(db, cb=sealed)
+    await mk_ball(db, "b-opened", M.PrizeKind.OPENED_BOOSTER, opened=opened)
+
+    direct = await mk_closed(db)
+    direct.image_front_url, direct.image_back_url = "http://x/direct-f.png", "http://x/direct-b.png"
+    await mk_ball(db, "b-closed", M.PrizeKind.CLOSED_BOOSTER, closed=direct)
+
+    # A ball that has left the machine contributes nothing to warm.
+    gone = await mk_closed(db)
+    gone.image_front_url = "http://x/voided-f.png"
+    await mk_ball(db, "b-voided", M.PrizeKind.CLOSED_BOOSTER, closed=gone,
+                  status=M.BallStatus.VOIDED)
+    await db.flush()
+
+    faces = await wt.loaded_pack_faces(db)
+    assert sorted(faces) == [
+        "http://x/direct-b.png", "http://x/direct-f.png",
+        "http://x/sealed-b.png", "http://x/sealed-f.png",
+    ]
+    assert len(faces) == len(set(faces))
+
+
 async def test_two_loaded_balls_same_opening_rejected(db):
     ob = await mk_opened(db)
     await mk_ball(db, "L1", M.PrizeKind.OPENED_BOOSTER, opened=ob)

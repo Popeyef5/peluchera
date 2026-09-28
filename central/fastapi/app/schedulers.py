@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError
 from .abi import claw_abi
 from .models import QueueEntry
 from .deps import async_session
+from . import win_transitions as wt
 from .errors import NewRoundError
 from .models import Round
 from .socket.sio_instance import sio
@@ -103,7 +104,12 @@ async def _turn_scheduler_loop():
     state.current_player = next_addr
     state.current_key = next_key
     state.last_start = datetime.utcnow()
-    await sio.emit("turn_start")
+    async with async_session() as db:
+        # Candidate pack art for the queued clients to warm — see
+        # wt.loaded_pack_faces. The scheduler just read the queue, so the
+        # database is already awake for this turn.
+        pack_faces = await wt.loaded_pack_faces(db)
+    await sio.emit("turn_start", {"pack_faces": pack_faces})
     await safe_pi_emit("turn_start")
 
     async with async_session() as db:

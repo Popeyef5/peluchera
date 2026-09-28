@@ -223,6 +223,34 @@ export function winCardsToDeck(cards: WinRevealCard[]): Card[] {
 	});
 }
 
+// WebGL can only sample a cross-origin image fetched in CORS mode, and the
+// browser caches by URL, not by mode: the same bucket asset served to a plain
+// <img> (the admin panel's thumbnails) is stored `immutable` for a year with no
+// Access-Control-Allow-Origin, and TextureLoader's request then reuses it and is
+// blocked. A marker query keeps textures on a cache entry of their own.
+export function textureUrl(url: string) {
+	if (!/^https?:\/\//i.test(url)) return url;
+	return url + (url.includes("?") ? "&" : "?") + "tex=1";
+}
+
+// The sealed-pack faces the 3D reveal will skin its mesh with. They are ~1 MB
+// together and are only named in the win payload, so fetching them then leaves
+// the pack rising blank for seconds. The server sends the candidates (the packs
+// a loaded ball could win) at turn start and we warm them here, in CORS mode and
+// under the texture cache key, so drei's later load is a cache hit.
+const MAX_PREFETCHED_FACES = 8;
+
+export function preloadPackFaces(urls: readonly string[]) {
+	if (typeof window === "undefined") return;
+	for (const url of urls.slice(0, MAX_PREFETCHED_FACES)) {
+		if (!url) continue;
+		const img = new window.Image();
+		img.crossOrigin = "anonymous";
+		img.decoding = "async";
+		img.src = textureUrl(url);
+	}
+}
+
 // Warm the browser cache for everything the win reveal paints, so nothing
 // fetches mid-animation on a slow machine. Images only (the GLB + booster
 // textures are warmed by Booster.tsx via drei's loaders). Safe to call more

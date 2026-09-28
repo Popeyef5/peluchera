@@ -3,6 +3,7 @@
 import React, { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useGLTF, useTexture, RoundedBox, Center } from "@react-three/drei";
+import { textureUrl } from "@/lib/cards";
 
 const GLB_URL = "/booster.glb";
 
@@ -88,18 +89,6 @@ function GLTFBoosterBare({ onReady }: { onReady?: () => void }) {
 			</group>
 		</Center>
 	);
-}
-
-// WebGL can only sample a cross-origin image fetched in CORS mode, and the
-// browser caches by URL, not by mode. The same bucket asset is also shown as a
-// plain <img> elsewhere (the admin panel's inventory thumbnails); that response
-// is cached `immutable` for a year with no Access-Control-Allow-Origin, and
-// TextureLoader's CORS request then reuses it and is blocked — the pack renders
-// black and the GL context is lost. A marker query gives textures a cache entry
-// of their own, always fetched in CORS mode.
-function textureUrl(url: string) {
-	if (!/^https?:\/\//i.test(url)) return url;
-	return url + (url.includes("?") ? "&" : "?") + "tex=1";
 }
 
 function GLTFBoosterSkinned({ frontUrl, backUrl, onReady }: { frontUrl: string; backUrl: string; onReady?: () => void }) {
